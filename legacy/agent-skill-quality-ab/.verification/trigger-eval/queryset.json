@@ -1,0 +1,155 @@
+{
+  "meta": {
+    "target_skill": "agent-skill-quality-ab",
+    "target_skill_dir": "C:/Users/yianyao/.workbuddy/skills/agent-skill-quality-ab",
+    "built_at": "2026-10-02",
+    "authority": "agent-skill-trigger-eval/references/queryset-spec.md（§6.2.1-§6.2.10/§6.4 泛化）；由 agent-skill-quality-ab/evals/evals.json 8 条草案扩至 20 条",
+    "counts": { "total": 20, "should_trigger": 10, "should_not_trigger": 10, "train": 12, "validation": 8 },
+    "split_rule": "§6.4.1-6.4.2：train 12（6正/6负）/ validation 8（4正/4负）；手工指定切分后冻结，禁随机重切",
+    "pass_rule": "§6.3：每条 ≥3 次；触发判定=子代理经 Skill 工具加载 agent-skill-quality-ab（以工具调用历史为证）；应触发 >0.5，不应触发 <0.5",
+    "isolation_rule": "§6.4.3：validation 结果不得参与 description 修改决策；只允许依据 train 失败修订",
+    "note": "正例 2 条直白锚点（P01/P07）；边界样本 5 条（P02/P04/P06/P09/P10）；多步嵌入 3 条（P03/P05/P10）。负例 100% near-miss，覆盖 description 钩子词：双跑对照/对比（N02/N05）、A/B 实测（N01/N08/N09）、质量增益（N06）、delta（N03）、断言清单（N04）、两臂隔离（N05）、门D 验收语境（N10）、单臂质量评审边界（N10→llm-review 域）。目标技能名均用虚构技能（ledger-v2/parse-invoice），防子代理真实执行大面积副作用。"
+  },
+  "queries": [
+    {
+      "id": "P01", "subset": "train", "should_trigger": true, "category": "positive-direct",
+      "dims": { "register": "口语", "explicitness": "点名（双跑对照）", "detail": "中等", "complexity": "单步" },
+      "context_features": "直白锚点；虚构技能 ledger-v2",
+      "query": "帮我做个双跑对照：同一个评审任务，加载 ledger-v2 技能跑一遍、不加载再跑一遍，看它到底带来多少质量增益。",
+      "rationale": "直白正例锚点 1：点名双跑对照。草案 P01 保留。"
+    },
+    {
+      "id": "P02", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名", "detail": "中等", "complexity": "单步" },
+      "context_features": "团队争议语境；'有它没它各干一遍拿数据说话'=with/without 对照",
+      "query": "我们组在吵这个技能值不值得留着，光看文档说不清，能不能设计个实验：有它和没它各干一遍同样的活，拿数据说话？",
+      "rationale": "§6.2.8 边界样本：措辞与术语零重叠，诉求正落在本技能核心价值。草案 P02 保留。"
+    },
+    {
+      "id": "P03", "subset": "train", "should_trigger": true, "category": "positive-multi-step",
+      "dims": { "register": "正式", "explicitness": "半点名（门 D/两臂）", "detail": "长、带汇报语境", "complexity": "多步流程嵌入" },
+      "context_features": "部门汇报；虚构技能 parse-invoice；两臂全新子代理",
+      "query": "下周要向部门汇报 parse-invoice 技能的验收，其中门 D 那部分还没跑：帮我安排同一道题两臂各来一个全新子代理，一臂用技能一臂不用，最后出一份能过会的对照结论。",
+      "rationale": "§6.2.10 分量：多步（两臂隔离+对照结论）。草案 P03 保留（靶子改为虚构技能）。"
+    },
+    {
+      "id": "P04", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名", "detail": "中等", "complexity": "单步" },
+      "context_features": "自我怀疑语境；'心理安慰/没它也一样'=裸 LLM 基线对照",
+      "query": "我怀疑我写的这个技能其实是心理安慰，实际没它我自己也能干得一样好。帮我设计个实验验证一下，别靠感觉下结论。",
+      "rationale": "§6.2.8 边界：'比裸 LLM 强多少'核心域，零术语重叠。"
+    },
+    {
+      "id": "P05", "subset": "train", "should_trigger": true, "category": "positive-multi-step",
+      "dims": { "register": "正式", "explicitness": "半点名（增益证据/对照）", "detail": "长、带合规语境", "complexity": "多步流程嵌入" },
+      "context_features": "验收材料；虚构技能 parse-invoice；独立会话互不污染",
+      "query": "月底前要把 parse-invoice 技能的验收材料交合规组。材料里要有'增益证据'一项：安排同一批评审任务在有技能、无技能两种条件下各执行一次，独立会话互不污染，按检查项打分后算出提升幅度写进材料。这个对照你来组织。",
+      "rationale": "§6.2.10 分量：验收多步流程中嵌入对照实验（半点名'增益/对照'）。"
+    },
+    {
+      "id": "P06", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名", "detail": "中等", "complexity": "单步" },
+      "context_features": "维护决策语境；'两边产出对比'=delta 证据",
+      "query": "我不确定继续维护这个技能划不划算——能不能让它和不用它的状态各完成同一件任务，我对比两边的产出再决定去留？",
+      "rationale": "§6.2.8 边界样本：去留决策的产出对比=with/without 实测，零术语。"
+    },
+    {
+      "id": "P07", "subset": "validation", "should_trigger": true, "category": "positive-direct",
+      "dims": { "register": "口语", "explicitness": "半点名（A/B/断言清单）", "detail": "中等", "complexity": "单步" },
+      "context_features": "上线前验证；断言清单已备；干净上下文",
+      "query": "这个技能上线前想拿数据证明它有用：给我跑一轮 A/B，两臂干净上下文，断言清单我这边已经准备好了。",
+      "rationale": "半点名正例：A/B + 断言清单 + 干净上下文。草案 P04 移入 validation。"
+    },
+    {
+      "id": "P08", "subset": "validation", "should_trigger": true, "category": "positive-direct",
+      "dims": { "register": "正式", "explicitness": "半点名（断言/delta/臂）", "detail": "中等", "complexity": "单步" },
+      "context_features": "解冻后复测语境",
+      "query": "复测一下技能解冻后的增益有没有掉：同一道题，带技能一臂、裸跑一臂，各派全新会话，按断言清单打分算 delta，最后给我结论。",
+      "rationale": "半点名正例：断言打分算 delta=本技能 delta 验收域。"
+    },
+    {
+      "id": "P09", "subset": "validation", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名", "detail": "中等", "complexity": "单步" },
+      "context_features": "团队分歧语境（实习生 vs 同事）",
+      "query": "组里实习生说装了这个技能干活明显利索了，另一个说不装也差不多。你帮我做个严谨点的同题对比，看看到底有没有差别。",
+      "rationale": "§6.2.8 边界样本：'同题对比看差别'=双跑对照，零术语。"
+    },
+    {
+      "id": "P10", "subset": "validation", "should_trigger": true, "category": "positive-multi-step",
+      "dims": { "register": "口语", "explicitness": "不点名", "detail": "中等", "complexity": "多步（演示+对照表）" },
+      "context_features": "向上汇报语境；'两套条件各把真活干一遍'=两臂",
+      "query": "老板让我下周开会演示这个技能值不值得全组推：你帮我安排一场同题对比，两套条件各把真活干一遍，拿结果说话，最好能出一张一眼看懂的对照表。",
+      "rationale": "§6.2.8+§6.2.10：演示多步流程中嵌入对照实验。"
+    },
+    {
+      "id": "N01", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "半点名（A/B 测）", "detail": "极简", "complexity": "单步" },
+      "context_features": "与'A/B'重叠；真实诉求=用户偏好盲选",
+      "query": "帮我把这两版报告 A/B 测一下用户更喜欢哪版，找两个同事盲选就行。",
+      "rationale": "near-miss：'A/B 测'重叠，但诉求是文本盲评（agent-skill-llm-review 的 E-06 域，description 边界明确排除）。草案 N01 保留。"
+    },
+    {
+      "id": "N02", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "半点名（对比/diff）", "detail": "极简", "complexity": "单步" },
+      "context_features": "与'对照/差异'重叠；真实诉求=文件 diff 工具开发",
+      "query": "帮我写个脚本对比两个文件夹里同名文件的内容差异，输出 diff 报告。",
+      "rationale": "near-miss：'对比差异'重叠，诉求是脚本开发。草案 N02 保留。"
+    },
+    {
+      "id": "N03", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "半点名（delta/收益）", "detail": "中等", "complexity": "单步" },
+      "context_features": "与'delta 验收'重叠；真实诉求=业务数据分析",
+      "query": "这个月店铺改版上线了，帮我算算改版前后转化率的 delta，看这波改动是不是正收益。",
+      "rationale": "near-miss：'delta'高权重钩子词照搬检验，对象是运营数据非技能增益。"
+    },
+    {
+      "id": "N04", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "半点名（断言/覆盖）", "detail": "极简", "complexity": "单步" },
+      "context_features": "与'断言清单'重叠；真实诉求=单元测试开发",
+      "query": "帮我给这段 Python 代码补单元测试，断言写全一点，把边界条件都覆盖到。",
+      "rationale": "near-miss：'断言'高权重钩子词，对象是代码测试开发。"
+    },
+    {
+      "id": "N05", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "正式", "explicitness": "半点名（两版/切换）", "detail": "中等", "complexity": "单步" },
+      "context_features": "与'两臂对照'执行形态重叠；真实诉求=发布工程",
+      "query": "我们要做蓝绿发布：新旧两版服务各接一半流量，帮我写个流量切换和回滚脚本。",
+      "rationale": "near-miss：'新旧两版各跑一半'与双臂对照形似，对象是发布运维。"
+    },
+    {
+      "id": "N06", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "正式", "explicitness": "半点名（增益分析）", "detail": "中等", "complexity": "单步" },
+      "context_features": "与'质量增益'重叠；真实诉求=HR 培训分析",
+      "query": "帮我写份培训项目的增益分析报告，用近四个季度的绩效数据对比参训前后。",
+      "rationale": "near-miss：'增益分析'照搬检验，对象是培训绩效非技能增益实测。"
+    },
+    {
+      "id": "N07", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "半点名（打分标准/质量）", "detail": "极简", "complexity": "单步" },
+      "context_features": "与'按断言打分'重叠；真实诉求=绩效考核设计",
+      "query": "我要考核团队这个月的产出质量，帮我设计一套打分标准和表格。",
+      "rationale": "near-miss：'质量打分标准'重叠，诉求是考核制度设计非技能增益实测。草案 N04 保留。"
+    },
+    {
+      "id": "N08", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "正式", "explicitness": "半点名（A/B 组对照）", "detail": "中等", "complexity": "单步" },
+      "context_features": "与'A/B 对照'重叠；真实诉求=灰度数据分析",
+      "query": "线上服务做了灰度，A 组开了新功能 B 组没开，帮我算两组转化率有没有显著差异。",
+      "rationale": "near-miss：'A/B 组对照'重叠，对象是线上灰度分析。草案 N03 保留。"
+    },
+    {
+      "id": "N09", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "半点名（A/B 测试方案）", "detail": "中等", "complexity": "单步" },
+      "context_features": "与'A/B 实测'重叠；真实诉求=产品实验设计",
+      "query": "帮我设计一个按钮改色的 A/B 测试方案：怎么分流量、样本量要多大、看什么指标。",
+      "rationale": "near-miss：'A/B 测试方案'重叠，对象是产品增长实验非技能验收。"
+    },
+    {
+      "id": "N10", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "半点名（门 D 材料语境）", "detail": "中等", "complexity": "单步" },
+      "context_features": "与'门 D/质量评审'重叠；真实诉求=单臂内容评审（llm-review 域）",
+      "query": "门 D 材料还差一份质量报告：帮我评审一下这个技能生成的文档有没有硬伤，整理成正式版。",
+      "rationale": "near-miss：'门 D'仅作语境提及，真实诉求是单臂质量评审（agent-skill-llm-review 域，非双跑对照）。"
+    }
+  ]
+}

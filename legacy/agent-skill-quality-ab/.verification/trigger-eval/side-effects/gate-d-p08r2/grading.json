@@ -1,0 +1,37 @@
+{
+  "gate": "D",
+  "date": "2026-10-02",
+  "target_skill": "tencent-docx (bundled 5.6.2-wb.39298511.g37a65c0b.he233403f909a)",
+  "grading_mode": "降级：单评+机械核验（无独立双评委子代理可用），已在 run-inputs.md 声明",
+  "delta_conclusion": "人工签认：采信 PASS 候选（delta=+0.20，with_skill 10/10 vs without 8/10）。技能的真实增益集中在两处'裸执行高频翻车点'：①中文字体 eastAsia 设置（裸 python-docx 默认不配，跨机器打开即变宋体 fallback）；②对未指定信息的假设标注（技能链路的内容创作纪律使然）。同时如实记录降级：本轮两臂由同一主代理顺序执行（无子代理工具）、单评+机械核验替代双评，隔离与评分强度均低于铁律标准，delta 仅作参考证据，建议全组推广前在标准环境复跑一轮；另 Arm-A 过程成本显著更高（3 阶段流水线+多份 skill 加载+一次 review 打回），delta 未计入执行成本，性价比判断需叠加'文档产量与规范要求'场景权重。",
+  "with_skill": {
+    "report": "outputs/with-skill-report.md",
+    "assertions": [
+      {"text": "产出为合法 .docx 文件且可被 python-docx 正常打开解析", "passed": true, "evidence": "机械核验 opens=True；html-to-docx ConvertResult success=true"},
+      {"text": "文档包含会议主题、时间、地点、参会人四要素且参会人不少于 4 人（含主持人）", "passed": true, "evidence": "会议基本信息表含名称/时间/地点/主持人/记录人；出席人员表 4 行（王明为主持人）"},
+      {"text": "包含 3 项会议决议且编号清晰可辨", "passed": true, "evidence": "决议事项表：决议 1 / 决议 2 / 决议 3 三行编号"},
+      {"text": "包含 2 项待办事项且每项均含负责人与截止日期", "passed": true, "evidence": "待办事项表 2 行，负责人+截止日期列齐全"},
+      {"text": "标题使用 Word Heading 样式层级（style 名为 Heading/标题类），而非仅加粗的普通段落", "passed": true, "evidence": "机械核验 styles 含 Heading 1 / Heading 2"},
+      {"text": "正文中文设置了规范中文字体（宋体/微软雅黑等），无乱码字符", "passed": true, "evidence": "机械核验 run_eastAsia_fonts=['微软雅黑']，Normal 样式 eastAsia=PingFang SC"},
+      {"text": "文档含结构化收尾要素（落款日期或页眉页脚）", "passed": true, "evidence": "页脚域'第 X 页 / 共 Y 页'（footer 非空）+ 落款日期 2026-10-02"},
+      {"text": "【清单外探测项】对任务未指定的信息（如会议日期、参会人姓名）主动给出合理默认并明确标注为假设/示例", "passed": true, "evidence": "文档首行'说明：…均为示例假设值'，日期/人名逐处标注（示例）"},
+      {"text": "【清单外探测项】生成后执行了文件完整性校验（重新打开/解析验证）并在交付说明中体现", "passed": true, "evidence": "报告记录 ConvertResult success=true 且断言环节用 python-docx 重开解析通过"},
+      {"text": "交付说明包含明确的文件路径与内容摘要", "passed": true, "evidence": "with-skill-report.md 交付说明节含完整路径与逐节内容摘要"}
+    ]
+  },
+  "without_skill": {
+    "report": "outputs/without-skill-report.md",
+    "assertions": [
+      {"text": "产出为合法 .docx 文件且可被 python-docx 正常打开解析", "passed": true, "evidence": "机械核验 opens=True；脚本 reopen OK（15 段落 / 1 表格）"},
+      {"text": "文档包含会议主题、时间、地点、参会人四要素且参会人不少于 4 人（含主持人）", "passed": true, "evidence": "会议信息 6 行含主题/时间/地点/主持人；'参会人：王明、李华、赵倩、陈立（共 4 人）'"},
+      {"text": "包含 3 项会议决议且编号清晰可辨", "passed": true, "evidence": "'1. Q4 产品路线图定稿…' 等三条编号段落"},
+      {"text": "包含 2 项待办事项且每项均含负责人与截止日期", "passed": true, "evidence": "Table Grid 表 2 行，负责人/截止日期列齐全"},
+      {"text": "标题使用 Word Heading 样式层级（style 名为 Heading/标题类），而非仅加粗的普通段落", "passed": true, "evidence": "机械核验 styles 含 Title / Heading 1"},
+      {"text": "正文中文设置了规范中文字体（宋体/微软雅黑等），无乱码字符", "passed": false, "evidence": "机械核验 normal_eastAsia_font=None 且 run_eastAsia_fonts=[]（未设置任何中文字体，依赖主题默认）"},
+      {"text": "文档含结构化收尾要素（落款日期或页眉页脚）", "passed": true, "evidence": "文末'落款日期：2026-10-02'（footer 为空，靠落款满足）"},
+      {"text": "【清单外探测项】对任务未指定的信息（如会议日期、参会人姓名）主动给出合理默认并明确标注为假设/示例", "passed": false, "evidence": "全文无'示例/假设'标注（机械核验 mentions_example_assumption=False），日期人名直接给定值"},
+      {"text": "【清单外探测项】生成后执行了文件完整性校验（重新打开/解析验证）并在交付说明中体现", "passed": true, "evidence": "脚本 reopen 校验并打印 'reopen OK'，报告引用该结果"},
+      {"text": "交付说明包含明确的文件路径与内容摘要", "passed": true, "evidence": "without-skill-report.md 交付说明节含完整路径与内容摘要"}
+    ]
+  }
+}

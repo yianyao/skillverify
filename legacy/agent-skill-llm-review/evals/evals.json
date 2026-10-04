@@ -1,0 +1,85 @@
+{
+  "skill": "agent-skill-llm-review",
+  "version": "1.4",
+  "note": "触发评测查询集：12 条（个人版下限），6 正例 / 6 负例。切分由 SOP-11 执行（60/40 冻结），切分文件见 iteration-N/split.json；本文件为切分前全量查询集；版本随 SKILL.md v1.4 同步",
+  "queries": [
+    {
+      "id": 1,
+      "query": "按生命周期验证方案对这个 skill 跑一遍 W 组语义评审，记得留痕",
+      "should_trigger": true,
+      "prompt_id": "W-01~W-16",
+      "context": "用户手上有目标技能目录，需要完整 W 组评审"
+    },
+    {
+      "id": 2,
+      "query": "评审一下这个技能的 description 写得好不好，能不能正确触发",
+      "should_trigger": true,
+      "prompt_id": "W-02",
+      "context": "对应 W-02，⚑ 需双评"
+    },
+    {
+      "id": 3,
+      "query": "帮我对这两个版本的输出做盲评，别告诉评委哪份是哪版",
+      "should_trigger": true,
+      "prompt_id": "E-06",
+      "context": "对应 E-06 盲评，需 plan_dual_review --blind"
+    },
+    {
+      "id": 4,
+      "query": "这些断言帮我逐条打分，PASS 必须附输出证据",
+      "should_trigger": true,
+      "prompt_id": "E-04",
+      "context": "对应 E-04 语义断言评分"
+    },
+    {
+      "id": 5,
+      "query": "诊断一下这条技能运行轨迹，是缺信息、缺工具还是指令冲突",
+      "should_trigger": true,
+      "prompt_id": "E-10",
+      "context": "对应 E-10 轨迹诊断"
+    },
+    {
+      "id": 6,
+      "query": "把这批运行期纠正记录归纳成 Gotchas 候选，注意别堆进正文",
+      "should_trigger": true,
+      "prompt_id": "R-01/R-02",
+      "context": "对应 R-01/R-02"
+    },
+    {
+      "id": 7,
+      "query": "帮我写一个 Python 爬虫抓取商品价格",
+      "should_trigger": false,
+      "context": "通用编程任务，与技能无关"
+    },
+    {
+      "id": 8,
+      "query": "这个 SKILL.md 现在有多少行，超没超 300 行预算",
+      "should_trigger": false,
+      "context": "机械检查问题，应走 check_skill.py 而非 LLM 评审"
+    },
+    {
+      "id": 9,
+      "query": "跑一下 check_skill.py 的静态检查看看格式门过没过",
+      "should_trigger": false,
+      "context": "S 类机械检查，不属本技能"
+    },
+    {
+      "id": 10,
+      "query": "我是人工终审，帮我把内容门 B 的清单打印出来我逐项勾选",
+      "should_trigger": false,
+      "context": "H 类人工终审，本技能不能替代"
+    },
+    {
+      "id": 11,
+      "query": "帮这个技能写一份验收报告",
+      "should_trigger": false,
+      "context": "M1 阶段交付动作，非 L 类评审"
+    },
+    {
+      "id": 12,
+      "query": "今天天气怎么样",
+      "should_trigger": false,
+      "context": "无关闲聊"
+    }
+  ]
+}

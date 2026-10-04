@@ -1,0 +1,156 @@
+{
+  "meta": {
+    "target_skill": "agent-skill-llm-review",
+    "target_skill_dir": "C:/Users/yianyao/.workbuddy/skills/agent-skill-llm-review",
+    "built_at": "2026-10-02",
+    "authority": "规范条目总表 §6.2.1-§6.2.10 / §6.3 / §6.4；方案 C1-C3",
+    "counts": { "total": 20, "should_trigger": 10, "should_not_trigger": 10, "train": 12, "validation": 8 },
+    "split_rule": "总表 §6.4.1-6.4.2：60/40，正负比例两子集内保持（train 6正/6负，validation 4正/4负）；本切分为手工指定后冻结，禁随机重切",
+    "pass_rule": "总表 §6.3：每条 ≥3 次；触发判定=加载了 SKILL.md（以子代理工具调用历史为证）；应触发触发率 >0.5，不应触发 <0.5",
+    "isolation_rule": "总表 §6.4.3：验证集（validation）结果不得参与 description 修改决策；只允许依据 train 失败修订",
+    "c4_note": "泛化终测（C4，§6.5.6）的 5-10 条全新查询另行构造，不得与本集任何条目措辞重叠，description 定稿后执行",
+    "run_protocol": "每条查询派发一个全新子代理（独立会话，路径B），提示词含诚实回报纪律：①技能清单中是否可见 agent-skill-llm-review；②是否经 Skill 工具加载（引用工具调用为证）；③最终回答原文。禁止子代理读技能目录找答案。"
+  },
+  "queries": [
+    {
+      "id": "P01", "subset": "train", "should_trigger": true, "category": "positive-direct",
+      "dims": { "register": "正式", "explicitness": "点名评审行为", "detail": "带完整路径", "complexity": "单步" },
+      "context_features": "真实绝对路径",
+      "query": "请对 C:/Users/yianyao/.workbuddy/skills/ledger-v2 这个技能运行 W 组语义评审，并按提示词编号逐条给出结论。",
+      "rationale": "§6.2.2 显式度=点名、§6.2.3 真实路径。直白正例锚点（每集允许少量，价值边界样本见 P06/P09）。"
+    },
+    {
+      "id": "P02", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名任何编号", "detail": "中等", "complexity": "嵌入情境" },
+      "context_features": "同事人际情境、口语（\"这活儿\"\"张罗\"）",
+      "query": "我上周拿 GLM 给一个技能打了分，同事老陈说单会话里评两遍不算数，得俩会话各评一遍再对账。这活儿你能不能帮我张罗一下？",
+      "rationale": "§6.2.8 边界样本：查询不提\"双评/W组/评审\"等术语，但本技能的独立会话双评组织正是其核心价值。"
+    },
+    {
+      "id": "P03", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语+错别字", "explicitness": "不点名", "detail": "极简", "complexity": "单步" },
+      "context_features": "错别字（\"杂样\"）、用户痛点（不触发）",
+      "query": "帮我瞅瞅我这个技能写得杂样，感觉 description 不太行，用户问到相关的事它老是不触发。",
+      "rationale": "§6.2.2 错别字措辞 + §6.2.8 边界：\"不触发\"的诊断与描述评审是技能 W-02/触发域价值，查询本身未点名。"
+    },
+    {
+      "id": "P04", "subset": "train", "should_trigger": true, "category": "positive-multi-step",
+      "dims": { "register": "正式", "explicitness": "半点名（生命周期/独立评）", "detail": "长、带部门与人名", "complexity": "多步流程嵌入" },
+      "context_features": "部门（运营部）、人名（李静）、多步流程",
+      "query": "我打算这周把 ledger-v2 技能交付给运营部（李静那边）。流程是：先按生命周期验证方案把 W 组语义检查跑完，再组织两个人分别独立评 W-05 和 W-08，最后把结论汇总成一张能对账的表。语义评审这部分你帮我组织起来。",
+      "rationale": "§6.2.10 分量：多步流程中嵌入（组织双评+汇总留痕），§6.2.3 真实语境。"
+    },
+    {
+      "id": "P05", "subset": "train", "should_trigger": true, "category": "positive-direct",
+      "dims": { "register": "口语+缩写", "explicitness": "半点名（W 项）", "detail": "极简", "complexity": "单步" },
+      "context_features": "缩写（W 项）、拖延语境",
+      "query": "我那个评审技能的 W 项一直拖着没跑，今天帮我把它过完吧。",
+      "rationale": "§6.2.2 缩写措辞（W 项），§6.2.3 口语。"
+    },
+    {
+      "id": "P06", "subset": "validation", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名（\"把把关\"）", "detail": "中等", "complexity": "交付前检查" },
+      "context_features": "交付对象（外部合作方）",
+      "query": "我这个技能包这两天要发给外部的合作方了，你帮我最后把把关，看看还有没有什么坑。",
+      "rationale": "§6.2.8 边界样本：交付验收审查是技能 D/R 阶段与审计域价值，查询措辞与\"评审\"零重叠。"
+    },
+    {
+      "id": "P07", "subset": "validation", "should_trigger": true, "category": "positive-direct",
+      "dims": { "register": "随意", "explicitness": "点名评审", "detail": "极简", "complexity": "单步" },
+      "context_features": "自述技能用途（数据清洗）",
+      "query": "帮我评审下我写的那个数据清洗技能，看看还有哪些地方不符合规范。",
+      "rationale": "§6.2.2 随意措辞直白正例；\"符合规范\"暗含规范条目对照。"
+    },
+    {
+      "id": "P08", "subset": "validation", "should_trigger": true, "category": "positive-multi-step",
+      "dims": { "register": "正式", "explicitness": "半点名（D/W/E/R）", "detail": "长、带公司与路径", "complexity": "多步流程嵌入" },
+      "context_features": "公司名（恒泽生物）、路径、交差语境",
+      "query": "我们在恒泽生物做内部工具合规，leader 要求每个 agent 技能交付前留痕：哪些条目过了、哪些 FAIL、谁裁决的。我手上有个采购审批技能（路径 C:/skills/procure-approve），你按 D/W/E/R 的顺序把该跑的语义检查都安排上，最后给我一份能直接交差的对账清单。",
+      "rationale": "§6.2.10 分量（多步+交付留痕）、§6.2.3 公司名/路径/数值语境。"
+    },
+    {
+      "id": "P09", "subset": "validation", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名", "detail": "中等", "complexity": "裁决情境" },
+      "context_features": "团队分歧情境（\"吵起来了\"）",
+      "query": "两个同事对我这个技能的 description 该不该加\"翻译\"这个词吵起来了，一个说加了容易乱触发，一个说不加会漏。你帮我判一判该怎么定。",
+      "rationale": "§6.2.8 边界：description 修订裁决对应方案 §6.5/触发评审域，查询无\"评审/验证\"字样。"
+    },
+    {
+      "id": "P10", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "dims": { "register": "口语", "explicitness": "不点名（\"体检\"）", "detail": "中等", "complexity": "批量多步" },
+      "context_features": "入库流程语境",
+      "query": "下周要给新来的同事开放技能入库，我想先把库里这几个技能都体检一遍再放行，你替我把体检的活儿张罗张罗。",
+      "rationale": "§6.2.8 边界+§6.2.10 分量：批量入库前检查=评审编排。"
+    },
+    {
+      "id": "N01", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "正式", "explicitness": "点名评审", "detail": "中等", "complexity": "单步" },
+      "context_features": "合同文档语境",
+      "query": "帮我评审一下这份采购合同的条款，重点看违约责任那部分。",
+      "rationale": "§6.2.4 near-miss：\"评审\"重叠，但对象是合同文档，非 agent 技能生命周期评审。"
+    },
+    {
+      "id": "N02", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "点名 Agent Skill", "detail": "中等", "complexity": "单步" },
+      "context_features": "用户反馈语境",
+      "query": "我想给我的 Agent Skill 重写一份使用说明书，用户反映现在这份看不懂，你帮我写。",
+      "rationale": "§6.2.4：\"Agent Skill\"关键词重叠，但诉求是写文档，不是评审/验证技能。"
+    },
+    {
+      "id": "N03", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "正式", "explicitness": "点名检查", "detail": "带路径", "complexity": "单步" },
+      "context_features": "真实路径",
+      "query": "检查一下 D:/projects/etl/main.py 有没有语法错误和明显的坏味道，列出行号。",
+      "rationale": "§6.2.4：\"检查\"重叠，但这是通用代码 lint，非技能语义评审。"
+    },
+    {
+      "id": "N04", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "正式", "explicitness": "点名 SKILL.md", "detail": "中等", "complexity": "知识问答" },
+      "context_features": "学习语境",
+      "query": "SKILL.md 里的 allowed-tools 字段是什么意思？官方文档在哪能查到？",
+      "rationale": "§6.2.4：SKILL.md 关键词重叠，但这是格式知识问答，不是评审请求。"
+    },
+    {
+      "id": "N05", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "点名技能", "detail": "极简", "complexity": "单步" },
+      "context_features": "发布语境",
+      "query": "帮我把这个技能打包发布到技能市场里去。",
+      "rationale": "§6.2.4：\"技能\"重叠，但诉求是发布分发，非验证评审。"
+    },
+    {
+      "id": "N06", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "点名技能库", "detail": "中等", "complexity": "单步" },
+      "context_features": "命名冲突语境、真实技能名",
+      "query": "我们库里有 skill-creator 和 skill-authoring 两个技能了，我想再做一个新技能，帮我想个不撞车的名字。",
+      "rationale": "§6.2.4：技能库/技能名重叠，但诉求是命名，非评审。"
+    },
+    {
+      "id": "N07", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "正式", "explicitness": "点名 SKILL.md", "detail": "中等", "complexity": "开发任务" },
+      "context_features": "开发需求语境",
+      "query": "帮我写一个 Python 脚本，自动统计一个文件夹里所有 SKILL.md 的行数并按大小排序输出。",
+      "rationale": "§6.2.4 强 near-miss：围绕 SKILL.md 的开发任务，而非对技能执行评审。"
+    },
+    {
+      "id": "N08", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "点名评审日志", "detail": "中等", "complexity": "单步" },
+      "context_features": "文件修复语境",
+      "query": "llm-review-log.md 里有几行表格被竖线搞坏了，帮我直接编辑把那几行修一下。",
+      "rationale": "§6.2.4：评审产物文件名重叠，但诉求是编辑修复文件，不是执行评审。"
+    },
+    {
+      "id": "N09", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "点名盲评", "detail": "中等", "complexity": "单步" },
+      "context_features": "新媒体运营语境",
+      "query": "帮我做个盲评：这三篇公众号文章哪篇标题最抓人？先别告诉我是谁写的，评完再揭晓。",
+      "rationale": "§6.2.4：\"盲评\"术语重叠，但对象是文章标题，非技能产出盲评。"
+    },
+    {
+      "id": "N10", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "dims": { "register": "口语", "explicitness": "点名验证方案", "detail": "带路径", "complexity": "单步" },
+      "context_features": "文件整理语境、真实路径",
+      "query": "把 D:/sData/Agent-Skill-生命周期验证方案.md 这个文件挪到 standardSkill 文件夹里去。",
+      "rationale": "§6.2.4：方案文件名重叠，但诉求是文件移动，非执行验证。"
+    }
+  ]
+}

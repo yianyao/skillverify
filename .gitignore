@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 本地验证产物（中央留痕目录，默认不纳入版本控制；如需归档请显式 -f 添加）
+.agents/skillverify/
+
+# 会话交接文档：工作用，不属交付物
+handoff/
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

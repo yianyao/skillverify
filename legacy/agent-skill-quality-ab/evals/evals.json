@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "target_skill": "agent-skill-quality-ab",
+    "built_at": "2026-10-02",
+    "note": "本技能自身的触发评测查询集（交付物 §15.7）。8 条 = 4 正 + 4 负 near-miss，均为待实测草案（未冻结）；正式评测前按 agent-skill-trigger-eval/references/queryset-spec.md 扩至 20 条并冻结",
+    "counts": { "total": 8, "should_trigger": 4, "should_not_trigger": 4 }
+  },
+  "queries": [
+    {
+      "id": "P01", "subset": "train", "should_trigger": true, "category": "positive-direct",
+      "query": "帮我做个双跑对照：同一个评审任务，加载 ledger-v2 技能跑一遍、不加载再跑一遍，看它到底带来多少质量增益。",
+      "rationale": "直白正例锚点：点名双跑对照。"
+    },
+    {
+      "id": "P02", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "query": "我们组在吵这个技能值不值得留着，光看文档说不清，能不能设计个实验：有它和没它各干一遍同样的活，拿数据说话？",
+      "rationale": "边界样本：'有它没它各干一遍拿数据说话'=with/without 对照，措辞零术语重叠。"
+    },
+    {
+      "id": "P03", "subset": "train", "should_trigger": true, "category": "positive-multi-step",
+      "query": "下周要向部门汇报 agent-skill-llm-review 的验收，其中门 D 那部分还没跑：帮我安排同一道题两臂各来一个全新子代理，一臂用技能一臂不用，最后出一份能过会的对照结论。",
+      "rationale": "多步嵌入正例：门 D + 两臂隔离 + 汇报语境。"
+    },
+    {
+      "id": "P04", "subset": "validation", "should_trigger": true, "category": "positive-direct",
+      "query": "这个技能上线前想拿数据证明它有用：给我跑一轮 A/B，两臂干净上下文，断言清单我这边已经准备好了。",
+      "rationale": "半点名正例：A/B + 断言清单 + 干净上下文。"
+    },
+    {
+      "id": "N01", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "query": "帮我把这两版报告 A/B 测一下用户更喜欢哪版，找两个同事盲选就行。",
+      "rationale": "near-miss：'A/B 测'重叠，但诉求是用户偏好盲选（E-06 盲评域），非技能增益对照。"
+    },
+    {
+      "id": "N02", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "query": "帮我写个脚本对比两个文件夹里同名文件的内容差异，输出 diff 报告。",
+      "rationale": "near-miss：'对比差异'重叠，但诉求是文件 diff 工具开发。"
+    },
+    {
+      "id": "N03", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "query": "线上服务做了灰度，A 组开了新功能 B 组没开，帮我算两组转化率有没有显著差异。",
+      "rationale": "near-miss：'A/B 组对照'重叠，但对象是线上灰度数据分析。"
+    },
+    {
+      "id": "N04", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "query": "我要考核团队这个月的产出质量，帮我设计一套打分标准和表格。",
+      "rationale": "near-miss：'质量打分标准'重叠，但诉求是绩效考核设计，非技能增益实测。"
+    }
+  ]
+}

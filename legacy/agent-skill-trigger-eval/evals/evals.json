@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "target_skill": "agent-skill-trigger-eval",
+    "built_at": "2026-10-02",
+    "note": "本技能自身的触发评测查询集（交付物 §15.7）。8 条 = 4 正 + 4 负 near-miss，均为待实测草案（未冻结）；正式评测前按 references/queryset-spec.md 扩至 20 条并冻结",
+    "counts": { "total": 8, "should_trigger": 4, "should_not_trigger": 4 }
+  },
+  "queries": [
+    {
+      "id": "P01", "subset": "train", "should_trigger": true, "category": "positive-direct",
+      "query": "帮我实测一下 ledger-v2 这个技能的触发率，看看用户真问起来它到底会不会被加载。",
+      "rationale": "直白正例锚点：点名触发率实测。"
+    },
+    {
+      "id": "P02", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "query": "我改了好几版 description，但心里没底：想知道真实用户随口一问的时候它到底出不出来，不是让你看文字写得咋样，是要真刀真枪试。",
+      "rationale": "边界样本：'真实场景会不会出'='在环触发实测'，措辞与'触发/评测'零重叠。"
+    },
+    {
+      "id": "P03", "subset": "train", "should_trigger": true, "category": "positive-boundary",
+      "query": "我这个技能老是被不相干的问题唤起来，烦死了，能不能帮我系统地测一遍到底哪些问题会误伤？",
+      "rationale": "边界样本：'不相干被唤起'='误触发'，'测一遍'='触发门 C'。"
+    },
+    {
+      "id": "P04", "subset": "validation", "should_trigger": true, "category": "positive-direct",
+      "query": "按门 C 的标准跑一轮触发评测：20 条查询、每条 3 次、正例大于 0.5 负例小于 0.5，目标技能是 my-skills/quote-gen。",
+      "rationale": "半点名正例：门 C + 阈值语境。"
+    },
+    {
+      "id": "N01", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "query": "帮我评审一下这个技能的 description 写得好不好，钩子词全不全，有没有漏掉的触发场景。",
+      "rationale": "near-miss：'触发场景'重叠，但诉求是语义评审（agent-skill-llm-review 的活），不是在环实测。"
+    },
+    {
+      "id": "N02", "subset": "train", "should_trigger": false, "category": "negative-near-miss",
+      "query": "帮我写一个 Python 脚本，随机生成 20 条测试问题用来考聊天机器人。",
+      "rationale": "near-miss：'生成测试问题'重叠，但诉求是写脚本，不是技能触发评测编排。"
+    },
+    {
+      "id": "N03", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "query": "这个 MCP 工具响应太慢了，帮我测一下平均延迟和成功率。",
+      "rationale": "near-miss：'测/成功率'重叠，但对象是工具性能，非技能触发行为。"
+    },
+    {
+      "id": "N04", "subset": "validation", "should_trigger": false, "category": "negative-near-miss",
+      "query": "技能市场里怎么搜触发类、自动化类的技能？给我推荐几个。",
+      "rationale": "near-miss：'触发类技能'关键词重叠，但诉求是找技能，非评测。"
+    }
+  ]
+}

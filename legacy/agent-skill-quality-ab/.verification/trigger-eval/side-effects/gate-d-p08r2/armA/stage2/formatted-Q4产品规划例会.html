@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="docx-page-size" content="A4">
+  <title>Q4 产品规划例会 会议纪要</title>
+  <style>
+  :root {
+    --typography-fontFamily-heading: "PingFang SC, 苹方-简, 微软雅黑, sans-serif";
+    --typography-fontFamily-body: "PingFang SC, 苹方-简, 微软雅黑, sans-serif";
+    --typography-fontSize-title: 24pt;
+    --typography-fontSize-h1: 18pt;
+    --typography-fontSize-h2: 15pt;
+    --typography-fontSize-h3: 13pt;
+    --typography-fontSize-body: 11pt;
+    --typography-fontSize-small: 9pt;
+    --typography-lineHeight-body: 1.7;
+    --typography-fontWeight-heading: 600;
+    --color-primary: #2563EB;
+    --color-text: #111827;
+    --color-textSecondary: #6B7280;
+    --color-border: #E5E7EB;
+    --color-highlight: #FEF3C7;
+    --color-bg: #FFFFFF;
+    --spacing-paragraph: 0.5em;
+    --spacing-sectionGap: 2em;
+    --spacing-tableCell: 0.5em 1em;
+    --spacing-attendeeCell: 0.4em 0.8em;
+    --spacing-actionCell: 0.5em 0.8em;
+    --spacing-signItem: 0.4em;
+    --fs-body: 11pt;
+    --ff-body: "PingFang SC, 苹方-简, 微软雅黑, sans-serif";
+  }
+
+  :root {
+    --fs-h1: var(--typography-fontSize-h1, 20pt);
+    --fs-h2: var(--typography-fontSize-h2, 14pt);
+    --fs-h3: var(--typography-fontSize-h3, 12pt);
+    --fs-body: var(--typography-fontSize-body, 12pt);
+    --fs-small: var(--typography-fontSize-small, 10pt);
+    --ff-heading: var(--typography-fontFamily-heading, "黑体", SimHei, sans-serif);
+    --ff-body: var(--typography-fontFamily-body, "宋体", SimSun, serif);
+    --lh-body: var(--typography-lineHeight-body, 1.6);
+    --fw-bold: var(--typography-fontWeight-heading, 700);
+    --color-border: var(--color-border, #cccccc);
+    --color-highlight: var(--color-highlight, #f5f7fa);
+    --color-muted: var(--color-textSecondary, #666666);
+    --spacing-paragraph: var(--spacing-paragraph, 0.8em);
+    --spacing-section: var(--spacing-sectionGap, 2em);
+    --spacing-block: 1em;
+  }
+
+  @page { @bottom-center { content: "第 " counter(page) " 页 / 共 " counter(pages) " 页"; } }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--ff-body); font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-text); background: var(--color-bg); max-width: 15.6cm; margin-left: auto; margin-right: auto; padding: 0.5cm 0; }
+
+  h1 { font-size: var(--fs-h1); font-family: var(--ff-heading); font-weight: var(--fw-bold); text-align: center; margin-bottom: var(--spacing-section); }
+  h2 { font-size: var(--fs-h2); font-family: var(--ff-heading); font-weight: var(--fw-bold); margin-top: var(--spacing-section); margin-bottom: var(--spacing-block); }
+  p { margin-bottom: var(--spacing-paragraph); }
+
+  .meeting-meta { border-collapse: collapse; width: 100%; margin-bottom: var(--spacing-section); }
+  .meeting-meta th, .meeting-meta td { border: 1px solid var(--color-border); padding: var(--spacing-tableCell); }
+  .meeting-meta th { background: var(--color-highlight); font-weight: 700; width: 20%; }
+
+  .attendee-table { border-collapse: collapse; width: 100%; margin-bottom: var(--spacing-block); }
+  .attendee-table th, .attendee-table td { border: 1px solid var(--color-border); padding: var(--spacing-attendeeCell); }
+  .attendee-table th { background: var(--color-highlight); font-weight: 700; }
+
+  .resolution-table, .action-table { border-collapse: collapse; width: 100%; margin-bottom: var(--spacing-block); }
+  .resolution-table th, .resolution-table td, .action-table th, .action-table td { border: 1px solid var(--color-border); padding: var(--spacing-actionCell); }
+  .resolution-table th, .action-table th { background: var(--color-highlight); font-weight: 700; }
+
+  .assumption-note { font-size: var(--fs-small); color: var(--color-muted); margin-bottom: var(--spacing-section); }
+
+  .sign-info { margin-top: var(--spacing-section); }
+  .sign-info p { margin: 0; margin-bottom: var(--spacing-signItem); }
+
+  .agenda-table { border-collapse: collapse; width: 100%; margin-bottom: var(--spacing-block); }
+  .agenda-table th, .agenda-table td { border: 1px solid var(--color-border); padding: var(--spacing-attendeeCell); }
+  .agenda-table th { background: var(--color-highlight); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Q4 产品规划例会<br>会议纪要</h1>
+
+  <p class="assumption-note">说明：本纪要中的日期、人名等未在原始任务中指定的信息，均为示例假设值，正式使用前请替换为真实信息。</p>
+
+  <section class="meeting-info">
+    <h2>会议基本信息</h2>
+    <table class="meeting-meta">
+      <thead>
+        <tr><th scope="col">项目</th><th scope="col">内容</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">会议名称</th><td>Q4 产品规划例会</td></tr>
+        <tr><th scope="row">会议时间</th><td>2026-10-09（示例日期） 14:00–15:30</td></tr>
+        <tr><th scope="row">会议地点</th><td>总部 3F 会议室 A（示例地点）</td></tr>
+        <tr><th scope="row">主持人</th><td>王明（示例）</td></tr>
+        <tr><th scope="row">记录人</th><td>陈立（示例）</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="attendees">
+    <h2>出席人员</h2>
+    <table class="attendee-table">
+      <thead>
+        <tr><th>姓名</th><th>部门</th><th>职务</th><th>参会方式</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>王明（示例）</td><td>产品部（示例）</td><td>产品总监（示例）</td><td>现场</td></tr>
+        <tr><td>李华（示例）</td><td>产品部（示例）</td><td>产品经理（示例）</td><td>现场</td></tr>
+        <tr><td>赵倩（示例）</td><td>研发部（示例）</td><td>研发组长（示例）</td><td>现场</td></tr>
+        <tr><td>陈立（示例）</td><td>项目办（示例）</td><td>项目助理（示例）</td><td>现场</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="agenda">
+    <h2>议题讨论</h2>
+    <ol class="agenda-list">
+      <li class="agenda-item">
+        <p class="agenda-title">议题 1：Q4 产品路线图评审</p>
+        <div class="agenda-content"><p>讨论 v2.3 草案的范围、里程碑与资源缺口，形成路线图定稿决议。</p></div>
+      </li>
+      <li class="agenda-item">
+        <p class="agenda-title">议题 2：移动端适配专项资源安排</p>
+        <div class="agenda-content"><p>评估移动端适配工作量，确定前端组支援方案与启动时间。</p></div>
+      </li>
+      <li class="agenda-item">
+        <p class="agenda-title">议题 3：新功能灰度发布机制</p>
+        <div class="agenda-content"><p>统一新功能发布流程，明确三阶段灰度策略与观察期要求。</p></div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="resolutions">
+    <h2>决议事项</h2>
+    <table class="resolution-table">
+      <thead>
+        <tr><th>编号</th><th>决议内容</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>决议 1</td><td>Q4 产品路线图定稿：以 v2.3 草案为基础，10 月 15 日前完成评审意见回收并冻结范围。</td></tr>
+        <tr><td>决议 2</td><td>资源调配：前端组抽调 1 人支援移动端适配专项，自 10 月 12 日起生效。</td></tr>
+        <tr><td>决议 3</td><td>灰度发布机制：新功能统一采用 5% → 30% → 100% 三阶段灰度策略，每阶段观察期不少于 48 小时。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="action-items">
+    <h2>待办事项</h2>
+    <table class="action-table">
+      <thead>
+        <tr><th>序号</th><th>事项</th><th>负责人</th><th>截止日期</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>输出 Q4 路线图评审版并组织评审会</td><td>李华（示例）</td><td>2026-10-15</td></tr>
+        <tr><td>2</td><td>制定移动端适配专项排期表</td><td>赵倩（示例）</td><td>2026-10-12</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="sign-info">
+    <p>记录人：陈立（示例）</p>
+    <p>落款日期：2026-10-02</p>
+  </footer>
+</body>
+</html>

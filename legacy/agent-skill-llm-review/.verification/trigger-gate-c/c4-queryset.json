@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "target_skill": "agent-skill-llm-review",
+    "built_at": "2026-10-02",
+    "purpose": "C4 泛化终测（规范条目总表 C4 / §6.5.6）：5-10 条新查询、正负混合、冷却期查询从未参与优化",
+    "cooldown_proof": "本技能 description 自 2026-10-01 v1.2 定稿后零改动（冻结集 20 条全程未触发任何修订），本集查询亦未参与任何优化迭代",
+    "anti_overlap_rule": "本集 8 条与冻结查询集（queryset.json，SHA256 752f7c38…）20 条零句子级重叠：场景、人物、路径、措辞结构全部换新；领域关键词（评审/技能/检查）级重叠不可避免且符合 near-miss 设计原理",
+    "counts": { "total": 8, "should_trigger": 4, "should_not_trigger": 4 },
+    "pass_rule": "沿用 §6.3：每条 ≥3 次；触发判定=子代理经 Skill 工具加载（工具调用历史为证）；应触发触发率 >0.5，不应触发 <0.5",
+    "run_protocol": "同 queryset-design.md §三：每条每次运行派发全新子代理（路径 B），诚实回报纪律，禁读技能目录找答案"
+  },
+  "queries": [
+    {
+      "id": "G-P01", "should_trigger": true, "category": "positive-boundary",
+      "context_features": "验收语境、组长、极简口语",
+      "query": "我攒了个自动整理周报的技能，组长明天要验收，你帮我把把脉，看能不能过。",
+      "rationale": "交付前把关（P06 同域不同措辞）：'把把脉'与原集'把把关'零重叠，考察能力域泛化。"
+    },
+    {
+      "id": "G-P02", "should_trigger": true, "category": "positive-multi-step",
+      "context_features": "公司（华信）、人名（王工）、合规交付、背靠背=双评的换说法",
+      "query": "华信 ERP 项目要上我们自研的工单技能，合规组的王工要求先做一轮独立的语义评审并留痕，结论要两个人背靠背各出一份。这事儿交给你组织。",
+      "rationale": "多步流程嵌入（§6.2.10 同款）：'背靠背'替代'双评'、'组织'替代'张罗'，考察能力词换说法后的触发。"
+    },
+    {
+      "id": "G-P03", "should_trigger": true, "category": "positive-boundary",
+      "context_features": "过触发痛点、极简口语、不点名",
+      "query": "我这个技能老是在不该出手的场合出手，帮我找找是哪个环节的毛病。",
+      "rationale": "过触发诊断（原集 P03 为欠触发，本条反向）：考察能力域另一侧的泛化。"
+    },
+    {
+      "id": "G-P04", "should_trigger": true, "category": "positive-multi-step",
+      "context_features": "公司（海川物流）、路径、审计底稿语境",
+      "query": "海川物流的运营技能（D:/skills/hc-ops）这个季度要过内审，审计底稿里需要每条语义检查的判定和证据。你把它安排跑全，输出能直接进底稿的明细。",
+      "rationale": "多步+留痕语境（P08 同域不同措辞）：'内审底稿'替代'交差对账清单'。"
+    },
+    {
+      "id": "G-N01", "should_trigger": false, "category": "negative-near-miss",
+      "context_features": "竞聘简历语境",
+      "query": "帮我评审一下我这份竞聘简历，重点看项目经历怎么写更有说服力。",
+      "rationale": "'评审'重叠、对象为简历文档（N01 合同的换域版）。"
+    },
+    {
+      "id": "G-N02", "should_trigger": false, "category": "negative-near-miss",
+      "context_features": "营销文案 A/B 语境、匿名对比（N09 概念相邻但措辞全新）",
+      "query": "这两版活动海报的文案你帮我匿名对比下哪个更好，先别说是谁写的。",
+      "rationale": "'匿名对比/别说是谁写的'与盲评概念相邻但零词面命中，专项检验 N09 暴露的泛词误触发是否复现。"
+    },
+    {
+      "id": "G-N03", "should_trigger": false, "category": "negative-near-miss",
+      "context_features": "开发任务语境",
+      "query": "帮我们的技能写个版本变更日志，把最近三次改动整理成 changelog。",
+      "rationale": "'技能'+写文档（N02 换域版）：诉求是写 changelog 非评审。"
+    },
+    {
+      "id": "G-N04", "should_trigger": false, "category": "negative-near-miss",
+      "context_features": "文档格式审查语境",
+      "query": "按公司模板规范检查一下这份投标文件的格式对不对，页眉页码有没有漏。",
+      "rationale": "'规范/检查'重叠、对象为文档格式（N03/N04 换域版）。"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+iteration: 1
+accepted_at: 2026-10-03T17:04:09+08:00
+version: v1.4
+note: V29 iteration 基线（eval_discipline.py record 生成）——验收通过时点快照，防历史结果覆盖

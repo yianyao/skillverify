@@ -1,0 +1,7 @@
+iteration: 1
+accepted_at: 2026-10-03T11:40:00
+version: v1.1
+acceptance_report: .verification/acceptance-report.md
+note: V29 iteration 基线（eval_discipline.py record 生成）——验收通过时点快照，防历史结果覆盖
+snapshot:
+  {"dirs": {"iteration-1": {"files": {"record-baseline.md": "f9c42d67d65b3dc39f7780d2cedd4f87ccce372fd6a901c51dad56ce53ee60ca"}, "root": "D:\\sData\\specSkill\\agent-skill-trigger-eval\\.verification\\iteration-1"}}}

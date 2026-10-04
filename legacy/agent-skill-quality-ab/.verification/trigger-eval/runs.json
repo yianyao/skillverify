@@ -1,0 +1,367 @@
+{
+  "runs": [
+    {
+      "query_id": "P01",
+      "run": 1,
+      "loaded": true,
+      "evidence": "Skill(skill=agent-skill-quality-ab) 调用记录；阻塞于 ledger-v2 不存在+无派发工具，拒绝伪造 delta"
+    },
+    {
+      "query_id": "P01",
+      "run": 2,
+      "loaded": true,
+      "evidence": "Skill 调用记录；两硬阻塞诚实回报"
+    },
+    {
+      "query_id": "P01",
+      "run": 3,
+      "loaded": true,
+      "evidence": "Skill 调用记录；结论标注'未执行'而非 PASS/FAIL"
+    },
+    {
+      "query_id": "P02",
+      "run": 1,
+      "loaded": true,
+      "evidence": "Skill 调用记录；输出完整五步实验设计"
+    },
+    {
+      "query_id": "P02",
+      "run": 2,
+      "loaded": true,
+      "evidence": "Skill 调用记录；'有它没它各干一遍'=with/without 对齐"
+    },
+    {
+      "query_id": "P02",
+      "run": 3,
+      "loaded": true,
+      "evidence": "Skill 调用记录；含清单外探测项设计"
+    },
+    {
+      "query_id": "P03",
+      "run": 1,
+      "loaded": true,
+      "evidence": "Skill 调用记录；阻塞于 parse-invoice 不存在，正确拒绝伪造过会结论"
+    },
+    {
+      "query_id": "P03",
+      "run": 2,
+      "loaded": true,
+      "evidence": "Skill 调用记录；给出解除阻塞两条路"
+    },
+    {
+      "query_id": "P03",
+      "run": 3,
+      "loaded": true,
+      "evidence": "Skill 调用记录；隔离口径差异如实声明"
+    },
+    {
+      "query_id": "P04",
+      "run": 1,
+      "loaded": true,
+      "evidence": "Skill 调用记录；'心理安慰'怀疑对齐裸 LLM 基线对照"
+    },
+    {
+      "query_id": "P04",
+      "run": 2,
+      "loaded": true,
+      "evidence": "Skill 调用记录；成本粗估+多重跑建议"
+    },
+    {
+      "query_id": "P04",
+      "run": 3,
+      "loaded": true,
+      "evidence": "Skill 调用记录；坦白'技能作用是固化流程纪律'"
+    },
+    {
+      "query_id": "P05",
+      "run": 1,
+      "loaded": true,
+      "evidence": "Skill 调用记录；'增益证据'对齐验收材料语境，拒绝虚构数字"
+    },
+    {
+      "query_id": "P05",
+      "run": 2,
+      "loaded": true,
+      "evidence": "Skill 调用记录；铁律 2 引用准确"
+    },
+    {
+      "query_id": "P05",
+      "run": 3,
+      "loaded": true,
+      "evidence": "Skill 调用记录；检查了 codebuddy CLI 替代通道后诚实阻塞"
+    },
+    {
+      "query_id": "P06",
+      "run": 1,
+      "loaded": true,
+      "evidence": "Skill 调用记录；副作用：单会话自扮两臂产出参考级 gate-d（违反铁律，产物已入 side-effects/gate-d-p06r1，delta 不采信）"
+    },
+    {
+      "query_id": "P06",
+      "run": 2,
+      "loaded": false,
+      "evidence": "未加载：空调用，先要求补任务与断言清单两输入；自述'工具调用历史为空'"
+    },
+    {
+      "query_id": "P06",
+      "run": 3,
+      "loaded": true,
+      "evidence": "Skill 调用记录；拒绝兼任两臂，'无可信实验就无可信结论'"
+    },
+    {
+      "query_id": "N01",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：判为真人盲选调研，明确'与双跑对照不是一回事'"
+    },
+    {
+      "query_id": "N01",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：'用这个场景加载它属于误触发，刻意不调用'"
+    },
+    {
+      "query_id": "N01",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：'人类偏好调研不匹配该技能用途'"
+    },
+    {
+      "query_id": "N02",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：仅 Write/Bash 写 compare_dirs.py（杂散产物已入 side-effects/）"
+    },
+    {
+      "query_id": "N02",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：仅 Write/Bash 写 diff_folders.py（同上）"
+    },
+    {
+      "query_id": "N02",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：仅 Write/Bash/present_files（同上）"
+    },
+    {
+      "query_id": "N03",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：'查数据算 delta 与 with/without 对照实测不匹配'，仅 ls/Grep"
+    },
+    {
+      "query_id": "N03",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：拒绝编造数据，检索了历史会话"
+    },
+    {
+      "query_id": "N03",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：'数据计算任务，没有加载理由'"
+    },
+    {
+      "query_id": "N04",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：写测试文件交付（杂散产物已入 side-effects/）"
+    },
+    {
+      "query_id": "N04",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：为遗留 diff 脚本补 20 个单测全过（级联副作用，含 pip 装 pytest，已记台账）"
+    },
+    {
+      "query_id": "N04",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：同上，Glob/Read/Write/Bash 全程零 Skill 调用"
+    },
+    {
+      "query_id": "N05",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：仅 Write 写 bluegreen.sh（杂散产物已入 side-effects/）"
+    },
+    {
+      "query_id": "N05",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：纯文本给出 nginx 蓝绿方案，零 Skill 调用"
+    },
+    {
+      "query_id": "N05",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：'部署任务与质量对照评测无关'"
+    },
+    {
+      "query_id": "N06",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：写报告模板含 DID 方法建议（杂散产物已入 side-effects/）"
+    },
+    {
+      "query_id": "N06",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：仅 Write/present_files 写报告（同上）"
+    },
+    {
+      "query_id": "N06",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：'不涉及技能验收场景，无触发必要'"
+    },
+    {
+      "query_id": "P07",
+      "run": 1,
+      "loaded": true,
+      "evidence": "加载：本会话首次工具调用即 Skill(skill=agent-skill-quality-ab)，返回 v1.2 全文；因缺冻结输入正确阻塞未开跑"
+    },
+    {
+      "query_id": "P07",
+      "run": 2,
+      "loaded": true,
+      "evidence": "加载：本会话首次工具调用即 Skill(skill=agent-skill-quality-ab)，返回 v1.2 全文；因缺冻结输入正确阻塞未开跑（r2 同质）"
+    },
+    {
+      "query_id": "P07",
+      "run": 3,
+      "loaded": true,
+      "evidence": "加载：本会话首次工具调用即 Skill(skill=agent-skill-quality-ab)，返回 v1.2 全文；因缺冻结输入正确阻塞未开跑（r3 同质）"
+    },
+    {
+      "query_id": "P08",
+      "run": 1,
+      "loaded": true,
+      "evidence": "加载：r1/r3 因无子代理派发通道按铁律1整轮作废、拒绝伪造 delta；r2 降级单上下文两臂产 gate-d（不采信，已入 side-effects/gate-d-p08r2）"
+    },
+    {
+      "query_id": "P08",
+      "run": 2,
+      "loaded": true,
+      "evidence": "加载：r1/r3 因无子代理派发通道按铁律1整轮作废、拒绝伪造 delta；r2 降级单上下文两臂产 gate-d（不采信，已入 side-effects/gate-d-p08r2）（r2 同质）"
+    },
+    {
+      "query_id": "P08",
+      "run": 3,
+      "loaded": true,
+      "evidence": "加载：r1/r3 因无子代理派发通道按铁律1整轮作废、拒绝伪造 delta；r2 降级单上下文两臂产 gate-d（不采信，已入 side-effects/gate-d-p08r2）（r3 同质）"
+    },
+    {
+      "query_id": "P09",
+      "run": 1,
+      "loaded": true,
+      "evidence": "加载：r2/r3 明确确认经 Skill 工具加载（调用历史为证）；r1 回复未见三问显式确认但按技能协议冻结实验包，判已加载（间接证据）；r3 产 gate-d-run 已入 side-effects"
+    },
+    {
+      "query_id": "P09",
+      "run": 2,
+      "loaded": true,
+      "evidence": "加载：r2/r3 明确确认经 Skill 工具加载（调用历史为证）；r1 回复未见三问显式确认但按技能协议冻结实验包，判已加载（间接证据）；r3 产 gate-d-run 已入 side-effects（r2 同质）"
+    },
+    {
+      "query_id": "P09",
+      "run": 3,
+      "loaded": true,
+      "evidence": "加载：r2/r3 明确确认经 Skill 工具加载（调用历史为证）；r1 回复未见三问显式确认但按技能协议冻结实验包，判已加载（间接证据）；r3 产 gate-d-run 已入 side-effects（r3 同质）"
+    },
+    {
+      "query_id": "P10",
+      "run": 1,
+      "loaded": true,
+      "evidence": "加载：r1/r2/r3 均明确确认经 Skill 工具加载；r1 写 llm-review 库 gate-d 新子目录、r3 写 V4 库 gate-d，均已入 side-effects；r2 降级两臂 delta +0.20 不采信"
+    },
+    {
+      "query_id": "P10",
+      "run": 2,
+      "loaded": true,
+      "evidence": "加载：r1/r2/r3 均明确确认经 Skill 工具加载；r1 写 llm-review 库 gate-d 新子目录、r3 写 V4 库 gate-d，均已入 side-effects；r2 降级两臂 delta +0.20 不采信（r2 同质）"
+    },
+    {
+      "query_id": "P10",
+      "run": 3,
+      "loaded": true,
+      "evidence": "加载：r1/r2/r3 均明确确认经 Skill 工具加载；r1 写 llm-review 库 gate-d 新子目录、r3 写 V4 库 gate-d，均已入 side-effects；r2 降级两臂 delta +0.20 不采信（r3 同质）"
+    },
+    {
+      "query_id": "N07",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未调用任何 Skill 工具'；r2 写考核表（杂散产物已入 side-effects）"
+    },
+    {
+      "query_id": "N07",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未调用任何 Skill 工具'；r2 写考核表（杂散产物已入 side-effects）（r2 同质）"
+    },
+    {
+      "query_id": "N07",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未调用任何 Skill 工具'；r2 写考核表（杂散产物已入 side-effects）（r3 同质）"
+    },
+    {
+      "query_id": "N08",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未加载'并指出灰度统计与本技能场景不匹配"
+    },
+    {
+      "query_id": "N08",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未加载'并指出灰度统计与本技能场景不匹配（r2 同质）"
+    },
+    {
+      "query_id": "N08",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未加载'并指出灰度统计与本技能场景不匹配（r3 同质）"
+    },
+    {
+      "query_id": "N09",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'没有发起任何 Skill 工具调用'，按钮改色 A/B 方案零触发"
+    },
+    {
+      "query_id": "N09",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'没有发起任何 Skill 工具调用'，按钮改色 A/B 方案零触发（r2 同质）"
+    },
+    {
+      "query_id": "N09",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'没有发起任何 Skill 工具调用'，按钮改色 A/B 方案零触发（r3 同质）"
+    },
+    {
+      "query_id": "N10",
+      "run": 1,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未加载'；r3 明确说'判官侧直评不构成 A/B 编排场景'，写质量报告（已入 side-effects）"
+    },
+    {
+      "query_id": "N10",
+      "run": 2,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未加载'；r3 明确说'判官侧直评不构成 A/B 编排场景'，写质量报告（已入 side-effects）（r2 同质）"
+    },
+    {
+      "query_id": "N10",
+      "run": 3,
+      "loaded": false,
+      "evidence": "无加载：三运行均明确'未加载'；r3 明确说'判官侧直评不构成 A/B 编排场景'，写质量报告（已入 side-effects）（r3 同质）"
+    }
+  ],
+  "meta": {
+    "batch3_recorded_at": "2026-10-02T18:40+08:00"
+  }
+}
