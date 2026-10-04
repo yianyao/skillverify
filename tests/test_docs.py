@@ -161,9 +161,9 @@ def run_consistency() -> None:
 
     # "走完全程"的每一步都要在文档里出现，否则删掉一步测试不会响
     required = ["skillverify spec", "skillverify lint", "skillverify evals",
-                "skillverify review pack", "review collect", "skillverify deliver",
-                "skillverify hook install", "skillverify check", "skillverify watch",
-                "skillverify discover", "review skill"]
+                "skillverify review pack", "review collect", "review material",
+                "skillverify deliver", "skillverify hook install", "skillverify check",
+                "skillverify watch", "skillverify discover", "review skill"]
     missing = [cmd for cmd in required if cmd not in texts["验证流程指南.md"]]
     check(not missing, f"流程指南覆盖全程所需命令（缺: {missing}）")
 
@@ -219,6 +219,7 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
         encoding="utf-8", newline="")
     (skill / "evals" / "files" / "input.csv").write_text(
         "month,revenue\n2025-01,100\n", encoding="utf-8", newline="")
+    assertions = ["输出列出了 3 个月份", "每个月后面跟着收入数值"]
     (skill / "evals" / "evals.json").write_text(json.dumps({
         "skill_name": "demo-skill",
         "evals": [{
@@ -226,9 +227,68 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
             "prompt": "我有一份月度销售 CSV 在 evals/files/input.csv，找出收入最高的 3 个月。",
             "expected_output": "一份列出前 3 个高收入月份的汇总。",
             "files": ["evals/files/input.csv"],
-            "assertions": ["输出列出了 3 个月份", "每个月后面跟着收入数值"],
+            "assertions": assertions,
         }],
     }, ensure_ascii=False, indent=2), encoding="utf-8", newline="")
+
+    # 触发评测资产（本项目约定；与官方 evals.json 分开）：8 正 + 8 负，train 62.5%，
+    # 每条 3 次运行，正例全触发、负例全不触发。
+    queries = []
+    for idx in range(16):
+        should = idx < 8
+        queries.append({
+            "id": f"{'P' if should else 'N'}{idx % 8 + 1:02d}",
+            "query": f"（示例查询 {idx + 1}）帮我处理一下这份销售数据",
+            "should_trigger": should,
+            "subset": "train" if idx < 10 else "validation",
+            "category": "positive-direct" if should else "negative-near-miss",
+            "rationale": "文档演练用的示例查询",
+        })
+    (skill / "evals" / "trigger-queryset.json").write_text(json.dumps(
+        {"skill_name": "demo-skill", "queries": queries}, ensure_ascii=False, indent=2),
+        encoding="utf-8", newline="")
+    runs = [{"query_id": q["id"], "run": i + 1, "loaded": bool(q["should_trigger"]),
+             "evidence": f"第 {i + 1} 次运行的观察"} for q in queries for i in range(3)]
+    (skill / "evals" / "trigger-runs.json").write_text(json.dumps(
+        {"runs": runs}, ensure_ascii=False, indent=2), encoding="utf-8", newline="")
+
+    # 评测工作区（官方结构）：一个 iteration、两侧 arm、可对账的 benchmark
+    ws = skill.parent / "demo-skill-workspace" / "iteration-1"
+    for arm, flags in (("with_skill", [True, True]), ("without_skill", [False, False])):
+        arm_dir = ws / "eval-top-months" / arm
+        (arm_dir / "outputs").mkdir(parents=True, exist_ok=True)
+        (arm_dir / "outputs" / "summary.md").write_text("结果\n", encoding="utf-8", newline="")
+        n_pass = sum(1 for f in flags if f)
+        (arm_dir / "grading.json").write_text(json.dumps({
+            "assertion_results": [
+                {"text": text, "passed": flag, "evidence": "见 outputs/summary.md"}
+                for text, flag in zip(assertions, flags)],
+            "summary": {"passed": n_pass, "failed": len(flags) - n_pass,
+                        "total": len(flags), "pass_rate": round(n_pass / len(flags), 3)},
+        }, ensure_ascii=False, indent=2), encoding="utf-8", newline="")
+        (arm_dir / "timing.json").write_text(json.dumps(
+            {"total_tokens": 900 if arm == "with_skill" else 400,
+             "duration_ms": 1800 if arm == "with_skill" else 900}),
+            encoding="utf-8", newline="")
+    (ws / "benchmark.json").write_text(json.dumps({
+        "run_summary": {
+            "with_skill": {"pass_rate": {"mean": 1.0, "stddev": 0.0},
+                           "time_seconds": {"mean": 1.8, "stddev": 0.0},
+                           "tokens": {"mean": 900, "stddev": 0.0}},
+            "without_skill": {"pass_rate": {"mean": 0.0, "stddev": 0.0},
+                              "time_seconds": {"mean": 0.9, "stddev": 0.0},
+                              "tokens": {"mean": 400, "stddev": 0.0}},
+            "delta": {"pass_rate": 1.0, "time_seconds": 0.9, "tokens": 500},
+        }}), encoding="utf-8", newline="")
+    (skill.parent / "demo-skill-workspace" / "feedback.json").write_text(json.dumps(
+        {"eval-top-months": ""}), encoding="utf-8", newline="")
+
+    # 盲评用的两版产物（review material --blind 的输入）
+    blind = tmp / "blind-src"
+    (blind / "old").mkdir(parents=True, exist_ok=True)
+    (blind / "new").mkdir(parents=True, exist_ok=True)
+    (blind / "old" / "summary.md").write_text("旧版输出\n", encoding="utf-8", newline="")
+    (blind / "new" / "summary.md").write_text("新版输出\n", encoding="utf-8", newline="")
 
     home = tmp / "demo-home"
     home.mkdir()
@@ -241,6 +301,12 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
         subprocess.run(["git", "-C", str(project), "-c", "user.email=t@t",
                         "-c", "user.name=t", "commit", "-q", "-m", "init"],
                        capture_output=True)
+        # 提交之后改一处：这样 E-02 的 description diff 才有内容可看
+        (skill / "SKILL.md").write_text(
+            (skill / "SKILL.md").read_text(encoding="utf-8").replace(
+                "当用户提到销售数据、CSV 统计或月度汇总时使用。",
+                "当用户提到销售数据、CSV 统计、月度汇总或季度对比时使用。"),
+            encoding="utf-8", newline="")
     return project, skills_root, skill, home, pack_dir
 
 
@@ -301,6 +367,10 @@ def run_walkthrough(tmp: Path) -> None:
         "<任务包目录>": str(pack_dir),
         "<技能名>": "demo-skill",
         "<回写文件>": str(filled),
+        "<材料目录>": str(tmp / "demo-material"),
+        "<独立技能目录>": str(tmp / "emitted"),
+        "<盲评旧版>": str(tmp / "blind-src" / "old"),
+        "<盲评新版>": str(tmp / "blind-src" / "new"),
     }
 
     executed = 0

@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
-from .encoding import write_text
+from .encoding import read_json, write_text
 from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
 
 #: 提示词目录（随包分发的数据文件；提示词是数据，不是代码）
@@ -184,6 +184,9 @@ class Prompt:
     legacy_id: str = ""
     legacy_source: str = ""
     official: str = ""
+    #: 与相邻提示词的分工（id -> 说明）。旧体系里有几对条目本就重叠，
+    #: 这里把"谁负责判什么"写进数据，而不是合并条目（29 条是既定约定）。
+    overlaps: dict[str, str] = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -231,6 +234,10 @@ def load_catalog(path: Path | None = None) -> list[Prompt]:
         family = str(item["family"])
         if family not in FAMILY_ORDER:
             raise CatalogError(f"{pid} 的 family 非法: {family!r}")
+        overlaps = item.get("overlaps") or {}
+        if not isinstance(overlaps, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in overlaps.items()):
+            raise CatalogError(f"{pid} 的 overlaps 必须是「id -> 分工说明」的字符串映射")
         prompts.append(Prompt(
             id=pid, family=family, title=str(item["title"]), stage=str(item["stage"]),
             when=str(item["when"]), inputs=[str(x) for x in item["inputs"]],
@@ -242,8 +249,14 @@ def load_catalog(path: Path | None = None) -> list[Prompt]:
             legacy_id=str(item.get("legacy_id", "")),
             legacy_source=str(item.get("legacy_source", "")),
             official=str(item.get("official", "")),
+            overlaps={str(k): str(v) for k, v in (item.get("overlaps") or {}).items()},
             raw=item,
         ))
+    known = {p.id for p in prompts}
+    for prompt in prompts:
+        unknown = sorted(k for k in prompt.overlaps if k not in known)
+        if unknown:
+            raise CatalogError(f"{prompt.id} 的 overlaps 指向不存在的 id: {unknown}")
     prompts.sort(key=lambda p: (FAMILY_ORDER.index(p.family), p.id))
     return prompts
 
@@ -296,7 +309,11 @@ def render_prompts_md(prompts: list[Prompt]) -> str:
         lines += [f"- {c}" for c in prompt.pass_criteria]
         lines += ["", "**FAIL 判据**", ""]
         lines += [f"- {c}" for c in prompt.fail_criteria]
-        lines += ["", f"**证据要求**：{prompt.evidence_required}", ""]
+        lines += ["", f"**证据要求**：{prompt.evidence_required}"]
+        if prompt.overlaps:
+            lines += ["", "**与相邻条目的分工**", ""]
+            lines += [f"- {pid}：{why}" for pid, why in sorted(prompt.overlaps.items())]
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -416,6 +433,10 @@ def _pack_header(name: str, prompts: list[Prompt]) -> str:
         "2. 按每条提示词的 PASS/FAIL 判据逐条判断，**每条都要给可定位的证据**；\n"
         "3. 把结论填进同目录的 `*-review-template.json`；\n"
         "4. 跑 `skillverify review collect <填好的文件>` 汇总进中央记录。\n\n"
+        "> 若本轮包含 **E-02 / E-03 / E-06 / E-07 / E-08**，先跑 "
+        "`skillverify review material <技能目录>` 生成它们所需的材料\n"
+        "> （description diff、修订信号、盲评 A/B、工作区数字）；"
+        "生成不了时它会逐条说明缺什么。\n\n"
         "---\n\n"
     )
 
@@ -447,19 +468,6 @@ def _is_restatement(evidence: str, prompt: Prompt) -> bool:
         if ev == src or (len(ev) >= 8 and (ev in src or src in ev)):
             return True
     return False
-
-
-def _load_json(path: Path) -> tuple[object | None, str | None]:
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        return None, f"读取失败（{exc.strerror or exc}）"
-    try:
-        return json.loads(raw.decode("utf-8-sig")), None
-    except UnicodeDecodeError as exc:
-        return None, f"不是 UTF-8（{exc}）"
-    except json.JSONDecodeError as exc:
-        return None, f"JSON 语法错误（第 {exc.lineno} 行第 {exc.colno} 列：{exc.msg}）"
 
 
 def validate_writeback(data: object, catalog: list[Prompt], *,
@@ -612,7 +620,7 @@ def collect(
     reviewers: set[str] = set()
 
     for path in paths:
-        data, error = _load_json(path)
+        data, error = read_json(path)
         if error:
             report.add(_res(RULES["REV-001"], FAIL, f"{path.name}: {error}"))
             continue
@@ -721,7 +729,7 @@ def load_record(trace_dir: Path, skill_name: str) -> dict | None:
     path = Path(trace_dir) / "review" / f"{_record_name(skill_name)}.json"
     if not path.is_file():
         return None
-    data, error = _load_json(path)
+    data, error = read_json(path)
     return data if isinstance(data, dict) and not error else None
 
 

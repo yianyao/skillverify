@@ -34,12 +34,11 @@ https://agentskills.io/skill-creation/evaluating-skills
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .encoding import read_text
+from .encoding import read_json, read_text
 from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
 from .spec import find_skill_md
 
@@ -299,22 +298,6 @@ def _is_num(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _load_json(path: Path) -> tuple[object | None, str | None]:
-    """读 JSON，返回 (数据, 错误说明)。宽容 UTF-8 BOM。"""
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        return None, f"读取失败（{exc.strerror or exc}）"
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        return None, f"不是 UTF-8（{exc}）"
-    try:
-        return json.loads(text), None
-    except json.JSONDecodeError as exc:
-        return None, f"JSON 语法错误（第 {exc.lineno} 行第 {exc.colno} 列：{exc.msg}）"
-
-
 def _summarize(items: list[str], limit: int = 5) -> str:
     if not items:
         return ""
@@ -357,7 +340,7 @@ def _read_evals(skill_dir: Path) -> EvalsDoc:
     if not path.is_file():
         return EvalsDoc()
     doc = EvalsDoc(path=path)
-    data, error = _load_json(path)
+    data, error = read_json(path)
     if error:
         doc.error = error
         return doc
@@ -585,7 +568,7 @@ def _grading_of(arm: Path) -> tuple[dict | None, str | None]:
     path = arm / "grading.json"
     if not path.is_file():
         return None, None
-    data, error = _load_json(path)
+    data, error = read_json(path)
     if error:
         return None, f"{path.name}: {error}"
     if not isinstance(data, dict):
@@ -702,7 +685,7 @@ def _check_timing(where: str, arm: Path, sink: dict) -> Result:
     path = arm / "timing.json"
     if not path.is_file():
         return _res(RULES["TIME-001"], SKIP, f"未执行：{where} 缺 timing.json（见 WS-003）")
-    data, error = _load_json(path)
+    data, error = read_json(path)
     if error:
         return _res(RULES["TIME-001"], FAIL, f"{where}: {error}")
     if not isinstance(data, dict):
@@ -763,7 +746,7 @@ def _check_benchmark(
         ]
         return bench_skip, _res(RULES["WS-006"], WARN, f"{where}: 缺 benchmark.json")
 
-    data, error = _load_json(path)
+    data, error = read_json(path)
     if error or not isinstance(data, dict):
         reason = error or "顶层必须是对象"
         bench_fail = [
@@ -900,7 +883,7 @@ def _arm_stats(arm: Path) -> dict:
             )
     timing = arm / "timing.json"
     if timing.is_file():
-        tdata, _terr = _load_json(timing)
+        tdata, _terr = read_json(timing)
         if isinstance(tdata, dict):
             if _is_int(tdata.get("total_tokens")):
                 stats.setdefault("tokens", []).append(tdata["total_tokens"])
@@ -913,7 +896,7 @@ def _check_feedback(path: Path) -> Result:
     if not path.is_file():
         return _res(RULES["WS-007"], INFO,
                     "不适用：没有 feedback.json（官方说“例如”存这里，属可选）")
-    data, error = _load_json(path)
+    data, error = read_json(path)
     if error:
         return _res(RULES["WS-007"], WARN, f"{path.name}: {error}")
     if isinstance(data, dict):

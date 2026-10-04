@@ -7,13 +7,15 @@
   spec      官方规范校验（对齐 skills-ref 0.1.1 行为）
   lint      官方留白的补检（引用/预算/卫生/脚本契约/安全/依赖）
   evalx     评测资产校验（官方 evals.json schema + 评测工作区产物）
+  trigger   触发评测资产校验（查询集与运行记录；官方不覆盖这一层）
   review    语义评审：提示词目录、任务包、回写校验与汇总（三档执行器同一 schema）
+  material  为"评的不是技能文件本身"的提示词产出材料（描述 diff/修订信号/盲评/工作区数字）
   discover  技能发现 + 声明式宿主适配（读 data/hosts.toml，代码内无宿主名）
   watch     文件监听与增量复跑（纯标准库轮询）
   deliver   交付门禁、交付记录与 git hook（`check` 只管日常，`deliver` 才管交付）
   report    统一结果模型与人读/机读输出（含整库汇总）
-  cli       命令行入口（spec / lint / evals / review / discover / check / watch /
-            deliver / hook）
+  cli/      命令行入口（装配层；共用工具在 common.py，各命令在 commands.py）
+            子命令：spec / lint / evals / review / discover / check / watch / deliver / hook
 
 数据文件（`data/`，宿主名与提示词都是数据，不是代码）：
   hosts.toml            宿主布局声明

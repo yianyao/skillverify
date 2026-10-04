@@ -643,7 +643,12 @@ def run_no_evals_and_stages(tmp: Path) -> None:
         (ref / name).write_text("x")
     code, out, _err = run_cli(["evals", str(skill), "--json"])
     payload = json.loads(out)
-    check(code == 0 and payload["stage"] == "evals", f"`evals` 命令可用（exit={code}）")
+    rids = {r["rid"] for r in payload["results"]}
+    check(code == 2 and payload["stage"] == "evals"
+          and any(r.startswith("EVAL-") for r in rids)
+          and any(r.startswith("TRIG-") for r in rids),
+          f"`evals` 命令同时跑官方资产与触发资产（官方绿、无触发资产 → TRIG-000 WARN → "
+          f"exit=2，实得 {code}）")
 
     code, out, _err = run_cli(["evals", str(bare), "--json"])
     check(code == 2, "`evals` 对无评测资产的技能返回 2（提示而非静默通过）")

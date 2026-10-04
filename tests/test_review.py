@@ -18,6 +18,7 @@ import contextlib
 import io
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -79,6 +80,10 @@ def run_cli(argv: list[str]) -> tuple[int, str, str]:
 
 def statuses(report) -> dict[str, str]:
     return {r.rid: r.status for r in report.results}
+
+
+def evidence_of(report, rid: str) -> str:
+    return next((r.evidence for r in report.results if r.rid == rid), "")
 
 
 def writeback(catalog: list[review.Prompt], ids: list[str], *, verdict: str = "PASS",
@@ -569,6 +574,142 @@ def run_cli_chain(tmp: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 材料产出（E-02 / E-03 / E-06 / E-07 / E-08）
+# --------------------------------------------------------------------------- #
+
+
+def _mini_workspace(skill: Path) -> Path:
+    """造一份最小可用工作区（一个 iteration、两个 arm、一份 benchmark）。"""
+    ws = skill.parent / f"{skill.name}-workspace"
+    it = ws / "iteration-1"
+    for eval_name, arms in (("eval-one", {"with_skill": [True, False],
+                                          "without_skill": [False, False]}),):
+        for arm, flags in arms.items():
+            d = it / eval_name / arm
+            (d / "outputs").mkdir(parents=True, exist_ok=True)
+            (d / "outputs" / "out.txt").write_text("x\n", encoding="utf-8", newline="")
+            results = [{"text": f"断言 {i + 1}", "passed": f,
+                        "evidence": "见 outputs/out.txt"} for i, f in enumerate(flags)]
+            n_pass = sum(1 for f in flags if f)
+            write_json(d / "grading.json", {
+                "assertion_results": results,
+                "summary": {"passed": n_pass, "failed": len(flags) - n_pass,
+                            "total": len(flags), "pass_rate": round(n_pass / len(flags), 3)},
+            })
+            write_json(d / "timing.json", {"total_tokens": 100, "duration_ms": 2000})
+    write_json(it / "benchmark.json", {
+        "run_summary": {
+            "with_skill": {"pass_rate": {"mean": 0.5, "stddev": 0.5},
+                           "time_seconds": {"mean": 2.0, "stddev": 0.0},
+                           "tokens": {"mean": 100, "stddev": 0.0}},
+            "without_skill": {"pass_rate": {"mean": 0.0, "stddev": 0.0},
+                              "time_seconds": {"mean": 2.0, "stddev": 0.0},
+                              "tokens": {"mean": 100, "stddev": 0.0}},
+            "delta": {"pass_rate": 0.5, "time_seconds": 0.0, "tokens": 0},
+        }})
+    write_json(ws / "feedback.json", {"eval-one": "图表缺少坐标轴标签"})
+    return ws
+
+
+def run_material(tmp: Path) -> None:
+    print("[test_material]")
+    from skillverify import material
+
+    root = tmp / "mt"
+    skill = write_skill(root, "mat-skill")
+
+    # 什么都没有：四项都记 SKIP 并说明缺什么（而不是静默不产出）
+    report, written = material.build_materials(skill, out_dir=root / "empty")
+    st = statuses(report)
+    check(st["MAT-001"] == SKIP and "git" in evidence_of(report, "MAT-001"),
+          "非 git 仓库 → MAT-001 SKIP 并说明原因")
+    check(st["MAT-004"] == SKIP and "工作区" in evidence_of(report, "MAT-004"),
+          "没有工作区 → MAT-004 SKIP 并说明原因")
+    check(st["MAT-003"] == SKIP and "--blind" in evidence_of(report, "MAT-003"),
+          "没给两版产物 → MAT-003 SKIP 并说明怎么给")
+    check(report.exit_code() == 2, f"材料都没产出 → exit=2（SKIP 计入，实得 {report.exit_code()}）")
+
+    # 有工作区 → MAT-002/MAT-004 产出
+    ws = _mini_workspace(skill)
+    report, written = material.build_materials(skill, out_dir=root / "ws", workspace=ws)
+    st = statuses(report)
+    names = sorted(p.name for p in written)
+    check(st["MAT-004"] == PASS and "workspace-digest.md" in names,
+          f"有工作区 → 产出 workspace-digest.md（{names}）")
+    check(st["MAT-002"] == PASS and "revision-signals.md" in names,
+          "有工作区 → 产出 revision-signals.md")
+    digest = (root / "ws" / "workspace-digest.md").read_text(encoding="utf-8")
+    check("E-07、E-08" in digest and "0.5" in digest and "with_skill" in digest,
+          "数字汇总写明了服务的提示词与实际数值")
+    signals = (root / "ws" / "revision-signals.md").read_text(encoding="utf-8")
+    check("E-03" in signals and "断言 2" in signals and "图表缺少坐标轴标签" in signals,
+          "修订信号含失败断言与人工反馈")
+
+    # 盲评：随机落到 A/B，映射封存
+    left = root / "blind-src" / "old"
+    right = root / "blind-src" / "new"
+    for path, text in ((left, "旧版产物"), (right, "新版产物")):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "out.txt").write_text(text, encoding="utf-8", newline="")
+    report, written = material.build_materials(
+        skill, out_dir=root / "blind", blind=(left, right), blind_seed=7)
+    st = statuses(report)
+    blind_dir = root / "blind" / "blind"
+    mapping = json.loads((blind_dir / "mapping.json").read_text(encoding="utf-8"))
+    check(st["MAT-003"] == PASS and (blind_dir / "blind-A").is_dir()
+          and (blind_dir / "blind-B").is_dir(),
+          "给出两版产物 → 产出 blind-A/blind-B")
+    check(sorted(mapping["mapping"]) == ["blind-A", "blind-B"]
+          and set(mapping["mapping"].values()) == {str(left), str(right)},
+          "映射封存在 mapping.json 且指向真实来源")
+    check("不要打开" in (blind_dir / "README.md").read_text(encoding="utf-8"),
+          "盲评说明里写明评审结束前不要看映射")
+
+    # 同一种子可复现；不同种子允许不同（默认随机）
+    report2, _w = material.build_materials(
+        skill, out_dir=root / "blind2", blind=(left, right), blind_seed=7)
+    mapping2 = json.loads((root / "blind2" / "blind" / "mapping.json").read_text(encoding="utf-8"))
+    check(mapping2["mapping"] == mapping["mapping"], "--blind-seed 使 A/B 分配可复现")
+
+    # git diff（E-02）：仓库里改了 SKILL.md 才有内容
+    if shutil.which("git"):
+        repo = root / "gitrepo"
+        repo.mkdir(parents=True, exist_ok=True)
+        gskill = write_skill(repo, "git-skill")
+        subprocess.run(["git", "init", "-q"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-q", "-m", "init"], capture_output=True)
+        (gskill / "SKILL.md").write_text(
+            f"---\nname: git-skill\ndescription: {DESC}（改过）\n---\n\n# D\n",
+            encoding="utf-8", newline="")
+        report, written = material.build_materials(gskill, out_dir=root / "diff")
+        st = statuses(report)
+        diff_file = root / "diff" / "description-diff.md"
+        check(st["MAT-001"] == PASS and diff_file.is_file()
+              and "改过" in diff_file.read_text(encoding="utf-8"),
+              "git 仓库里有改动 → 产出 description-diff.md")
+        # 没改动时明确说"没有改动"，而不是给个空文件
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-q", "-m", "change"], capture_output=True)
+        report, _w = material.build_materials(gskill, out_dir=root / "diff2")
+        check(statuses(report)["MAT-001"] == SKIP
+              and "没有改动" in evidence_of(report, "MAT-001"),
+              "与基线无差异 → SKIP 并说明「没有改动」")
+    else:
+        ok("git 不可用：E-02 相关用例跳过")
+
+    # CLI
+    code, out, err = run_cli(["review", "material", str(skill), "--out", str(root / "cli"),
+                              "--workspace", str(ws), "--json"])
+    payload = json.loads(out)
+    check(code == 2 and payload["stage"] == "material",
+          f"`review material` 可用（有工作区但缺 diff/盲评 → exit=2，实得 {code}）")
+    check("未能生成" in err, "未生成的材料在 stderr 有提示")
+
+
+# --------------------------------------------------------------------------- #
 # dogfood
 # --------------------------------------------------------------------------- #
 
@@ -609,6 +750,7 @@ def main() -> int:
         run_check_review(tmp)
         run_emit_skill(tmp)
         run_cli_chain(tmp)
+        run_material(tmp)
         if args.dogfood:
             run_dogfood(Path(__file__).resolve().parent.parent)
     finally:

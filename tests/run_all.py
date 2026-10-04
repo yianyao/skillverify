@@ -29,13 +29,15 @@ SUITES: list[tuple[str, str]] = [
     ("test_discover", "技能发现 + 声明式宿主适配 + check"),
     ("test_automation", "watch / deliver / git hook"),
     ("test_evalx", "评测资产（官方 evals 形状与工作区产物）"),
+    ("test_trigger", "触发评测资产（查询集 / 运行记录 / 阈值）"),
     ("test_review", "语义评审（提示词目录 / 任务包 / 回写 / 汇总）"),
     ("test_docs", "两份交付文档（含演练块真跑）"),
     ("test_packaging", "打包（pyproject 静态检查；--install 时真装一遍）"),
 ]
 
 #: 支持 --dogfood 的套件
-DOGFOOD_SUITES = {"test_lint", "test_discover", "test_automation", "test_evalx", "test_review"}
+DOGFOOD_SUITES = {"test_lint", "test_discover", "test_automation", "test_evalx",
+                 "test_trigger", "test_review"}
 
 #: 默认不跑的套件（需要网络/时长较长）；加了 --install 才跑
 SLOW_SUITES = {"test_packaging"}

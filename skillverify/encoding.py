@@ -44,6 +44,29 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding=ENCODING, newline="")
 
 
+def read_json(path: Path) -> tuple[object | None, str | None]:
+    """读取 JSON，返回 (数据, 错误说明)。失败时数据为 None。
+
+    全项目只此一份实现：错误措辞统一（行号列号 + 原因），且**宽容 UTF-8 BOM**——
+    资产文件多在技能目录之外（工作区、留痕目录），lint 的 ENC 族扫不到它们，
+    若因 BOM 报"JSON 语法错误"，那是误导性报错。
+    """
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        return None, f"读取失败（{exc.strerror or exc}）"
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        return None, f"不是 UTF-8（{exc}）"
+    import json
+
+    try:
+        return json.loads(text), None
+    except json.JSONDecodeError as exc:
+        return None, f"JSON 语法错误（第 {exc.lineno} 行第 {exc.colno} 列：{exc.msg}）"
+
+
 def write_text(path: Path, text: str) -> None:
     """以 UTF-8 + LF 写入文本，必要时创建父目录。"""
     path.parent.mkdir(parents=True, exist_ok=True)

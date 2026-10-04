@@ -25,7 +25,7 @@ Documentation = "https://agentskills.io/specification"
 
 [tool.setuptools]
 # 显式列出包：避免把 legacy/（归档的旧体系）与 tests/ 打进发布物
-packages = ["skillverify", "skillverify.lint"]
+packages = ["skillverify", "skillverify.cli", "skillverify.lint"]
 
 [tool.setuptools.dynamic]
 # 版本号的唯一真源是 skillverify/__init__.py 的 __version__
