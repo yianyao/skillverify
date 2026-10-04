@@ -56,6 +56,10 @@ class Result:
     level: str
     evidence: str = ""
     remediation: str = ""
+    #: 本项属"显式未开启的可选批次"或环境能力不足导致的 SKIP（不阻断交付门禁，
+    #: 但必须在交付记录里显式列出）。判定**不看证据文本**，避免旧体系
+    #: "用消息里有没有 --confirm 来决定判定"那类脆弱耦合。
+    optional: bool = False
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -73,7 +77,8 @@ class Report:
     def add(self, result: Result) -> None:
         self.results.append(result)
 
-    def add_rule(self, rule: Rule, status: str, evidence: str = "") -> None:
+    def add_rule(self, rule: Rule, status: str, evidence: str = "",
+                 optional: bool = False) -> None:
         self.results.append(
             Result(
                 rid=rule.rid,
@@ -82,6 +87,7 @@ class Report:
                 level=rule.level,
                 evidence=evidence,
                 remediation=rule.remediation if status in (FAIL, WARN) else "",
+                optional=optional,
             )
         )
 
@@ -148,6 +154,8 @@ class Report:
             detail = res.evidence or ""
             if res.remediation:
                 detail = f"{detail} → 修复: {res.remediation}" if detail else f"修复: {res.remediation}"
+            if res.optional:
+                detail = f"[可选批次·未覆盖] {detail}" if detail else "[可选批次·未覆盖]"
             detail = detail.replace("|", "\\|").replace("\n", " ")
             lines.append(
                 f"| {res.rid} | {res.level} | {res.status} | {res.title} | {detail} |"
@@ -158,6 +166,8 @@ class Report:
             "SHOULD=官方建议（官方工具不执法）；HOUSE=本项目额外收紧。",
             "> 判定含义：SKIP=本项**未执行**（覆盖有洞）；INFO=**不适用**或纯记录。"
             "两者都不代表已通过。",
+            "> `[可选批次·未覆盖]` = 依赖显式开启的批次或环境能力（如 `--scripts`、解释器），"
+            "交付门禁可区分处理。",
             "> 退出码：0=全 PASS（含 INFO），1=有 FAIL，2=无 FAIL 但有 WARN/SKIP。",
             "",
         ]
@@ -327,6 +337,8 @@ class LibraryReport:
                 detail = res.evidence or ""
                 if res.remediation:
                     detail = f"{detail} → 修复: {res.remediation}" if detail else f"修复: {res.remediation}"
+                if res.optional:
+                    detail = f"[可选批次·未覆盖] {detail}" if detail else "[可选批次·未覆盖]"
                 detail = detail.replace("|", chr(92) + "|").replace("\n", " ")
                 lines.append(
                     f"| {entry.skill} | {res.rid} | {res.level} | {res.status} "

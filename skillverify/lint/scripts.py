@@ -457,14 +457,19 @@ def _dynamic(
       因为"没检查"绝不能看起来像"通过"）。
     """
     rids = ("SCRIPT-004", "SCRIPT-006", "SCRIPT-007", "SCRIPT-008")
+    # 本族全部依赖"外部执行能力"（是否开启 --scripts、解释器是否可用、时间预算是否够）。
+    # 这些 SKIP 一律 optional=True：它们不是技能自身的缺陷，交付门禁默认不因此阻断，
+    # 但会在交付记录里被逐条列为"未覆盖项"；`deliver --strict` 可要求全项覆盖。
     if not has_scripts:
         return [res(RULES[rid], INFO, "不适用：包内无 scripts/ 目录") for rid in rids]
     if not analyzable:
         return [res(RULES[rid], SKIP,
-                    "未执行：包内脚本均无法判定语言，或所需解释器不可用") for rid in rids]
+                    "未执行：包内脚本均无法判定语言，或所需解释器不可用",
+                    optional=True) for rid in rids]
     if not ctx.run_scripts:
         return [res(RULES[rid], SKIP,
-                    f"未执行：需 --scripts 显式开启（将执行 {len(analyzable)} 个脚本的 --help）")
+                    f"未执行：需 --scripts 显式开启（将执行 {len(analyzable)} 个脚本的 --help）",
+                    optional=True)
                 for rid in rids]
 
     help_ok: list[str] = []
@@ -558,6 +563,7 @@ def _dynamic(
             note.append(f"全局时间预算 {ctx.script_budget_s:.0f}s 用尽，未探测: {summarize(skipped)}")
         if unavailable:
             note.append(f"解释器不可用，未探测: {summarize(unavailable)}")
-        results.append(res(RULES["SCRIPT-004"], SKIP, "未执行：" + "；".join(note)))
+        results.append(res(RULES["SCRIPT-004"], SKIP, "未执行：" + "；".join(note),
+                           optional=True))
     return results
 

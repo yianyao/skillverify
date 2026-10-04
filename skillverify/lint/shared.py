@@ -67,8 +67,12 @@ class LintContext:
 # --------------------------------------------------------------------------- #
 
 
-def res(rule: Rule, status: str, evidence: str = "") -> Result:
-    """按规则元数据构造一条结果（FAIL/WARN 自动带修复指引）。"""
+def res(rule: Rule, status: str, evidence: str = "", optional: bool = False) -> Result:
+    """按规则元数据构造一条结果（FAIL/WARN 自动带修复指引）。
+
+    `optional=True` 用于"本项属显式未开启的可选批次或环境能力不足"：
+    交付门禁据此区分"未覆盖"与"违规"（详见 report.Result.optional）。
+    """
     from ..report import FAIL, WARN
 
     text = clip(evidence)
@@ -79,6 +83,7 @@ def res(rule: Rule, status: str, evidence: str = "") -> Result:
         level=rule.level,
         evidence=text,
         remediation=rule.remediation if status in (FAIL, WARN) else "",
+        optional=optional,
     )
 
 

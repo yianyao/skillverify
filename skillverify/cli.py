@@ -9,15 +9,26 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from . import __version__
+from .deliver import (
+    build_record,
+    evaluate,
+    filter_staged_skills,
+    hook_status,
+    install_hook,
+    is_git_repo,
+    write_record,
+)
 from .discover import Config, ConfigError, Discovery, load_config, discover_skills, render_config
 from .encoding import force_utf8_stdio, write_text
 from .lint import lint_skill
 from .report import FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report, Result
 from .spec import check_spec, find_official_cli, run_official
+from .watch import run_watch
 
 PROG = "skillverify"
 
@@ -310,6 +321,136 @@ def cmd_check(args: argparse.Namespace) -> int:
     return library.exit_code()
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    """轮询技能库，变化即复跑并打印增量报告。"""
+    try:
+        discovery, _config = _load_discovery(args)
+    except ConfigError as exc:
+        print(f"配置错误: {exc}", file=sys.stderr)
+        return 1
+    assert discovery.profile is not None
+    try:
+        return run_watch(
+            Path(args.project).expanduser(),
+            Path(args.user_home).expanduser() if args.user_home else Path.home(),
+            discovery.profile,
+            roots=args.root or None,
+            stages=args.stages,
+            interval=max(0.01, args.interval),
+            cycles=1 if args.once else args.cycles,
+            script_timeout_s=args.script_timeout,
+            as_json=args.json,
+        )
+    except KeyboardInterrupt:
+        print("\n[watch] 已停止。", file=sys.stderr)
+        return 0
+
+
+def cmd_deliver(args: argparse.Namespace) -> int:
+    """交付门禁：0 FAIL 且 0 未覆盖项才算通过，并写交付记录。"""
+    try:
+        discovery, config = _load_discovery(args)
+    except ConfigError as exc:
+        print(f"配置错误: {exc}", file=sys.stderr)
+        return 1
+
+    project = Path(args.project).expanduser().resolve()
+    unrelated: list[str] = []
+    scope = "all"
+    note = None
+    if args.staged:
+        affected, unrelated, note = filter_staged_skills(project, discovery)
+        discovery.skills = affected
+        scope = "staged"
+
+    library = LibraryReport(stage="deliver", target=str(project))
+    library.meta["工具版本"] = f"{PROG} {__version__}"
+    library.meta["宿主档"] = discovery.profile.name if discovery.profile else "?"
+    library.meta["配置来源"] = " < ".join(config.sources)
+    library.meta["范围"] = scope + (f"（{note}）" if note else "")
+    for res in discovery.results:
+        library.add(res)
+
+    for ref in discovery.skills:
+        results: list[Result] = []
+        if args.stages in ("both", "spec"):
+            _doc, rep = check_spec(ref.path)
+            results.extend(rep.results)
+        if args.stages in ("both", "lint"):
+            rep = lint_skill(ref.path, run_scripts=False, script_timeout_s=args.script_timeout)
+            results.extend(rep.results)
+        merged = Report(target=str(ref.path), stage="deliver")
+        merged.results = results
+        library.add_entry(
+            LibraryEntry(skill=ref.name, scope=ref.scope, path=str(ref.path), report=merged)
+        )
+
+    gate = evaluate(library, strict=args.strict)
+    markdown = library.to_markdown()
+    command = f"{PROG} deliver {'--staged ' if args.staged else ''}" \
+              f"--project {args.project}" + (" --strict" if args.strict else "")
+    record = build_record(
+        library, gate, project=project, scope=scope, command=command.strip(),
+        discovery=discovery, unrelated=unrelated,
+    )
+    # `--json` 输出的是**交付记录本身**（含门禁结论）：门禁命令的机读输出必须带结论，
+    # 否则 CI 只能靠退出码猜。markdown 与人读报告仍是分开的两种渲染。
+    text = json.dumps(record, ensure_ascii=False, indent=2) if args.json else markdown
+
+    print(f"{'PASS' if gate.passed else 'FAIL'}: {gate.summary()}", file=sys.stderr)
+    for item in gate.blockers:
+        print(f"  阻断 {item}", file=sys.stderr)
+    if args.verbose:
+        for item in gate.uncovered:
+            print(f"  未覆盖 {item}", file=sys.stderr)
+        for item in gate.warnings:
+            print(f"  待甄别 {item}", file=sys.stderr)
+
+    if not args.quiet:
+        print(text if text.endswith("\n") else text + "\n")
+
+    if not discovery.skills:
+        # 本次提交没有触及任何技能（hook 场景常见）：无事可查，不阻断、不记账。
+        print("提示：本次没有需要检查的技能，未生成交付记录。", file=sys.stderr)
+        return 0
+    if args.no_record:
+        return 0 if gate.passed else 1
+
+    assert discovery.trace_dir is not None
+    if args.out:
+        write_text(Path(args.out), text if text.endswith("\n") else text + "\n")
+        print(f"报告已落盘: {args.out}")
+    written = write_record(discovery.trace_dir, record, markdown)
+    print("交付记录: " + "；".join(str(p) for p in written), file=sys.stderr)
+    return 0 if gate.passed else 1
+
+
+def cmd_hook(args: argparse.Namespace) -> int:
+    """安装/查看 pre-commit 交付门禁。"""
+    if not getattr(args, "hook_action", None):
+        print("用法: skillverify hook <install|status> [--project 目录]", file=sys.stderr)
+        return 1
+    project = Path(args.project).expanduser().resolve()
+    if args.hook_action == "status":
+        state, path = hook_status(project)
+        print(f"hook 状态: {state}")
+        print(f"路径: {path}")
+        return 0
+    if not is_git_repo(project):
+        print(f"FAIL: 不是 git 仓库: {project}", file=sys.stderr)
+        return 1
+    try:
+        path, action = install_hook(project, force=args.force,
+                                    fail_closed=args.fail_closed)
+    except RuntimeError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    print(f"pre-commit {action}: {path}")
+    print("提交时自动执行 `skillverify deliver --staged`；"
+          "临时跳过用 `git commit --no-verify`。")
+    return 0
+
+
 def _emit(report: Report, args: argparse.Namespace) -> None:
     """按参数输出报告，并把 FAIL 明细同步到 stderr（便于管道消费）。"""
     if args.json:
@@ -411,6 +552,80 @@ def build_parser() -> _ArgParser:
                          help="把报告写入配置里的中央留痕目录（trace_dir）")
     _add_common(p_check)
     p_check.set_defaults(func=cmd_check)
+
+    p_watch = sub.add_parser(
+        "watch",
+        help="监听技能库变化并即时复跑（开发期即时反馈）",
+        description=(
+            "轮询技能库（默认 1 秒一次，纯标准库，不依赖平台专属事件 API），"
+            "只复跑指纹变化的技能。默认不执行技能自带脚本——高频复跑下反复执行脚本"
+            "既慢又有副作用；要实测脚本契约请手动跑 `lint --scripts`。"
+        ),
+    )
+    _add_discovery_options(p_watch)
+    p_watch.add_argument("--stages", choices=("both", "spec", "lint"), default="both",
+                         help="只跑某一阶段（默认两者都跑）")
+    p_watch.add_argument("--interval", type=float, default=1.0, metavar="秒",
+                         help="轮询间隔（默认 1 秒，最小 0.01）")
+    p_watch.add_argument("--cycles", type=int, metavar="N",
+                         help="跑 N 轮后退出（默认不限轮数）")
+    p_watch.add_argument("--once", action="store_true", help="等价于 --cycles 1")
+    p_watch.add_argument("--script-timeout", type=float, default=10.0, metavar="秒",
+                         help="单个脚本的超时上限（默认 10 秒）")
+    p_watch.add_argument("--json", action="store_true",
+                         help="每轮输出一行 JSON（便于管道消费）")
+    p_watch.set_defaults(func=cmd_watch)
+
+    p_deliver = sub.add_parser(
+        "deliver",
+        help="交付门禁：0 FAIL 且 0 未覆盖项，并写交付记录",
+        description=(
+            "交付门禁比 `check` 严：FAIL 阻断；WARN 不阻断但逐条记入交付记录；"
+            "SKIP 里属「未开启的可选批次/环境能力不足」的记未覆盖项（默认不阻断，"
+            "`--strict` 时阻断），其余 SKIP 一律阻断。"
+            "通过或未通过都会写交付记录到中央留痕目录。"
+        ),
+    )
+    _add_discovery_options(p_deliver)
+    p_deliver.add_argument("--staged", action="store_true",
+                           help="只检查 git 暂存内容涉及的技能（pre-commit 用）")
+    p_deliver.add_argument("--strict", action="store_true",
+                           help="连「未覆盖项」也阻断（发行前跑一次）")
+    p_deliver.add_argument("--stages", choices=("both", "spec", "lint"), default="both",
+                           help="只跑某一阶段（默认两者都跑）")
+    p_deliver.add_argument("--script-timeout", type=float, default=10.0, metavar="秒",
+                           help="单个脚本的超时上限（默认 10 秒）")
+    p_deliver.add_argument("--no-record", action="store_true",
+                           help="不写交付记录（--json 仍会输出记录内容）")
+    p_deliver.add_argument("--verbose", action="store_true",
+                           help="把未覆盖项与待甄别项也逐条打到 stderr")
+    p_deliver.add_argument("--json", action="store_true",
+                           help="输出交付记录本身（含门禁结论）而非人读报告")
+    p_deliver.add_argument("--out", help="报告落盘路径（.md，或按 --json 输出 .json）")
+    p_deliver.add_argument("--quiet", action="store_true", help="不打印报告正文")
+    p_deliver.set_defaults(func=cmd_deliver)
+
+    p_hook = sub.add_parser(
+        "hook",
+        help="安装/查看 pre-commit 交付门禁",
+        description=(
+            "在 git 仓库里安装 pre-commit hook，提交时自动执行 "
+            "`skillverify deliver --staged`。已存在他人 hook 时不改动，"
+            "`--force` 会先备份再覆盖。"
+        ),
+    )
+    hook_sub = p_hook.add_subparsers(dest="hook_action", metavar="<动作>")
+    for action, help_text in (("install", "安装/更新 pre-commit hook"),
+                              ("status", "查看 hook 状态")):
+        p = hook_sub.add_parser(action, help=help_text)
+        p.add_argument("--project", default=".", metavar="目录", help="仓库目录（默认当前目录）")
+        if action == "install":
+            p.add_argument("--force", action="store_true",
+                           help="覆盖已存在的他人 hook（先备份为 .bak）")
+            p.add_argument("--fail-closed", action="store_true",
+                           help="找不到 skillverify 时阻断提交（默认故障开放，只告警）")
+        p.set_defaults(func=cmd_hook)
+    p_hook.set_defaults(func=cmd_hook, hook_action=None)
 
     return parser
 

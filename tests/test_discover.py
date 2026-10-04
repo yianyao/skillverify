@@ -67,10 +67,19 @@ def write_skill(root: Path, name: str, *, body: str = "# Demo\n") -> Path:
 
 
 def run_cli(argv: list[str]) -> tuple[int, str, str]:
-    """跑完整 CLI，返回 (退出码, stdout, stderr)。"""
+    """跑完整 CLI，返回 (退出码, stdout, stderr)。
+
+    异常时先把已捕获的输出打到真实 stderr 再抛出——`redirect_*` 会把回溯一起吞掉，
+    否则表现为"测试静默中断、没有线索"。
+    """
     out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = cli.main(argv)
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(argv)
+    except BaseException:
+        sys.stderr.write(f"[run_cli] argv={argv} 抛出异常，已捕获的输出如下：\n"
+                         f"--- stdout ---\n{out.getvalue()}\n--- stderr ---\n{err.getvalue()}\n")
+        raise
     return code, out.getvalue(), err.getvalue()
 
 
