@@ -26,6 +26,18 @@ from .deliver import (
 from .discover import Config, ConfigError, Discovery, load_config, discover_skills, render_config
 from .encoding import force_utf8_stdio, write_text
 from .evalx import check_evals
+from .review import (
+    CatalogError,
+    build_pack,
+    check_review,
+    collect as collect_reviews,
+    emit_skill,
+    load_catalog,
+    render_prompts_md,
+    select_prompts,
+    status as review_status,
+    write_record as write_review_record,
+)
 from .lint import lint_skill
 from .report import FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report, Result
 from .spec import check_spec, find_official_cli, run_official
@@ -144,7 +156,8 @@ def _wants(stages: str, name: str) -> bool:
     return stages == name
 
 
-def _stage_results(skill_path: Path, args: argparse.Namespace) -> list[Result]:
+def _stage_results(skill_path: Path, args: argparse.Namespace,
+                   trace_dir: Path | None = None) -> list[Result]:
     """按 --stages 依次跑各阶段，返回合并后的结果列表。"""
     results: list[Result] = []
     if _wants(args.stages, "spec"):
@@ -160,6 +173,9 @@ def _stage_results(skill_path: Path, args: argparse.Namespace) -> list[Result]:
         rep = check_evals(skill_path, workspace=getattr(args, "workspace", None),
                           iteration=getattr(args, "iteration", None))
         results.extend(rep.results)
+    if _wants(args.stages, "review") and trace_dir is not None:
+        results.extend(check_review(skill_path, trace_dir,
+                                    skipped=getattr(args, "skip_review", False)))
     return results
 
 
@@ -277,7 +293,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     for ref in discovery.skills:
         merged = Report(target=str(ref.path), stage="check")
-        merged.results = _stage_results(ref.path, args)
+        merged.results = _stage_results(ref.path, args, discovery.trace_dir)
         library.add_entry(
             LibraryEntry(skill=ref.name, scope=ref.scope, path=str(ref.path), report=merged)
         )
@@ -393,7 +409,7 @@ def cmd_deliver(args: argparse.Namespace) -> int:
 
     for ref in discovery.skills:
         merged = Report(target=str(ref.path), stage="deliver")
-        merged.results = _stage_results(ref.path, args)
+        merged.results = _stage_results(ref.path, args, discovery.trace_dir)
         library.add_entry(
             LibraryEntry(skill=ref.name, scope=ref.scope, path=str(ref.path), report=merged)
         )
@@ -453,6 +469,127 @@ def cmd_evals(args: argparse.Namespace) -> int:
     report.meta["官方口径"] = "agentskills.io/skill-creation/evaluating-skills"
     _emit(report, args)
     return report.exit_code()
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """语义评审：提示词目录 / 任务包 / 回写汇总 / 独立技能包 / 状态。"""
+    action = getattr(args, "review_action", None)
+    if not action:
+        print(f"用法: {PROG} review <prompts|pack|collect|status|skill> [选项]", file=sys.stderr)
+        return 1
+    try:
+        catalog = load_catalog()
+    except CatalogError as exc:
+        print(f"提示词目录错误: {exc}", file=sys.stderr)
+        return 1
+
+    if action == "prompts":
+        prompts = select_prompts(catalog, args.prompts, args.family)
+        if args.json:
+            payload = json.dumps({"version": 1, "prompts": [p.to_dict() for p in prompts]},
+                                 ensure_ascii=False, indent=2)
+        else:
+            payload = render_prompts_md(prompts)
+        if args.out:
+            write_text(Path(args.out), payload if payload.endswith("\n") else payload + "\n")
+            print(f"已落盘: {args.out}")
+        if not args.quiet:
+            print(payload if payload.endswith("\n") else payload + "\n")
+        return 0
+
+    if action == "pack":
+        skill_dir = Path(args.path)
+        if not skill_dir.is_dir():
+            print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
+            return 1
+        try:
+            prompts = select_prompts(catalog, args.prompts, args.family)
+        except CatalogError as exc:
+            print(f"提示词选择错误: {exc}", file=sys.stderr)
+            return 1
+        if not prompts:
+            print("FAIL: 选中的提示词为空", file=sys.stderr)
+            return 1
+        written = build_pack(skill_dir, prompts,
+                             out_dir=Path(args.out) if args.out else None, split=args.split)
+        for path in written:
+            print(f"已生成: {path}")
+        print(f"\n下一步：把任务包交给任意 LLM 或人填写，"
+              f"然后 `{PROG} review collect <填好的模板>`。")
+        return 0
+
+    if action == "skill":
+        out = Path(args.out) if args.out else Path(".")
+        for path in emit_skill(out, catalog, name=args.name):
+            print(f"已生成: {path}")
+        print("\n该技能包自包含（SKILL.md + references/ + assets/），"
+              "放到任意宿主的技能目录即可加载。")
+        return 0
+
+    if action == "collect":
+        paths: list[Path] = [Path(p) for p in (args.files or [])]
+        if args.dir:
+            paths.extend(sorted(Path(args.dir).glob("*.json")))
+        if not paths:
+            print("FAIL: 没有要汇总的回写文件（给文件名或 --dir）", file=sys.stderr)
+            return 1
+        missing = [str(p) for p in paths if not p.is_file()]
+        if missing:
+            print(f"FAIL: 文件不存在: {', '.join(missing)}", file=sys.stderr)
+            return 1
+
+        try:
+            discovery, _config = _load_discovery(args)
+        except ConfigError as exc:
+            print(f"配置错误: {exc}", file=sys.stderr)
+            return 1
+        skill_dir = Path(args.skill_dir) if args.skill_dir else None
+        expected: list[str] | None = None
+        if skill_dir is not None:
+            manifest = skill_dir.parent / f"{skill_dir.name}-review" / (
+                f"{skill_dir.name}-review-manifest.json")
+            if manifest.is_file():
+                try:
+                    expected = json.loads(manifest.read_text(encoding="utf-8")).get("prompt_ids")
+                except (OSError, json.JSONDecodeError):
+                    expected = None
+        report, record = collect_reviews(paths, catalog, skill_dir=skill_dir,
+                                        expected_ids=expected)
+        report.meta["工具版本"] = f"{PROG} {__version__}"
+        report.meta["提示词目录"] = f"{len(catalog)} 条"
+        text = report.to_json() if args.json else report.to_markdown()
+        if args.out:
+            write_text(Path(args.out), text if text.endswith("\n") else text + "\n")
+            print(f"报告已落盘: {args.out}")
+        if not args.quiet:
+            print(text if text.endswith("\n") else text + "\n")
+
+        if not args.no_store:
+            assert discovery.trace_dir is not None
+            latest = write_review_record(discovery.trace_dir / "review", record)
+            print(f"评审记录: {latest}", file=sys.stderr)
+        print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
+              f"未覆盖 {len(record['uncovered_prompts'])}）", file=sys.stderr)
+        return report.exit_code()
+
+    if action == "status":
+        try:
+            discovery, _config = _load_discovery(args)
+        except ConfigError as exc:
+            print(f"配置错误: {exc}", file=sys.stderr)
+            return 1
+        assert discovery.trace_dir is not None
+        text = review_status(discovery.trace_dir,
+                             [(ref.name, ref.path) for ref in discovery.skills])
+        if args.out:
+            write_text(Path(args.out), text)
+            print(f"已落盘: {args.out}")
+        if not args.quiet:
+            print(text)
+        return 0
+
+    print(f"FAIL: 未知动作 {action!r}", file=sys.stderr)
+    return 1
 
 
 def cmd_hook(args: argparse.Namespace) -> int:
@@ -588,10 +725,10 @@ def build_parser() -> _ArgParser:
         ),
     )
     _add_discovery_options(p_check)
-    p_check.add_argument("--stages", choices=("all", "both", "spec", "lint", "evals"),
+    p_check.add_argument("--stages", choices=("all", "both", "spec", "lint", "evals", "review"),
                          default="both",
                          help="跑哪些阶段（默认 both = spec+lint，日常快查；"
-                              "all = 再加评测资产）")
+                              "all = 再加评测资产与语义评审记录）")
     p_check.add_argument("--workspace", metavar="目录",
                          help="评测工作区（默认找并列的 <技能名>-workspace/）")
     p_check.add_argument("--iteration", type=int, metavar="N",
@@ -600,6 +737,8 @@ def build_parser() -> _ArgParser:
                          help="执行技能自带脚本以实测脚本契约（默认关闭，存在副作用风险）")
     p_check.add_argument("--script-timeout", type=float, default=10.0, metavar="秒",
                          help="单个脚本的超时上限（默认 10 秒）")
+    p_check.add_argument("--skip-review", action="store_true",
+                         help="跳过语义评审记录检查（显式跳过会留痕为未覆盖项）")
     p_check.add_argument("--official", action="store_true",
                          help="额外调用官方 agentskills validate 对账")
     p_check.add_argument("--trace", action="store_true",
@@ -646,10 +785,10 @@ def build_parser() -> _ArgParser:
                            help="只检查 git 暂存内容涉及的技能（pre-commit 用）")
     p_deliver.add_argument("--strict", action="store_true",
                            help="连「未覆盖项」也阻断（发行前跑一次）")
-    p_deliver.add_argument("--stages", choices=("all", "both", "spec", "lint", "evals"),
+    p_deliver.add_argument("--stages", choices=("all", "both", "spec", "lint", "evals", "review"),
                            default="all",
-                           help="跑哪些阶段（默认 all = spec+lint+evals：交付要考虑"
-                                "该技能已有的全部资产；both = spec+lint）")
+                           help="跑哪些阶段（默认 all = spec+lint+evals+review：交付要考虑"
+                                "该技能已有的全部资产与评审结论；both = spec+lint）")
     p_deliver.add_argument("--workspace", metavar="目录",
                            help="评测工作区（默认找并列的 <技能名>-workspace/）")
     p_deliver.add_argument("--iteration", type=int, metavar="N",
@@ -658,6 +797,8 @@ def build_parser() -> _ArgParser:
                            help="单个脚本的超时上限（默认 10 秒）")
     p_deliver.add_argument("--no-record", action="store_true",
                            help="不写交付记录（--json 仍会输出记录内容）")
+    p_deliver.add_argument("--skip-review", action="store_true",
+                           help="跳过语义评审记录检查（默认参与；显式跳过会留痕）")
     p_deliver.add_argument("--verbose", action="store_true",
                            help="把未覆盖项与待甄别项也逐条打到 stderr")
     p_deliver.add_argument("--json", action="store_true",
@@ -687,6 +828,62 @@ def build_parser() -> _ArgParser:
                            help="找不到 skillverify 时阻断提交（默认故障开放，只告警）")
         p.set_defaults(func=cmd_hook)
     p_hook.set_defaults(func=cmd_hook, hook_action=None)
+
+    p_review = sub.add_parser(
+        "review",
+        help="语义评审：提示词目录 / 任务包 / 回写汇总 / 独立技能包",
+        description=(
+            "机械检查之外的判断交给语义评审：29 条提示词，每条带 PASS/FAIL 判据与证据要求。"
+            "三档执行器产出同一 schema——档 1 任意 CLI（把任务包喂给它）、"
+            "档 2 会话任务包（任意 LLM 或人填写）、档 3 人工兜底（手写同一 JSON）。"
+        ),
+    )
+    review_sub = p_review.add_subparsers(dest="review_action", metavar="<动作>")
+
+    r_prompts = review_sub.add_parser("prompts", help="列出/渲染提示词目录（含判据）")
+    r_prompts.add_argument("--family", action="append", metavar="D|W|E|R",
+                           help="只显示某家族（可重复）")
+    r_prompts.add_argument("--prompts", metavar="id1,id2", help="只显示指定 id")
+    r_prompts.add_argument("--json", action="store_true", help="输出机读 JSON")
+    r_prompts.add_argument("--out", help="落盘路径")
+    r_prompts.add_argument("--quiet", action="store_true", help="不打印正文")
+    r_prompts.set_defaults(func=cmd_review)
+
+    r_pack = review_sub.add_parser("pack", help="生成语义评审任务包（含回写模板）")
+    r_pack.add_argument("path", help="被评审的技能目录")
+    r_pack.add_argument("--prompts", metavar="id1,id2", help="只评指定 id（默认全部 29 条）")
+    r_pack.add_argument("--family", action="append", metavar="D|W|E|R",
+                        help="只评某家族（可重复）")
+    r_pack.add_argument("--out", metavar="目录",
+                        help="任务包输出目录（默认 <技能>-review/）")
+    r_pack.add_argument("--split", action="store_true",
+                        help="每条提示词一个 Markdown 文件（便于一条一个 LLM 调用）")
+    r_pack.set_defaults(func=cmd_review)
+
+    r_collect = review_sub.add_parser("collect", help="校验回写并汇总进中央记录")
+    r_collect.add_argument("files", nargs="*", help="回写 JSON 文件（可多个）")
+    r_collect.add_argument("--dir", metavar="目录", help="汇总该目录下的全部 *.json")
+    r_collect.add_argument("--skill-dir", metavar="目录",
+                           help="被评审的技能目录（用于记录内容指纹与覆盖范围）")
+    r_collect.add_argument("--no-store", action="store_true", help="只校验，不写中央记录")
+    r_collect.add_argument("--json", action="store_true", help="输出机读 JSON")
+    r_collect.add_argument("--out", help="报告落盘路径")
+    r_collect.add_argument("--quiet", action="store_true", help="不打印报告正文")
+    _add_discovery_options(r_collect)
+    r_collect.set_defaults(func=cmd_review)
+
+    r_status = review_sub.add_parser("status", help="查看各技能的评审记录与新鲜度")
+    r_status.add_argument("--out", help="落盘路径")
+    r_status.add_argument("--quiet", action="store_true", help="不打印正文")
+    _add_discovery_options(r_status)
+    r_status.set_defaults(func=cmd_review)
+
+    r_skill = review_sub.add_parser("skill", help="生成「语义评审」独立技能包")
+    r_skill.add_argument("--out", metavar="目录", help="输出目录（默认为当前目录）")
+    r_skill.add_argument("--name", default="skillverify-review", help="技能名（默认 skillverify-review）")
+    r_skill.set_defaults(func=cmd_review)
+
+    p_review.set_defaults(func=cmd_review, review_action=None)
 
     return parser
 

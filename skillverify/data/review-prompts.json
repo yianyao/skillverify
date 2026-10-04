@@ -1,0 +1,715 @@
+{
+  "version": 1,
+  "note": "skillverify 语义评审提示词目录：由 legacy/Agent-Skill-LLM评审提示词清单.md（v1.4）及其 references/{d,w,e,r}-prompts.md 的 29 条提示词逐条改写而来，保留 legacy_id 与 §-溯源，并为每条补齐适用条件、PASS/FAIL 判据与证据要求；⚑ 双评范围见 legacy/agent-skill-llm-review/references/dual-review-rules.md。",
+  "prompts": [
+    {
+      "id": "D-01",
+      "family": "D",
+      "title": "取材材料提炼辅助",
+      "stage": "设计期",
+      "when": "设计期有原始材料（任务轨迹、项目文档、事故报告）可供提炼时适用；没有原始材料或材料无法提供时记 NA，并在 NA 理由中说明缺少取材来源",
+      "inputs": ["原始材料（任务轨迹/项目文档/事故报告）", "SKILL.md"],
+      "prompt": "通读投喂的原始材料（任务轨迹、项目文档或事故报告），把它提炼成结构化取材清单，分四类：奏效步骤、纠正点、I/O 格式约定、项目事实与约束。每一条都必须标注它在材料中的位置（文件名 + 段落或行号），并说明这条内容能支撑技能里的哪一段指令。材料中不存在的类别明确写“无”，不得用通用常识填充凑数。只能靠推测得出的结论标注“需人工确认”，与有据事实分开放。你只做提炼与举证，不替代人工裁决，也不要顺手改写 SKILL.md。",
+      "pass_criteria": [
+        "四类（奏效步骤/纠正点/I-O 格式/项目事实）逐类给出结论，缺失的类别显式写“无”",
+        "每条条目都标注了来源位置（材料中的文件名 + 段落或行号）",
+        "清单中没有材料里找不到依据的通识内容或默认行为复述",
+        "推测性结论被标为“需人工确认”，与有据事实分开列示"
+      ],
+      "fail_criteria": [
+        "出现材料中无来源的条目（编造事实或用常识填充）",
+        "只给类别标题或泛泛结论，没有可回查的具体条目与来源位置",
+        "把推测写成事实，未标注需人工确认"
+      ],
+      "evidence_required": "每条条目后必须附材料中的原文片段（或文件名 + 段落/行号）；无来源引用的条目一律不得给 PASS。",
+      "blocking": false,
+      "legacy_id": "D-01",
+      "legacy_source": "§5.1.4",
+      "official": "https://agentskills.io/skill-creation/best-practices#start-from-real-expertise"
+    },
+    {
+      "id": "W-01",
+      "family": "W",
+      "title": "frontmatter 语义",
+      "stage": "编写期",
+      "when": "SKILL.md 存在且 frontmatter 可解析时适用；SKILL.md 缺失或 frontmatter 不可解析属机械校验范围，本项记 NA 并说明",
+      "inputs": ["SKILL.md"],
+      "prompt": "只读 SKILL.md 的 frontmatter 段（首个 --- 与闭合 --- 之间），逐字段核对。第一，是否出现依赖某个宿主私有、官方规范未定义的字段——顶层只应有 name/description/license/allowed-tools/metadata/compatibility。第二，metadata 的键名彼此区分度是否足够，有没有语义重复或可合并的冗余键。第三，metadata 与 compatibility 是否被用来堆放规避字段校验的内容、或与技能无关的信息。第四，compatibility 的每一条声明都要问“去掉它会不会漏掉真实的环境要求”，非必要就不该保留。逐条给 PASS/FAIL，任何 FAIL 都要引用 frontmatter 原文行并给出可直接替换的写法。",
+      "pass_criteria": [
+        "顶层字段全部落在 SKILL.md 允许的六个字段之内，没有宿主私有字段",
+        "metadata 的每个键都有独立语义，能与其它键区分，无同义重复",
+        "metadata/compatibility 只承载真实的环境与元信息，没有规避校验的内容",
+        "compatibility 的每条声明都对应一项真实且必要的运行环境要求"
+      ],
+      "fail_criteria": [
+        "出现官方白名单之外的顶层字段或宿主私有字段",
+        "metadata/compatibility 存放与技能无关的信息，或用来绕过字段校验",
+        "compatibility 含无法落实、也不需要声明的条目"
+      ],
+      "evidence_required": "引用每个被判定字段的原文（键名与值）并给出它在 SKILL.md 中的行号；只写“字段合理”不算证据。",
+      "blocking": false,
+      "legacy_id": "W-01",
+      "legacy_source": "§2.1.4、§2.6.2–2.6.3、V16",
+      "official": "https://agentskills.io/specification#frontmatter"
+    },
+    {
+      "id": "W-02",
+      "family": "W",
+      "title": "description 触发质量",
+      "stage": "编写期",
+      "when": "SKILL.md 有 description 时必跑；description 缺失或为空属机械校验的 FAIL，本项记 NA 并说明",
+      "inputs": ["SKILL.md"],
+      "prompt": "读出 SKILL.md frontmatter 里的 name 与 description（宿主启动时只读这两项）。逐条判断：description 是否同时回答了“做什么”和“何时用”，缺任何一项即 FAIL；是否用第三人称祈使句或意图导向写法，没有“我会/我将”这类第一人称。覆盖范围是否既不漏掉典型触发场景，也不泛滥到其它技能的地盘。再把 description 当作使用者唯一的判断依据：所有“何时使用”的信息是否都在这一段之内，而不是让人读到正文才知道。注意跨行 plain scalar 之类写法造成的语义断裂，description 必须是一段连贯描述。逐条 PASS/FAIL 并引用 description 原文。",
+      "pass_criteria": [
+        "description 同时写明技能做什么与何时使用，两者都能在原文中逐字指出",
+        "写法为第三人称、意图导向，全文无第一人称表达",
+        "description 覆盖技能声明的全部主要用途，且不包含技能不处理的场景",
+        "触发判断所需信息全部落在 description 内，不依赖正文补充",
+        "description 是一段连贯文本，无跨行标量造成的语义断裂"
+      ],
+      "fail_criteria": [
+        "缺少“做什么”或“何时用”任一半，技能无法被正确触发",
+        "出现第一人称“我会/我将”，或写成技能自我介绍式文字",
+        "触发场景遗漏主要用途，或宽泛到会抢其它技能的活"
+      ],
+      "evidence_required": "整段引用 description 原文并标注 SKILL.md 行号，再逐条指出命中或未命中的文字；不得只写“描述清晰”。",
+      "blocking": true,
+      "legacy_id": "W-02",
+      "legacy_source": "§2.3.2–2.3.10、§6.1.1、V20",
+      "official": "https://agentskills.io/specification#description-field"
+    },
+    {
+      "id": "W-03",
+      "family": "W",
+      "title": "compatibility 与运行器匹配",
+      "stage": "编写期",
+      "when": "技能声明了 compatibility，或正文/脚本出现运行器命令（uvx/pipx/npx/bunx/deno run/go run）与第三方依赖时适用；两者都没有时记 NA",
+      "inputs": ["SKILL.md", "scripts/"],
+      "prompt": "把 compatibility 声明与脚本、正文里的实际依赖逐条对照：运行时、运行器、系统包、网络需求是否都写清了，有没有该声明而未声明的。再看运行器选择是否匹配目标用户环境：能用依赖自动解析的运行器（uvx/pipx/npx/bunx/deno run/go run）时是否优先用了它，而不是要求用户手工预装。逐条判定并给出“声明 vs 实际”的对照证据，每条 FAIL 给出应补的声明文本。",
+      "pass_criteria": [
+        "每条 compatibility 声明都能对应到脚本或正文中的具体依赖与环境要求",
+        "脚本与正文用到的运行时、运行器、系统包、网络访问都已声明",
+        "运行器选择优先采用自动解析依赖的形式，无需用户手工预装"
+      ],
+      "fail_criteria": [
+        "脚本依赖（含未声明的版本要求）在 compatibility 中找不到对应声明",
+        "使用了需要用户手工预装、且未声明的运行器或系统包",
+        "compatibility 声明与脚本实际行为不一致"
+      ],
+      "evidence_required": "逐条给出 compatibility 原文与其对应的脚本或正文位置（文件:行），并写清缺失项对应的具体命令或依赖名。",
+      "blocking": false,
+      "legacy_id": "W-03",
+      "legacy_source": "§2.5.2–2.5.5、V22",
+      "official": "https://agentskills.io/specification#compatibility-field"
+    },
+    {
+      "id": "W-04",
+      "family": "W",
+      "title": "渐进式披露",
+      "stage": "编写期",
+      "when": "技能在正文之外还有素材（references/、assets/、大段示例）时适用；只有很短的一体化 SKILL.md 且无被引文件时记 NA 并说明",
+      "inputs": ["SKILL.md", "references/"],
+      "prompt": "读 SKILL.md 正文与 references/ 下的文件清单，必要时打开各文件开头若干行。判断正文是否只留了每次运行都必需的高频核心指令：激活后正文会整体进入上下文，大段参考资料、逐案例材料留在正文里就是挤占上下文。再逐个打开被引参考文件，确认它没有大段复述正文已有的内容。同一领域的多个参考文件是否按变体拆分，并各自写明什么情况下命中它。独立的 Gotchas 或参考文件是否有明确加载时机，例如“当……时读取 references/xxx.md”，且触发信号具体到能被认出来。逐条 PASS/FAIL 并引用文件名与正文行号。",
+      "pass_criteria": [
+        "正文只保留每次运行必需的核心指令，长篇参考资料已外移或由被引文件承载",
+        "每个 references/ 引用都点名了具体文件名与加载时机（“当……时读取……”）",
+        "被引参考文件没有大段复述正文已有内容",
+        "同域多个参考文件各自写明命中条件，读者能判断该读哪一个"
+      ],
+      "fail_criteria": [
+        "正文内塞入大段参考材料或逐案例累积内容，激活即全量载入",
+        "存在被引参考文件却未写明何时读取，或引用只写目录不写文件名",
+        "参考文件与正文存在大段重复"
+      ],
+      "evidence_required": "引用正文中已外移或未外移的具体段落（SKILL.md 行号）与每个 references/ 引用的原文行，并给出重复内容的成对片段。",
+      "blocking": false,
+      "legacy_id": "W-04",
+      "legacy_source": "§4.1.1–4.1.2、§4.1.8–4.1.9、V18/V19",
+      "official": "https://agentskills.io/skill-creation/best-practices#structure-large-skills-with-progressive-disclosure"
+    },
+    {
+      "id": "W-05",
+      "family": "W",
+      "title": "取材真实性",
+      "stage": "编写期",
+      "when": "有设计期取材清单或设计说明（D-01 产出或等价材料）可对照时适用；没有取材来源材料时记 NA 并说明正文真实性无从对照",
+      "inputs": ["SKILL.md", "设计说明（含取材来源清单）"],
+      "prompt": "拿设计说明里的取材来源清单对照 SKILL.md 正文，逐段判断这段内容是否有取材依据。凡属通识、默认行为复述、或模型本来就能直接读出的事实（例如“PDF 是什么”“注意错误处理”），都不该占正文位置，命中即 FAIL。再看事实与决策是否分开写：项目事实、约定、参数取值与“我们决定怎么做”不要混在一句里。规则类内容是否用“一句规则 + 一个反例”的压缩写法，而不是长篇解释。逐段给结论并引用原文，把所有疑似通识或默认行为的段落完整列出来。",
+      "pass_criteria": [
+        "正文每段都能对应到取材清单中的具体来源，或明确属于技能特定知识",
+        "事实类陈述与决策类陈述分开书写，读者能分辨哪些是硬事实",
+        "规则采用“一句规则 + 反例”的压缩写法，无大段通用解释"
+      ],
+      "fail_criteria": [
+        "存在通识内容或默认行为复述（模型无需技能即知的事实）",
+        "事实与决策混写，无法判断哪条是可依赖的约束",
+        "出现取材清单中不存在、也无其它依据的“项目事实”"
+      ],
+      "evidence_required": "逐段引用正文原文（SKILL.md 行号）并标注其取材来源条目；疑似通识段落必须整段引用，不得只写段号。",
+      "blocking": false,
+      "legacy_id": "W-05",
+      "legacy_source": "§5.1.1–5.1.2、§5.1.7、§5.1.8",
+      "official": "https://agentskills.io/skill-creation/best-practices#add-what-the-agent-lacks-omit-what-it-knows"
+    },
+    {
+      "id": "W-06",
+      "family": "W",
+      "title": "结构与详略",
+      "stage": "编写期",
+      "when": "SKILL.md 正文已成形（有分节内容）时适用；只有几行占位内容的草稿记 NA 并说明",
+      "inputs": ["SKILL.md"],
+      "prompt": "通读 SKILL.md 正文，先画出它实际的分区（工作流程、规则、示例、其它）。判断详略是否与使用频率相称：高频操作要写到能照着做，低频操作点到为止，不能所有章节一样长地均匀涂抹。再看结构是否让人一眼知道先做什么、有哪些硬规则、哪里有例子。最后检查有没有内容游离在技能声明的范围之外，例如顺手教了别的领域的事。逐条 PASS/FAIL 并引用章节标题与行号。",
+      "pass_criteria": [
+        "高频操作有可执行步骤，低频操作从简，详略与使用频率相称",
+        "正文分区明确（流程/规则/示例等板块可辨认），读者知道按什么顺序读",
+        "正文内容全部落在技能声明的用途范围内"
+      ],
+      "fail_criteria": [
+        "所有章节篇幅均等，高频与低频操作同详略（均匀涂抹）",
+        "正文存在与技能声明范围无关的内容",
+        "结构混乱：流程、规则、示例互相穿插且无标题可循"
+      ],
+      "evidence_required": "引用每个被评价章节的标题与行号，并给出代表段落原文；判断详略时须给出该章节行数与其它章节行数的对比数字。",
+      "blocking": false,
+      "legacy_id": "W-06",
+      "legacy_source": "§5.2.4–5.2.6",
+      "official": "https://agentskills.io/skill-creation/best-practices#aim-for-moderate-detail"
+    },
+    {
+      "id": "W-07",
+      "family": "W",
+      "title": "约束校准",
+      "stage": "编写期",
+      "when": "正文出现约束性语句（必须/禁止/一定/不得/ALWAYS/NEVER/MUST）时适用；一条都没有时记 NA 并说明该技能无刚性约束",
+      "inputs": ["SKILL.md"],
+      "prompt": "先抄出正文中全部约束性语句（必须/禁止/一定/不得/ALWAYS/NEVER/MUST 等）形成清单，再逐条判定。每条刚性约束是否给出了理由或触发条件——只下死命令而不说为什么、什么时候适用的，判 FAIL。看 ALWAYS/NEVER 是否确有必要，还是把普通建议写成了绝对禁令。检查指令是否用祈使句直接说该做什么，而不是“你可以考虑”“建议尽量”这类无法执行的弱指令。最后判断约束是否校准：有没有把正常工作路径也堵死的过度限制。逐条给 PASS/FAIL 并引用原文。",
+      "pass_criteria": [
+        "给出刚性语句完整清单（含关键词与行号），无遗漏",
+        "每条刚性约束都带理由或明确的触发条件",
+        "指令以祈使句给出，可直接执行，无协商式弱指令",
+        "约束不阻断技能声明范围内的正常工作路径"
+      ],
+      "fail_criteria": [
+        "存在无理由的死命令（只写“必须/禁止”而不给条件或理由）",
+        "ALWAYS/NEVER 被用于本可由常识判断的普通建议",
+        "出现“可以考虑/尽量”等无法判定的弱指令",
+        "约束过度限制，正常操作路径也被禁止"
+      ],
+      "evidence_required": "逐条引用约束语句原文（SKILL.md 行号）并注明其理由句是否出现在同段或相邻段；清单缺条即视为证据不足。",
+      "blocking": false,
+      "legacy_id": "W-07",
+      "legacy_source": "§5.3.1–5.3.3、§5.3.5–5.3.7",
+      "official": "https://agentskills.io/skill-creation/best-practices#match-specificity-to-fragility"
+    },
+    {
+      "id": "W-08",
+      "family": "W",
+      "title": "破坏性操作防护",
+      "stage": "编写期",
+      "when": "技能或脚本涉及破坏性操作（删除/覆盖/迁移/发布/权限变更）时必跑；定位结果为空时由评审员自定位；确认全无破坏性操作时记 NA 并说明检索范围",
+      "inputs": ["SKILL.md", "scripts/"],
+      "prompt": "先确认破坏性操作的清单来源：若已有 S 关键词定位结果就直接使用；若为空，则自行通读 SKILL.md 与 scripts/ 下全部脚本，检索删除、覆盖、迁移、发布、权限变更类操作，并在结论开头注明“定位方式：评审员自定位（S 缺位降级）”。对定位到的每个操作，判断它的防护措施是否与风险相称：是否有确认标志、备份或回滚提示、作用域限制（只作用于目标目录而非整盘）、危险动作是否提供 dry-run。防护过轻（高危操作无任何拦截）与过重（低危操作要求多步确认、拖累正常效率）都要指出，并给出高/中/低风险评级。逐操作 PASS/FAIL 并引用实现代码或正文段落。",
+      "pass_criteria": [
+        "列出全部破坏性操作（含位置与操作类型），清单来源已注明",
+        "每个高危操作都有与风险相称的防护（确认/备份/作用域限制/dry-run 至少其一）",
+        "低危操作没有被要求多步确认或无意义的人工介入",
+        "正文对破坏性操作的描述与脚本实际行为一致"
+      ],
+      "fail_criteria": [
+        "存在无任何防护的删除/覆盖/迁移/发布/权限变更类操作",
+        "防护与风险明显不相称（高危无拦截，或低危被层层确认）",
+        "正文声称有防护（如“会先备份”）而脚本中找不到对应实现"
+      ],
+      "evidence_required": "逐操作引用脚本文件:行号或正文段落原文，并写出该处实际执行的命令与已存在的防护代码；只给操作名不算证据。",
+      "blocking": true,
+      "legacy_id": "W-08",
+      "legacy_source": "§5.3.4",
+      "official": ""
+    },
+    {
+      "id": "W-09",
+      "family": "W",
+      "title": "默认值与泛化",
+      "stage": "编写期",
+      "when": "正文描述了参数、选项或执行方法时适用；正文没有可配置参数与方法描述时记 NA 并说明",
+      "inputs": ["SKILL.md"],
+      "prompt": "读正文中所有可配置参数与其执行方法描述。判断每个可设默认值的参数是否给了合理默认：需要用户先做选择才能继续的，就是没给默认值。找出让模型反问用户“你要用哪种方式/哪个路径”的地方——凡是模型本可自行决定的事项都不该做成菜单让用户选。再看方法描述是否泛化可用：它是否绑定某个一次性场景、某次任务的具体文件名或数值，换个同类任务就不能用了。逐条 PASS/FAIL 并引用参数表或方法段原文。",
+      "pass_criteria": [
+        "每个可设默认值的参数都给出了明确默认值与生效条件",
+        "正文不要求模型就本可自行决定的事项反问用户（无菜单式选择）",
+        "方法描述与具体任务解耦，同类场景可复用"
+      ],
+      "fail_criteria": [
+        "关键参数无默认值，迫使执行时向用户提问",
+        "出现菜单反模式（把模型可自行决定的选项列表抛给用户）",
+        "方法描述绑定一次性场景或具体数据，无法泛化"
+      ],
+      "evidence_required": "引用参数或方法段原文（SKILL.md 行号）并写出该参数的默认值或缺省状态；判定菜单反模式时须整段引用那段提问式指令。",
+      "blocking": false,
+      "legacy_id": "W-09",
+      "legacy_source": "§5.4.1–5.4.4",
+      "official": "https://agentskills.io/skill-creation/best-practices#provide-defaults-not-menus"
+    },
+    {
+      "id": "W-10",
+      "family": "W",
+      "title": "Gotchas 质量",
+      "stage": "编写期",
+      "when": "技能含 Gotchas 节或等价的坑点清单/模板/检查清单时适用；完全没有这类内容记 NA，并说明该技能确实未提供坑点材料",
+      "inputs": ["SKILL.md", "references/"],
+      "prompt": "定位正文里的 Gotchas 节或独立坑点文件，逐条判断它是否具体：每条是否写清了“什么情况下会踩”与“正确的做法”，只有“小心谨慎”“注意安全”这类泛化劝告的判 FAIL。若该节包含模板，检查给的是可直接复制的真实模板，还是只用文字描述模板长什么样；若包含检查清单或验证循环，判断它是否确有必要，而不是为凑结构加的。Gotchas 位置靠近末尾或独立文件写明加载时机即可；加载时机的最终判定以 W-04 第 4 条为准，此处不重复下结论。逐条 PASS/FAIL 并引用条目原文。",
+      "pass_criteria": [
+        "每条 Gotchas 都写明了触发场景与正确做法",
+        "给出的模板是可直接使用的真实模板（含占位符或完整结构），不是文字描述",
+        "检查清单/验证循环对应真实的失败风险，有存在理由",
+        "Gotchas 位于正文靠后位置，或独立文件已有明确的加载时机说明"
+      ],
+      "fail_criteria": [
+        "出现泛化建议（“小心谨慎”“注意安全”“多加注意”之类）而无具体场景与做法",
+        "模板仅用文字描述其内容，无法直接套用",
+        "检查清单/验证循环与技能实际风险无关（为凑结构而加）"
+      ],
+      "evidence_required": "逐条引用 Gotchas 原文（SKILL.md 或 references/ 的文件:行），泛化条目须整条引用；模板须贴出模板本体片段。",
+      "blocking": false,
+      "legacy_id": "W-10",
+      "legacy_source": "§5.5.1–5.5.2、§5.5.5、§5.5.7–5.5.8、V19",
+      "official": "https://agentskills.io/skill-creation/best-practices#gotchas-sections"
+    },
+    {
+      "id": "W-11",
+      "family": "W",
+      "title": "触发撰写原则",
+      "stage": "编写期",
+      "when": "编写期需要预审触发设计（description 与触发场景说明）时适用；无 description 或触发场景无从判断时记 NA",
+      "inputs": ["SKILL.md", "相邻技能清单"],
+      "prompt": "对照 description 与触发设计说明，判断它是否覆盖典型触发场景，也排除了不应触发的场景：请具体写出它应触发与不应触发的各一个例子，看 description 能否支持这个判断。表述是否意图导向（从用户想达成什么出发），而不是罗列内部实现步骤。若提供了相邻技能清单，逐个比对它们的 description，找出关键词与语义重叠导致串扰风险的地方，并指出该场景应由哪个技能承接。本项是 E 阶段触发回归实测之前的预审，结论只作预审意见。逐条 PASS/FAIL 并引用原文。",
+      "pass_criteria": [
+        "description 明确覆盖典型触发场景，并排除相邻但不应由它处理的场景",
+        "表述意图导向（描述用户要达成什么），不堆砌内部实现细节",
+        "与相邻技能清单对照后，没有会互相抢触发的语义重叠；重叠处已指明归属"
+      ],
+      "fail_criteria": [
+        "触发范围不清晰：典型场景无法判断是否触发，或明显会误触相邻技能的场景",
+        "表述写成实现步骤罗列，用户意图无法对应",
+        "与相邻技能 description 存在未处置的语义重叠（串扰风险）"
+      ],
+      "evidence_required": "引用 description 原文与相邻技能 description 中的对应原文（文件名 + 行号），并写出重叠处所用的具体关键词；不得只写“有重叠”。",
+      "blocking": false,
+      "legacy_id": "W-11",
+      "legacy_source": "§6.1.2–6.1.9",
+      "official": "https://agentskills.io/skill-creation/optimizing-descriptions#writing-effective-descriptions"
+    },
+    {
+      "id": "W-12",
+      "family": "W",
+      "title": "用例真实感",
+      "stage": "编写期",
+      "when": "技能含 evals/evals.json 且其中有用例时适用；没有评测用例时记 NA 并说明缺少评测集",
+      "inputs": ["evals/evals.json"],
+      "prompt": "打开 evals/evals.json，逐条读 prompt 与 expected_output。判断每条 prompt 是否有真实语境感：像真实用户会说的话，带文件名、列名、单位或业务背景，而不是生造的题型。检查用例集合是否覆盖边界场景——正例之外至少有 near-miss 负例（形似该技能该管、实际不该由它处理的查询）。把“测试一下”“帮我处理这个”这类没有信息量的模糊 prompt 挑出来，它们测不出任何东西。逐条 PASS/FAIL 并引用 prompt 原文与它对应的 expected_output。",
+      "pass_criteria": [
+        "每条 prompt 都有可想象的真实使用场景（含具体上下文：路径、字段、约束等）",
+        "用例集包含边界场景，正例之外有 near-miss 负例",
+        "每条 prompt 的信息量足以判定该技能是否应该介入"
+      ],
+      "fail_criteria": [
+        "出现无信息量的模糊 prompt（如“测试一下”“帮我看看”）",
+        "全部用例都是同一问法或同一场景的重复，无边界与负例覆盖",
+        "prompt 生造痕迹明显，用户不会这样提问"
+      ],
+      "evidence_required": "逐条引用 prompt 原文（evals/evals.json 中对应 id 与字段）并写出它所属类别（正例/边界/负例）；模糊项须整条引用。",
+      "blocking": false,
+      "legacy_id": "W-12",
+      "legacy_source": "§7.1.2–7.1.4、§7.1.7",
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#designing-test-cases"
+    },
+    {
+      "id": "W-13",
+      "family": "W",
+      "title": "断言可验证性",
+      "stage": "编写期",
+      "when": "技能含 evals/evals.json 且至少一条用例写了 assertions；全部用例都没有断言时记 NA 并说明",
+      "inputs": ["evals/evals.json", "SKILL.md"],
+      "prompt": "打开 evals/evals.json，逐条读出每一条 assertion。判断它是否「读输出就能判定」：能否由一句可观察的条件给出是/否，而不是需要品味或主观打分。特别检查官方点名的两类坏断言——空洞型（\"输出是好的\"）与脆弱型（要求逐字匹配某句话）。对每条断言给出 PASS/FAIL，并引用该断言的原文与它对应的输出位置。",
+      "pass_criteria": [
+        "每条断言都是可观察条件的陈述（存在性、计数、字段值、可程序化检查的形态）",
+        "断言对措辞变化有容忍度：换一种正确表达法仍然通过",
+        "断言数量与用例复杂度相称，没有为了凑数而写的同义重复"
+      ],
+      "fail_criteria": [
+        "出现空洞断言（如\"输出是好的\"\"看起来不错\"），无法据此判定",
+        "出现脆弱断言（要求逐字包含某句话/某个精确措辞）",
+        "断言与 expected_output 无关，或断言无法从该用例的产物中得到验证"
+      ],
+      "evidence_required": "逐条引用断言原文，并指出它对应的输出（文件名，或 outputs/ 下的具体产物）；不得只写结论",
+      "blocking": false,
+      "legacy_id": "W-13",
+      "legacy_source": "§7.4.1–7.4.4",
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#writing-assertions"
+    },
+    {
+      "id": "W-14",
+      "family": "W",
+      "title": "脚本工程语义",
+      "stage": "编写期",
+      "when": "技能含 scripts/ 目录，或正文要求执行多步命令时适用；既无脚本也无命令说明时记 NA",
+      "inputs": ["scripts/", "SKILL.md"],
+      "prompt": "读 scripts/ 下的脚本清单与关键片段，并对照正文里的命令说明。先判断是否重复造轮子：环境里已有等价工具（例如通用 JSON/YAML 处理、下载、压缩）时是否仍自建脚本。再核对前置条件：正文声称“装上就能跑”的前提与脚本实际需要的运行时、依赖、网络是否一致，有无未声明的隐式前提。正文里堆着的复杂多步命令是否已收进脚本，而不是让执行者逐条敲。最后逐条检查错误消息是否同时包含错了什么、期望什么、下一步怎么办。逐条 PASS/FAIL 并引用脚本文件与行号。",
+      "pass_criteria": [
+        "脚本未重复实现环境中已有等价工具的能力",
+        "脚本实际依赖与正文声明的前置条件一致，无未声明前提",
+        "复杂多步命令已封装进脚本，正文只给调用方式",
+        "错误消息同时说明错了什么、期望什么、下一步怎么做"
+      ],
+      "fail_criteria": [
+        "自建了环境已有等价工具的轮子",
+        "正文声称可直接运行，脚本却需要未声明的依赖、环境或权限",
+        "错误消息只有报错堆栈或“失败”二字，无期望值与下一步",
+        "正文仍要求执行者手工逐条敲复杂多步命令"
+      ],
+      "evidence_required": "引用脚本文件:行（脚本片段与错误消息原文）以及正文中对应的命令说明行；判重复造轮子时须写出被替代的环境工具名。",
+      "blocking": false,
+      "legacy_id": "W-14",
+      "legacy_source": "§8.1.1、§8.1.3–8.1.6、§8.3.4",
+      "official": "https://agentskills.io/skill-creation/using-scripts#designing-scripts-for-agentic-use"
+    },
+    {
+      "id": "W-15",
+      "family": "W",
+      "title": "安全语义审计",
+      "stage": "编写期",
+      "when": "任何技能在交付前必跑：含脚本或外部访问的技能要全跑，纯文档技能至少审正文危险指令，不得因“看起来无害”跳过",
+      "inputs": ["SKILL.md", "scripts/"],
+      "prompt": "通读 SKILL.md 全文与 scripts/ 下全部脚本，做一次恶意逻辑与一致性审计。逐项判定：是否存在数据外传、隐蔽后门、混淆代码，或有超出声明用途的行为；每个外部请求目标（域名、URL、接口）是否与技能声明用途及 compatibility 一致，能否用一句话解释“为什么必须发这个请求”。正文里是否藏着危险指令语义（绕过确认、静默上传、擅自扩大权限）——关键词扫描已做过，你要看的是换词改写的变体。外网访问是否已在 compatibility 中声明。最后做授权最小化初筛：把 allowed-tools 白名单与脚本实际用途逐一对照，指出超出用途的多余授权。逐项 PASS/FAIL 并引用文件与行号，任何可疑项标记“需人工裁决”。",
+      "pass_criteria": [
+        "每个外部请求目标都能对应到技能声明用途，且已在 compatibility 中声明",
+        "脚本与正文中不存在混淆代码、隐蔽后门或未声明用途的行为",
+        "正文无绕过确认、静默上传、擅自扩权等危险指令（含语义变体）",
+        "allowed-tools 白名单每一项都能在脚本或正文中找到对应用途"
+      ],
+      "fail_criteria": [
+        "存在数据外传、隐蔽后门、混淆代码或超出声明用途的行为",
+        "外部请求目标未在 compatibility 中声明，或与技能用途无关",
+        "正文含绕过确认、静默上传、擅自扩权的指令（含变体表述）",
+        "allowed-tools 存在超出实际用途的授权（授权未最小化）"
+      ],
+      "evidence_required": "逐项引用代码位置（文件:行）与正文段落原文，并写出实际的外部目标域名或路径及其命令；可疑项须给出完整片段。",
+      "blocking": true,
+      "legacy_id": "W-15",
+      "legacy_source": "§9.1、§9.2、§9.7–9.9",
+      "official": ""
+    },
+    {
+      "id": "W-16",
+      "family": "W",
+      "title": "术语、语言与可移植性",
+      "stage": "编写期",
+      "when": "SKILL.md 正文已成形、足够判断术语一致性时适用；正文过短或只有占位内容时记 NA",
+      "inputs": ["SKILL.md"],
+      "prompt": "通读正文，先抽出关键术语表（同一概念出现的所有写法）。判断术语是否精确一致：同一个概念是否全文同名，有没有近义漂移——同一个文件一会儿叫“清单”、一会儿叫“列表”、一会儿叫“索引”。再看表达是否机器可读优先：给的是明确指令还是含糊描述，含糊处要指出可替换的明确写法。最后做可移植性语义复核：黑名单检索已扫过显式的宿主专属路径与工具名，你要找的是变体残留，例如把专属目录写成环境变量、缩写、相对路径，或换一种称呼的同一宿主概念。逐条 PASS/FAIL 并引用原文。",
+      "pass_criteria": [
+        "同一概念全文使用同一术语，无近义漂移",
+        "指令以明确、可执行的方式表述，无含糊描述",
+        "正文不含任何宿主专属路径或工具名（含变体、缩写、环境变量形式的残留）"
+      ],
+      "fail_criteria": [
+        "同一概念存在两种以上写法且未定义等价关系",
+        "存在含糊到无法执行的描述（如“按需处理”“适当调整”）",
+        "宿主专属概念以变体形式残留（伪装成相对路径、变量或缩写）"
+      ],
+      "evidence_required": "为每个术语漂移给出全部变体写法及其行号；为每个可移植性残留给出原文片段与它实际指向的宿主专属对象。",
+      "blocking": false,
+      "legacy_id": "W-16",
+      "legacy_source": "§11.3–11.4、§10.2",
+      "official": ""
+    },
+    {
+      "id": "E-01",
+      "family": "E",
+      "title": "查询集质量",
+      "stage": "测试期",
+      "when": "测试期提供了触发查询集（含 query 与 should_trigger）时适用；没有查询集时记 NA 并说明触发评测无法进行",
+      "inputs": ["evals/eval_queries.json", "SKILL.md"],
+      "prompt": "打开触发查询集，逐条读 query 与 should_trigger，并对照 SKILL.md 的 description 判断归属。先审 near-miss 负例质量：标注为不触发的查询里，有多少是形似该技能该管、实际需要别的能力（同关键词但换领域），有多少是“写个斐波那契函数”这类明显无关、测不出任何东西的凑数负例。再审每条查询的真实语境：能否想象出具体的人、具体的文件与场景；只有“处理一下数据”这种没有上下文的查询判 FAIL。逐条给出 PASS/FAIL，负例要给出替换建议。",
+      "pass_criteria": [
+        "每条查询（正例与负例）都能想象出具体使用场景与上下文",
+        "负例以 near-miss 为主（与技能同关键词或同领域，但实际不需要该技能）",
+        "正负例数量大致平衡，覆盖技能声明的不同触发路径"
+      ],
+      "fail_criteria": [
+        "负例多为明显无关查询（无关键词重叠，测不出区分力）",
+        "存在无信息量查询（如“处理一下数据”“帮我看看这个”）",
+        "查询集只覆盖单一问法或单一场景"
+      ],
+      "evidence_required": "逐条引用 query 原文与其 should_trigger 标注（evals/eval_queries.json 中对应条目），并写出判为凑数或模糊的理由；替换建议须给出可直接替换的查询文本。",
+      "blocking": false,
+      "legacy_id": "E-01",
+      "legacy_source": "§6.2.8–6.2.9",
+      "official": "https://agentskills.io/skill-creation/optimizing-descriptions#should-not-trigger-queries"
+    },
+    {
+      "id": "E-02",
+      "family": "E",
+      "title": "无关键词照抄",
+      "stage": "测试期",
+      "when": "本轮对 description 做过修订、且存在触发失败查询清单时适用；description 未改动或无失败清单时记 NA",
+      "inputs": ["SKILL.md", "evals/eval_queries.json", "description 修订前后 diff"],
+      "prompt": "对照两份材料：description 修改前后的 diff，与触发失败的查询清单。逐条把新加入 description 的措辞与失败查询的原文比对，判断这些词是不是从失败查询里原样搬过来的。若新增文字只是失败查询关键词或短语的直接复制，就是过拟合信号，判 FAIL 并逐处列出照抄位置。反过来，若新增文字表达的是更一般的能力或意图，能覆盖同类查询而不只是那一条，判 PASS。要区分“补充了同类场景的通用说法”与“照抄某条查询”。给出结论与证据。",
+      "pass_criteria": [
+        "新增 description 措辞用一般化表述覆盖失败查询所属的整类场景",
+        "新增内容能在失败查询之外找到同类适用对象（不是单点修补）",
+        "修订后的 description 仍是一段连贯、意图导向的描述"
+      ],
+      "fail_criteria": [
+        "新增文字与某条失败查询的关键词或短语逐字雷同（原样照抄）",
+        "为每条失败查询各加一个专属词，形成关键词堆砌",
+        "修订后 description 变成查询清单的复述，失去概括能力"
+      ],
+      "evidence_required": "逐处引用 diff 中新增的文字与其对应的失败查询原文片段（两段原文并列），并给出相似度判断依据；不得只写“疑似照抄”。",
+      "blocking": false,
+      "legacy_id": "E-02",
+      "legacy_source": "§6.4.5",
+      "official": "https://agentskills.io/skill-creation/optimizing-descriptions#avoiding-overfitting-with-train%2Fvalidation-splits"
+    },
+    {
+      "id": "E-03",
+      "family": "E",
+      "title": "修订方向评审",
+      "stage": "测试期",
+      "when": "本轮有 description 修订记录与评测结果时适用；无修订记录或无评测结果时记 NA",
+      "inputs": ["SKILL.md", "description 修订记录", "触发评测结果"],
+      "prompt": "读本轮 description 修订记录与评测结果，先判断修订方向：改动理由是否指向“为什么没触发”的根因（例如描述没有表达用户意图、场景覆盖缺失），还是只在表面加词碰运气。如果失败是结构性的（描述整体定位错了、与相邻技能重叠），检查是否换了结构，而不是在旧句子上继续打补丁。再看有没有 pushy 写法：为提升触发率堆砌宽泛关键词，把不属于该技能的场景也揽进来，牺牲精度。逐条 PASS/FAIL，引用修订前后原文与对应评测数据。",
+      "pass_criteria": [
+        "每条修订都能对应一个“为什么没触发”的根因分析，而非单纯加词",
+        "结构性问题采用了更换结构（重写定位或拆分场景）的处理",
+        "新增表述没有把技能不负责的场景纳入触发范围"
+      ],
+      "fail_criteria": [
+        "修订只在字面加关键词，未触及未触发的根因",
+        "结构性问题仍靠打补丁，问题在后续轮次重复出现",
+        "出现 pushy 写法：堆砌宽泛关键词导致精度下降（误触范围扩大）"
+      ],
+      "evidence_required": "引用修订前后 description 原文片段（注明轮次或来源）与对应失败/成功查询数据（查询原文 + 触发结果）；判定 pushy 须列出被过度纳入的场景。",
+      "blocking": false,
+      "legacy_id": "E-03",
+      "legacy_source": "§6.5.2–6.5.3、§6.5.9",
+      "official": "https://agentskills.io/skill-creation/optimizing-descriptions#the-optimization-loop"
+    },
+    {
+      "id": "E-04",
+      "family": "E",
+      "title": "语义断言评分",
+      "stage": "测试期",
+      "when": "有技能实际输出与对应语义断言列表时适用；没有输出或没有断言时记 NA",
+      "inputs": ["evals/evals.json", "技能输出（工作区 outputs/ 下的产物）"],
+      "prompt": "拿到技能输出与对应的语义断言列表，逐条断言给出 PASS/FAIL。规则：判 PASS 必须引用输出中的具体内容作为证据（原文片段，或产物文件名加其中的字段值），引用不出来的判 FAIL；不得凭整体印象打分，也不得因为“方向对了”而放宽。若断言需要主观判断而输出中无对应物，同样记 FAIL 并说明需要人工裁决。逐条给出结论、证据与证据位置，并逐条说明证据取自哪个产物。",
+      "pass_criteria": [
+        "每条断言的结论都附输出中的具体引用（原文片段或产物字段值）",
+        "证据不足的断言被如实判为 FAIL",
+        "断言与输出一一对应，没有漏判或合并判定"
+      ],
+      "fail_criteria": [
+        "出现无证据的 PASS（只凭整体印象或“看起来满足”）",
+        "证据不足却判 PASS",
+        "存在未给出结论的断言"
+      ],
+      "evidence_required": "每条断言必须引用输出中的原文片段（或产物文件名加其中的具体字段值）作为证据；无引用的结论一律视为无效。",
+      "blocking": false,
+      "legacy_id": "E-04",
+      "legacy_source": "§7.5.1",
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#grading-outputs"
+    },
+    {
+      "id": "E-05",
+      "family": "E",
+      "title": "断言难度复核",
+      "stage": "测试期",
+      "when": "已有首轮实际输出摘要可对照断言时适用；没有实际输出时记 NA 并说明无法判断难度",
+      "inputs": ["evals/evals.json", "首轮实际输出摘要"],
+      "prompt": "把断言列表与首轮实际输出摘要放在一起看，逐条判断难度是否落在有效区间。过易：任何合理输出都能通过（例如只检查“文件存在”“有输出”），区分不出技能带来的差异；过难：正确实现的输出也过不了（例如要求输出里出现正文从未规定的内容）；不可验证：判定依赖主观品味或技能之外的信息。对每条给出难度判断、依据与修订建议，并指出哪些断言本轮全员通过或全员失败——那往往是难度失衡的信号。",
+      "pass_criteria": [
+        "每条断言的难度判定都对照了首轮实际输出，而不是凭空推断",
+        "断言能区分“带技能”与“不带技能”的输出差异",
+        "全员通过或全员失败的断言已被逐条解释或给出修订建议"
+      ],
+      "fail_criteria": [
+        "存在任何合理输出都能过的空断言（如只检查产物存在）",
+        "存在正确输出也过不了的断言（要求了正文未规定的细节）",
+        "存在不可验证的断言（依赖主观品味或技能之外的信息）"
+      ],
+      "evidence_required": "逐条引用断言原文与首轮输出中被用来判定难度的具体片段（产物或文本），并注明该断言本轮的实际通过情况。",
+      "blocking": false,
+      "legacy_id": "E-05",
+      "legacy_source": "§7.5.4",
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#writing-assertions"
+    },
+    {
+      "id": "E-06",
+      "family": "E",
+      "title": "盲评",
+      "stage": "测试期",
+      "when": "存在同一任务的两份匿名输出（版本 A/B，来源对评委保密）时适用；只有一份输出或来源未匿名化时记 NA 并说明",
+      "inputs": ["blind-A.md", "blind-B.md", "任务说明"],
+      "prompt": "你事先不知道两份输出的来源。先各自通读 blind-A.md 与 blind-B.md，再按正确性、完整性、可用性三个维度分别给 1–5 分。评分必须绑定输出中的具体内容：指出哪一句、哪个字段支撑了这一分，不能凭整体印象。两个版本之间不要相互参照打分，先各自独立评完再比较。最后给出更倾向哪一份（A、B 或平手）与理由；若两者各有明显强项，说明差异落在哪个维度，而不是含糊地判平手。",
+      "pass_criteria": [
+        "三个维度各自给分，且每个分数都引用该版本输出中的具体内容",
+        "两个版本先独立评分，过程中未使用来源信息或相互锚定",
+        "偏好结论明确（A/B/平手）并说明差异落在哪个维度"
+      ],
+      "fail_criteria": [
+        "分数无证据支撑，或只给一个总分不分维度",
+        "评分过程引用了输出来源（with_skill/without_skill、新旧版），或先看 A 再按 A 的标准评 B",
+        "偏好结论含糊（如“都不错”）且未说明维度差异"
+      ],
+      "evidence_required": "为 A、B 每个维度的分数各引用至少一处该版本输出的原文片段（并注明所在位置）；偏好结论须引用两版的关键差异原文。",
+      "blocking": false,
+      "legacy_id": "E-06",
+      "legacy_source": "§7.5.5",
+      "official": ""
+    },
+    {
+      "id": "E-07",
+      "family": "E",
+      "title": "模式归因",
+      "stage": "测试期",
+      "when": "有断言通过情况矩阵（含仅带技能通过的项清单）时适用；没有矩阵数据时记 NA",
+      "inputs": ["<技能名>-workspace/iteration-N/ 各臂 grading.json", "<技能名>-workspace/iteration-N/benchmark.json"],
+      "prompt": "读断言通过情况矩阵，重点是“仅带技能通过”的那些项。逐项判断这项差异是否真由技能带来：看它在多轮或多次运行中是否稳定，还是只在某一轮出现（那更像任务波动或输出随机性）；看它通过的原因能否用技能正文中的某条指令解释，若完全解释不了，就不能归因于技能。对每个归因结论给出证据，并明确区分“技能带来的差异”“波动导致”“证据不足，需更多轮次”。",
+      "pass_criteria": [
+        "每项归因都对应该项的多次运行结果（稳定性）或明确的技能指令依据",
+        "无法解释的差异被如实标为“证据不足/波动”，而非归因于技能",
+        "归因结论逐项给出，无整段概括"
+      ],
+      "fail_criteria": [
+        "把单轮出现的差异直接归因于技能，无稳定性或指令依据",
+        "存在未给出归因结论的仅带技能通过项",
+        "用总体印象代替逐项归因"
+      ],
+      "evidence_required": "逐项引用通过矩阵中该断言的行数据（各臂结果与轮次）以及技能正文中被认为起作用的指令原文（SKILL.md 行号）。",
+      "blocking": false,
+      "legacy_id": "E-07",
+      "legacy_source": "§7.6.2",
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#analyzing-patterns"
+    },
+    {
+      "id": "E-08",
+      "family": "E",
+      "title": "delta 解读",
+      "stage": "测试期",
+      "when": "有双跑对照数据（均值、波动、token/时长成本）时适用；只有单臂数据时记 NA 并说明无法比较",
+      "inputs": ["<技能名>-workspace/iteration-N/benchmark.json", "<技能名>-workspace/iteration-N/ 各臂 timing.json"],
+      "prompt": "读双跑对照数据（各臂均值、波动、token 与时长成本）。先判断在当前波动水平下均值差异是否可信：样本少、波动大于差异时必须明说“置信不足”，不要给出确定结论。再看质量收益与成本是否成比例：通过率的提升是否值得多花的 token 与时长，成本变化异常（例如 token 翻倍而通过率几乎不动）要单独指出。你的结论是分析意见而不是最终判定，请把需要人拍板的点列成清单交人工裁决。",
+      "pass_criteria": [
+        "均值差异的可信度结论明确写出（波动大或样本少时写明“置信不足”）",
+        "质量收益与 token、时长成本的对应关系被逐项比较",
+        "结论中单列“建议人工裁决点”，未代替人工拍板"
+      ],
+      "fail_criteria": [
+        "在波动大于差异时仍给出确定性结论（未说明置信不足）",
+        "只讲质量提升，完全未看 token 与时长成本",
+        "用分析结论直接下最终判定，未留人工裁决点"
+      ],
+      "evidence_required": "引用 benchmark.json 与 timing.json 中的具体数值（各臂均值、标准差、token、时长）并注明数据来源轮次；结论必须能对应到这些数字。",
+      "blocking": false,
+      "legacy_id": "E-08",
+      "legacy_source": "§7.6.4–7.6.5",
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#aggregating-results"
+    },
+    {
+      "id": "E-09",
+      "family": "E",
+      "title": "改进建议",
+      "stage": "测试期",
+      "when": "测试结束且至少有一路信号（触发失败项、断言失败项、人工复核反馈）时适用；三路信号都没有时记 NA",
+      "inputs": ["触发评测失败清单", "断言失败清单", "人工复核反馈"],
+      "prompt": "综合三路信号：触发评测失败项、断言失败项、人工复核反馈。先找共同根因——同一处正文或 description 的缺陷是否同时解释了多个失败项，把根因与表面症状分开。然后给出 3–5 条具体改进建议，每条必须写明改哪个文件（SKILL.md 的哪一节、哪个 references/ 文件或哪个脚本）、怎么改（改成什么样）、预期解决哪个失败项。不要输出“加强描述”“补充说明”这类泛泛建议。",
+      "pass_criteria": [
+        "每条建议写明目标文件与具体位置（节或行）以及改后的写法",
+        "每条建议都挂到一个具体失败项上，该失败项可回查",
+        "建议能追溯到共同根因分析，而非逐条症状各自打补丁"
+      ],
+      "fail_criteria": [
+        "出现无文件、无位置、无法执行的泛泛建议",
+        "建议与三路信号中的失败项无对应关系",
+        "只罗列症状不给出根因，或条数超出 3–5 条且无优先级"
+      ],
+      "evidence_required": "每条建议必须引用它要解决的失败项原文（触发失败查询、断言文本或人工反馈原句）；未标注目标文件与位置的建议不计入有效建议。",
+      "blocking": false,
+      "legacy_id": "E-09",
+      "legacy_source": "§7.8.7",
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#iterating-on-the-skill"
+    },
+    {
+      "id": "E-10",
+      "family": "E",
+      "title": "轨迹诊断",
+      "stage": "测试期",
+      "when": "有运行轨迹（多步执行记录）与设计说明时适用；只有最终输出、没有轨迹时记 NA 并说明",
+      "inputs": ["运行轨迹", "设计说明", "SKILL.md"],
+      "prompt": "读运行轨迹与设计说明，按三类缺陷给每一步归因：缺信息（正文缺少该场景的必要指令，导致执行者摸索或猜）、缺工具（缺脚本或资源，执行者绕路完成）、指令冲突（正文规则互相矛盾，或规则与环境约束冲突）。每个缺陷都要指出它在轨迹中的表现位置与对应的正文位置，并给出修改建议。特别注意区分“技能问题”与“任务本身波动”：同一任务多次运行都出现同一处绕路，才算技能缺陷。逐条列出缺陷（类别 + 位置 + 证据）。",
+      "pass_criteria": [
+        "每个缺陷都归入三类之一，并同时给出轨迹位置与正文位置",
+        "同一绕路或冲突在多轮轨迹中重复出现才判为技能缺陷",
+        "每条缺陷附带可执行的修改建议"
+      ],
+      "fail_criteria": [
+        "只描述现象不归因到三类缺陷，或归因无正文位置对应",
+        "把一次性波动当成技能缺陷，或无证据地认定重复",
+        "存在轨迹中明显异常但未归因的步骤"
+      ],
+      "evidence_required": "引用轨迹中出问题步骤的原文片段（含步骤序号或行号）与对应正文原文（SKILL.md 行号）；两者缺一即视为证据不足。",
+      "blocking": false,
+      "legacy_id": "E-10",
+      "legacy_source": "§5.1.9",
+      "official": "https://agentskills.io/skill-creation/best-practices#refine-with-real-execution"
+    },
+    {
+      "id": "R-01",
+      "family": "R",
+      "title": "纠错归纳",
+      "stage": "运行期",
+      "when": "运行期已积累一批人工纠正记录时适用；记录为空或本轮无纠正事件时记 NA 并说明没有可归纳素材",
+      "inputs": ["运行期人工纠正记录", "SKILL.md"],
+      "prompt": "读运行期的人工纠正记录，把同类问题合并后归纳成候选 Gotchas 条目，每条按“触发场景（何时会踩）→ 错误做法 → 正确做法”三段写。要求具体可执行：写清触发条件（什么任务、什么输入下会踩），错误做法要能对应到记录里的真实事件，正确做法要能直接照做。逐案例的偶发噪声合并同类项，不要一条记录写一条 Gotchas。泛化的“注意安全”“小心处理”一律不写。归纳完成后交人工判断哪些值得写入，你不要直接改 SKILL.md。",
+      "pass_criteria": [
+        "每条候选 Gotchas 都包含触发场景、错误做法、正确做法三段",
+        "条目来自真实纠正记录，能指回具体案例",
+        "同类记录已合并，无逐案例流水账，无泛化劝告"
+      ],
+      "fail_criteria": [
+        "条目缺少触发场景，或正确做法无法直接执行",
+        "出现泛化建议（“注意安全”“小心谨慎”）或凭想象补的坑点",
+        "未经合并，把每条纠正记录原样列成一条 Gotchas"
+      ],
+      "evidence_required": "每条候选条目必须引用它来源的纠正记录原文（记录条目、时间或行号），并写出它合并了哪几条同类记录。",
+      "blocking": false,
+      "legacy_id": "R-01",
+      "legacy_source": "V10",
+      "official": "https://agentskills.io/skill-creation/best-practices#gotchas-sections"
+    },
+    {
+      "id": "R-02",
+      "family": "R",
+      "title": "增长性内容隔离判定",
+      "stage": "运行期",
+      "when": "运行期有沉淀内容候选（新坑点、逐案例材料、过程记录）待回流时适用；没有待回流候选时记 NA",
+      "inputs": ["待回流沉淀内容候选", "SKILL.md", "references/"],
+      "prompt": "读待回流的沉淀内容候选与当前 SKILL.md，逐条判定它该落在哪里：A 每次运行必需的核心指令（可入正文）；B 可精简的通用坑点（入 Gotchas 精简条目）；C 逐案例累积型或过程材料（必须入 references/ 并写明加载时机）。判定倾向是能不进正文就不进正文：正文会在激活后整体载入，凡属“偶尔用到”“某个案例特有”“会越积越多”的内容都往 B 或 C 走；选 C 时必须给出建议的加载时机（什么条件下读哪个文件）。逐条给出 A/B/C 与理由，并说明若选 C 建议放在哪个文件里。",
+      "pass_criteria": [
+        "每条候选都给出 A/B/C 归类与可核对的理由",
+        "归为 C 的候选附带了建议的文件位置与加载时机",
+        "正文新增内容限于“每次运行必需”的核心指令"
+      ],
+      "fail_criteria": [
+        "把逐案例累积型或过程材料判入正文（A）而无必要性说明",
+        "归为 C 但未给出加载时机与文件位置",
+        "存在未归类的候选条目"
+      ],
+      "evidence_required": "逐条引用候选内容原文与它所对应的 SKILL.md 现有段落（行号），并写出归类字母与判定理由；判 A 的必须引用“每次运行必需”的依据段。",
+      "blocking": false,
+      "legacy_id": "R-02",
+      "legacy_source": "V26",
+      "official": "https://agentskills.io/skill-creation/best-practices#structure-large-skills-with-progressive-disclosure"
+    }
+  ]
+}
