@@ -31,7 +31,7 @@ SUITES: list[tuple[str, str]] = [
     ("test_evalx", "评测资产（官方 evals 形状与工作区产物）"),
     ("test_trigger", "触发评测资产（查询集 / 运行记录 / 阈值）"),
     ("test_review", "语义评审（提示词目录 / 任务包 / 回写 / 汇总）"),
-    ("test_docs", "两份交付文档（含演练块真跑）"),
+    ("test_docs", "文档与结构说明（演练块真跑 + 文件树一致）"),
     ("test_injection", "注入自测（变异 38 处，必须逐处报错且不牵连）"),
     ("test_packaging", "打包（pyproject 静态检查；--install 时真装一遍）"),
 ]

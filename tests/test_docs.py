@@ -45,14 +45,20 @@ from skillverify.spec import RULES as SPEC_RULES  # noqa: E402
 REPO = Path(__file__).resolve().parent.parent
 DOC_AUTHOR = REPO / "技能编写指南.md"
 DOC_PIPELINE = REPO / "验证流程指南.md"
+DOC_MANUAL = REPO / "操作手册.md"
+DOC_MIGRATION = REPO / "迁移与部署指南.md"
+DOC_STRUCTURE = REPO / "仓库结构说明.md"
+DOC_COVERAGE = REPO / "覆盖对照-生命周期验证方案.md"
 
-SUBCOMMAND_RE = re.compile(r"skillverify\s+([a-z][a-z-]*)")
+SUBCOMMAND_RE = re.compile(r"skillverify[ \t]+([a-z][a-z-]*)")
 FLAG_RE = re.compile(r"(?<![\w-])--[a-z][a-z-]*")
 RULE_ID_RE = re.compile(r"\b(?:D|W|E|R)-\d{2}\b|\b(?:SKILL|SPEC|REF|BUDGET|HYG|ENC|I18N|BODY|COV|"
                         r"SCRIPT|DEP|SEC|DISC|EVAL|GRAD|TIME|BENCH|WS|REV)-\d{3}\b")
 
 #: 文档里那条"由人/LLM 完成"的步骤（测试用程序化填写代替）
 FILL_MARKER = "这一步由人或任意 LLM 完成"
+#: 演练块里另一种"测试动作"步骤：由测试补上评测资产
+ASSET_MARKER = "这一步由你来做"
 
 _passed: list[str] = []
 _failed: list[str] = []
@@ -77,6 +83,11 @@ def run_cli(argv: list[str]) -> tuple[int, str, str]:
     try:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = cli.main(argv)
+    except SystemExit as exc:
+        # argparse 的 --version/--help 与参数错误走 SystemExit；
+        # 进程内调用要把它当"退出码"接住，否则会静默中断整个套件。
+        code = exc.code if isinstance(exc.code, int) else 1
+        return code, out.getvalue(), err.getvalue()
     except BaseException:
         sys.stderr.write(f"[run_cli] argv={argv} 抛出异常，已捕获输出：\n"
                          f"--- stdout ---\n{out.getvalue()}\n--- stderr ---\n{err.getvalue()}\n")
@@ -221,6 +232,46 @@ def run_agent_notes() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def write_assets(skill: Path, skill_name: str, assertions: list[str]) -> None:
+    """写"新手最需要照抄"的那三份评测资产（官方 evals.json + 触发查询集 + 运行记录）。
+
+    测试用它代替《操作手册.md》里"这一步由你来做"的动作，从而把整条新手路线跑通。
+    """
+    (skill / "evals" / "files").mkdir(parents=True, exist_ok=True)
+    (skill / "evals" / "files" / "input.csv").write_text(
+        "month,revenue\n2025-01,100\n", encoding="utf-8", newline="")
+    (skill / "evals" / "evals.json").write_text(json.dumps({
+        "skill_name": skill_name,
+        "evals": [{
+            "id": 1,
+            "prompt": "我有一份月度销售 CSV 在 evals/files/input.csv，找出收入最高的 3 个月。",
+            "expected_output": "一份列出前 3 个高收入月份的汇总。",
+            "files": ["evals/files/input.csv"],
+            "assertions": assertions,
+        }],
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
+    # 触发评测资产（本项目约定；与官方 evals.json 分开）：8 正 + 8 负，train 62.5%，
+    # 每条 3 次运行，正例全触发、负例全不触发。
+    queries = []
+    for idx in range(16):
+        should = idx < 8
+        queries.append({
+            "id": f"{'P' if should else 'N'}{idx % 8 + 1:02d}",
+            "query": f"（示例查询 {idx + 1}）帮我处理一下这份销售数据",
+            "should_trigger": should,
+            "subset": "train" if idx < 10 else "validation",
+            "category": "positive-direct" if should else "negative-near-miss",
+            "rationale": "文档演练用的示例查询",
+        })
+    (skill / "evals" / "trigger-queryset.json").write_text(json.dumps(
+        {"skill_name": skill_name, "queries": queries}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8", newline="")
+    runs = [{"query_id": q["id"], "run": i + 1, "loaded": bool(q["should_trigger"]),
+             "evidence": f"第 {i + 1} 次运行的观察"} for q in queries for i in range(3)]
+    (skill / "evals" / "trigger-runs.json").write_text(json.dumps(
+        {"runs": runs}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
+
+
 def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     """建一份**能过全部门禁**的演示技能（临时 git 仓库）。"""
     project = tmp / "demo-proj"
@@ -228,7 +279,6 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     skill = skills_root / "demo-skill"
     (skill / "references").mkdir(parents=True)
     (skill / "scripts").mkdir()
-    (skill / "evals" / "files").mkdir(parents=True)
 
     (skill / "SKILL.md").write_text(
         "---\n"
@@ -259,42 +309,10 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
         'if __name__ == "__main__":\n'
         "    sys.exit(main())\n",
         encoding="utf-8", newline="")
-    (skill / "evals" / "files" / "input.csv").write_text(
-        "month,revenue\n2025-01,100\n", encoding="utf-8", newline="")
-    assertions = ["输出列出了 3 个月份", "每个月后面跟着收入数值"]
-    (skill / "evals" / "evals.json").write_text(json.dumps({
-        "skill_name": "demo-skill",
-        "evals": [{
-            "id": 1,
-            "prompt": "我有一份月度销售 CSV 在 evals/files/input.csv，找出收入最高的 3 个月。",
-            "expected_output": "一份列出前 3 个高收入月份的汇总。",
-            "files": ["evals/files/input.csv"],
-            "assertions": assertions,
-        }],
-    }, ensure_ascii=False, indent=2), encoding="utf-8", newline="")
-
-    # 触发评测资产（本项目约定；与官方 evals.json 分开）：8 正 + 8 负，train 62.5%，
-    # 每条 3 次运行，正例全触发、负例全不触发。
-    queries = []
-    for idx in range(16):
-        should = idx < 8
-        queries.append({
-            "id": f"{'P' if should else 'N'}{idx % 8 + 1:02d}",
-            "query": f"（示例查询 {idx + 1}）帮我处理一下这份销售数据",
-            "should_trigger": should,
-            "subset": "train" if idx < 10 else "validation",
-            "category": "positive-direct" if should else "negative-near-miss",
-            "rationale": "文档演练用的示例查询",
-        })
-    (skill / "evals" / "trigger-queryset.json").write_text(json.dumps(
-        {"skill_name": "demo-skill", "queries": queries}, ensure_ascii=False, indent=2),
-        encoding="utf-8", newline="")
-    runs = [{"query_id": q["id"], "run": i + 1, "loaded": bool(q["should_trigger"]),
-             "evidence": f"第 {i + 1} 次运行的观察"} for q in queries for i in range(3)]
-    (skill / "evals" / "trigger-runs.json").write_text(json.dumps(
-        {"runs": runs}, ensure_ascii=False, indent=2), encoding="utf-8", newline="")
+    write_assets(skill, "demo-skill", ["输出列出了 3 个月份", "每个月后面跟着收入数值"])
 
     # 评测工作区（官方结构）：一个 iteration、两侧 arm、可对账的 benchmark
+    assertions = ["输出列出了 3 个月份", "每个月后面跟着收入数值"]
     ws = skill.parent / "demo-skill-workspace" / "iteration-1"
     for arm, flags in (("with_skill", [True, True]), ("without_skill", [False, False])):
         arm_dir = ws / "eval-top-months" / arm
@@ -364,15 +382,20 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     return project, skills_root, skill, home, pack_dir, runner
 
 
-def extract_runnable(text: str) -> list[tuple[str, int | None]]:
-    """取出 `<!-- runnable -->` 标记后的第一个代码块，解析成 [(命令, 期望退出码)]。"""
-    marker = text.find("<!-- runnable -->")
-    if marker < 0:
-        raise AssertionError("《验证流程指南.md》里没有 <!-- runnable --> 标记的演练块")
-    start = text.find("```", marker)
+def extract_runnable(text: str, which: int = 0, doc: str = "文档"
+                     ) -> list[tuple[str, int | None]]:
+    """取出第 `which` 个 `<!-- runnable -->` 块，解析成 [(命令, 期望退出码)]。
+
+    块内**整行注释会被跳过**（那里正好用来写"这一步在干什么"），但带两种标记的注释行会变成
+    "测试动作"步骤：`FILL_MARKER`（填写评审模板）与 `ASSET_MARKER`（补上评测资产）。
+    """
+    markers = [m.start() for m in re.finditer(r"<!--\s*runnable\s*-->", text)]
+    if which >= len(markers):
+        raise AssertionError(f"{doc} 里没有第 {which + 1} 个 <!-- runnable --> 标记的演练块")
+    start = text.find("```", markers[which])
     end = text.find("```", start + 3)
     if start < 0 or end < 0:
-        raise AssertionError("演练块没有正常闭合")
+        raise AssertionError(f"{doc} 的第 {which + 1} 个演练块没有正常闭合")
     body = text[start + 3:end]
     lines = body.splitlines()[1:]  # 去掉 ```bash 这一行
     steps: list[tuple[str, int | None]] = []
@@ -383,6 +406,8 @@ def extract_runnable(text: str) -> list[tuple[str, int | None]]:
         if stripped.startswith("#"):
             if FILL_MARKER in stripped:
                 steps.append((FILL_MARKER, None))
+            elif ASSET_MARKER in stripped:
+                steps.append((ASSET_MARKER, None))
             continue
         expected = None
         if "#" in stripped:
@@ -405,48 +430,23 @@ def fill_template(template: Path, out: Path) -> None:
     out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8", newline="")
 
 
-def run_walkthrough(tmp: Path) -> None:
-    print("[test_walkthrough]")
-    project, skills_root, skill, home, pack_dir, runner = make_fixture(tmp)
-    steps = extract_runnable(DOC_PIPELINE.read_text(encoding="utf-8"))
-    check(len(steps) >= 12, f"演练块解析出 {len(steps)} 个步骤")
-
-    template = pack_dir / "demo-skill-review-template.json"
-    filled = tmp / "filled-review.json"
-    mapping = {
-        "<技能目录>": str(skill),
-        "<技能根>": str(skills_root),
-        "<项目>": str(project),
-        "<用户主目录>": str(home),
-        "<任务包目录>": str(pack_dir),
-        "<技能名>": "demo-skill",
-        "<回写文件>": str(filled),
-        "<材料目录>": str(tmp / "demo-material"),
-        "<独立技能目录>": str(tmp / "emitted"),
-        "<盲评旧版>": str(tmp / "blind-src" / "old"),
-        "<回写目录>": str(tmp / "cli-writeback"),
-        # --runner 收的是**一个命令字符串**：这里不能嵌双引号，
-        # 否则演练行 `--runner "<评审命令>"` 经 shlex 拆分会碎成多个参数。
-        "<评审命令>": f"{sys.executable} {runner}",
-        "<盲评新版>": str(tmp / "blind-src" / "new"),
-    }
-
-    check('"' not in mapping["<评审命令>"],
-          "评审命令不含双引号（含空格路径需改用别的引用方式，见文档说明）")
-
+def run_block(doc: Path, which: int, mapping: dict[str, str],
+              actions: dict[str, "Callable[[], None]"], label: str,
+              min_steps: int = 3) -> int:
+    """执行某文档里的第 `which` 个演练块，逐条核对期望退出码；返回执行的命令数。"""
+    steps = extract_runnable(doc.read_text(encoding="utf-8"), which, doc.name)
+    check(len(steps) >= min_steps, f"{label}：演练块解析出 {len(steps)} 个步骤")
     executed = 0
     for raw, expected in steps:
-        if raw == FILL_MARKER:
-            check(template.is_file(), "演练到「填写模板」这一步时任务包已生成")
-            if template.is_file():
-                fill_template(template, filled)
+        if raw in actions:
+            actions[raw]()
             continue
         command = raw
         for key, value in mapping.items():
             command = command.replace(key, value)
         leftover = re.findall(r"<[^>]+>", command)
         if leftover:
-            fail(f"演练步骤仍有未替换的占位符 {leftover}: {raw[:80]}")
+            fail(f"{label}：演练步骤仍有未替换的占位符 {leftover}: {raw[:80]}")
             continue
         argv = shlex.split(command)
         if argv and argv[0] == "skillverify":
@@ -454,13 +454,52 @@ def run_walkthrough(tmp: Path) -> None:
         code, _out, err = run_cli(argv)
         executed += 1
         if code != expected:
-            fail(f"演练步骤退出码不符（期望 {expected} 实得 {code}）: {raw[:96]}"
+            fail(f"{label}：退出码不符（期望 {expected} 实得 {code}）: {raw[:96]}"
                  f"\n         stderr: {err.strip()[:200]}")
         else:
-            ok(f"演练步骤 exit={code}: {raw[:80]}")
+            ok(f"{label}：exit={code}: {raw[:72]}")
+    check(executed == len([s for s in steps if s[0] not in actions]),
+          f"{label}：{executed} 条命令全部执行")
+    return executed
 
-    check(executed == len([s for s in steps if s[0] != FILL_MARKER]),
-          f"演练块 {executed} 条命令全部执行")
+
+def rich_mapping(tmp: Path, project: Path, skills_root: Path, skill: Path, home: Path,
+                 pack_dir: Path, runner: Path, prefix: str = "demo") -> dict[str, str]:
+    """完整夹具用的占位符映射（《验证流程指南.md》《操作手册.md》《迁移与部署指南.md》共用）。"""
+    return {
+        "<技能目录>": str(skill),
+        "<技能根>": str(skills_root),
+        "<项目>": str(project),
+        "<用户主目录>": str(home),
+        "<任务包目录>": str(pack_dir),
+        "<技能名>": skill.name,
+        "<回写文件>": str(tmp / f"{prefix}-filled-review.json"),
+        "<材料目录>": str(tmp / f"{prefix}-material"),
+        "<独立技能目录>": str(tmp / f"{prefix}-emitted"),
+        "<盲评旧版>": str(tmp / "blind-src" / "old"),
+        "<盲评新版>": str(tmp / "blind-src" / "new"),
+        "<回写目录>": str(tmp / f"{prefix}-cli-writeback"),
+        # --runner 收的是**一个命令字符串**：这里不能嵌双引号，
+        # 否则演练行 `--runner "<评审命令>"` 经 shlex 拆分会碎成多个参数。
+        "<评审命令>": f"{sys.executable} {runner}",
+    }
+
+
+def run_walkthrough(tmp: Path) -> None:
+    print("[test_walkthrough]")
+    project, skills_root, skill, home, pack_dir, runner = make_fixture(tmp)
+    template = pack_dir / "demo-skill-review-template.json"
+    mapping = rich_mapping(tmp, project, skills_root, skill, home, pack_dir, runner)
+    filled = Path(mapping["<回写文件>"])
+    check('"' not in mapping["<评审命令>"],
+          "评审命令不含双引号（含空格路径需改用别的引用方式，见文档说明）")
+
+    def fill() -> None:
+        check(template.is_file(), "演练到「填写模板」这一步时任务包已生成")
+        if template.is_file():
+            fill_template(template, filled)
+
+    run_block(DOC_PIPELINE, 0, mapping, {FILL_MARKER: fill}, "流程指南")
     record = project / ".agents" / "skillverify" / "review" / "demo-skill.json"
     check(record.is_file(), "演练后中央留痕里有评审记录")
     if record.is_file():
@@ -470,6 +509,163 @@ def run_walkthrough(tmp: Path) -> None:
     hook = project / ".git" / "hooks" / "pre-commit"
     check(hook.is_file() and "skillverify-hook" in hook.read_text(encoding="utf-8"),
           "演练最后真的装上了 pre-commit hook")
+
+
+# --------------------------------------------------------------------------- #
+# 《操作手册.md》《迁移与部署指南.md》：命令真跑
+# --------------------------------------------------------------------------- #
+
+#: 手册路线 A 用的"新建技能"——只有 SKILL.md，没有任何评测资产
+NEW_SKILL_MD = (
+    "---\n"
+    "name: my-new-skill\n"
+    "description: 从 CSV 统计月度销售并输出前 3 名报告。"
+    "当用户提到销售数据、CSV 统计或月度汇总时使用。\n"
+    "---\n\n"
+    "# My New Skill\n\n"
+    "## 步骤\n\n"
+    "1. 读取用户给的 CSV；\n"
+    "2. 输出前 3 名月份的汇总。\n"
+)
+
+
+def run_manual(tmp: Path) -> None:
+    """《操作手册.md》两条路线：① 新建技能（最小夹具）② 已有技能（完整夹具）。"""
+    print("[test_manual]")
+    # ---- 路线 A：新建技能 ----
+    base_a = tmp / "manual-a"
+    project = base_a / "proj"
+    skills_root = project / ".agents" / "skills"
+    skill = skills_root / "my-new-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(NEW_SKILL_MD, encoding="utf-8", newline="")
+    home = base_a / "home"
+    home.mkdir(parents=True)
+    pack_dir = base_a / "review-pack"
+    if shutil.which("git"):  # hook install 需要 git 仓库
+        subprocess.run(["git", "init", "-q"], cwd=project, capture_output=True)
+        subprocess.run(["git", "-C", str(project), "add", "-A"], capture_output=True)
+        subprocess.run(["git", "-C", str(project), "-c", "user.email=t@t", "-c", "user.name=t",
+                        "commit", "-q", "-m", "init"], capture_output=True)
+
+    mapping_a = {
+        "<技能目录>": str(skill),
+        "<技能根>": str(skills_root),
+        "<项目>": str(project),
+        "<用户主目录>": str(home),
+        "<任务包目录>": str(pack_dir),
+        "<技能名>": "my-new-skill",
+        "<回写文件>": str(base_a / "filled-review.json"),
+    }
+    template_a = pack_dir / "my-new-skill-review-template.json"
+    filled_a = Path(mapping_a["<回写文件>"])
+
+    def add_assets() -> None:
+        check(not (skill / "evals" / "evals.json").is_file(),
+              "手册路线 A：补资产之前，技能确实还没有评测资产")
+        write_assets(skill, "my-new-skill", ["输出列出了 3 个月份", "每个月后面跟着收入数值"])
+        check((skill / "evals" / "evals.json").is_file(), "手册路线 A：补上了评测资产")
+
+    def fill_a() -> None:
+        check(template_a.is_file(), "手册路线 A：填写模板时任务包已生成")
+        if template_a.is_file():
+            fill_template(template_a, filled_a)
+
+    run_block(DOC_MANUAL, 0, mapping_a,
+              {ASSET_MARKER: add_assets, FILL_MARKER: fill_a}, "操作手册·路线A")
+    record_a = project / ".agents" / "skillverify" / "review" / "my-new-skill.json"
+    check(record_a.is_file(), "手册路线 A：评审结论落进了中央记录")
+
+    # ---- 路线 B：已存在的技能（完整夹具）----
+    base_b = tmp / "manual-b"
+    project_b, skills_b, skill_b, home_b, pack_b, runner_b = make_fixture(base_b)
+    mapping_b = rich_mapping(base_b, project_b, skills_b, skill_b, home_b, pack_b, runner_b,
+                             prefix="manual-b")
+    template_b = pack_b / f"{skill_b.name}-review-template.json"
+    filled_b = Path(mapping_b["<回写文件>"])
+
+    def fill_b() -> None:
+        check(template_b.is_file(), "手册路线 B：填写模板时任务包已生成")
+        if template_b.is_file():
+            fill_template(template_b, filled_b)
+
+    run_block(DOC_MANUAL, 1, mapping_b, {FILL_MARKER: fill_b}, "操作手册·路线B")
+    record_b = project_b / ".agents" / "skillverify" / "review" / f"{skill_b.name}.json"
+    check(record_b.is_file(), "手册路线 B：评审结论落进了中央记录")
+
+
+def run_migration(tmp: Path) -> None:
+    """《迁移与部署指南.md》的"新机器自检 + 第一次验收"块。"""
+    print("[test_migration]")
+    base = tmp / "migrate"
+    project, skills_root, skill, home, pack_dir, runner = make_fixture(base)
+    mapping = rich_mapping(base, project, skills_root, skill, home, pack_dir, runner,
+                           prefix="migrate")
+    run_block(DOC_MIGRATION, 0, mapping, {}, "迁移指南")
+    check(base.joinpath("demo-proj").is_dir(), "迁移指南的演练确实作用在独立夹具上")
+
+
+def run_new_docs() -> None:
+    """新文档的通用约束：命令与旗标必须真实存在，且不得含机器专属路径。"""
+    print("[test_new_docs]")
+    parser = cli.build_parser()
+    subs = all_subcommands(parser)
+    flags = all_option_strings(parser)
+    external_flags = {"--no-verify"}          # git 自己的旗标
+    docs = (DOC_MANUAL, DOC_MIGRATION, DOC_STRUCTURE, DOC_COVERAGE)
+    for doc in docs:
+        text = doc.read_text(encoding="utf-8")
+        check(len(text) > 1500, f"{doc.name} 存在且有实质内容（{len(text)} 字符）")
+        drives = re.findall(r"(?<![\w.])[A-Za-z]:[\\/]\w", text)
+        check(not drives, f"{doc.name} 不含机器专属盘符路径（命中: {drives}）")
+
+    for doc in (DOC_MANUAL, DOC_MIGRATION):
+        text = doc.read_text(encoding="utf-8")
+        used = set(SUBCOMMAND_RE.findall(text))
+        unknown = sorted(used - subs)
+        check(not unknown, f"{doc.name} 提到的子命令都真实存在（凭空出现的: {unknown}）")
+        cli_lines = [ln for ln in text.splitlines() if "skillverify" in ln]
+        used_flags = {f for ln in cli_lines for f in FLAG_RE.findall(ln)}
+        unknown_flags = sorted(f for f in used_flags if f not in flags | external_flags)
+        check(not unknown_flags,
+              f"{doc.name} 里跟 skillverify 一起出现的旗标都真实存在（凭空出现的: {unknown_flags}）")
+
+    manual = DOC_MANUAL.read_text(encoding="utf-8")
+    check(manual.count("<!-- runnable -->") == 2, "操作手册有两条可执行路线")
+    for needle, label in (("新建", "新建技能"), ("已经存在", "已有技能"), ("PASS", "判定说明"),
+                          ("SKIP", "未执行的语义"), ("退出码", "退出码说明"),
+                          ("reviewer", "评审签署"), ("evidence", "证据要求")):
+        check(needle in manual, f"操作手册覆盖「{label}」")
+    migration = DOC_MIGRATION.read_text(encoding="utf-8")
+    for needle, label in (("必须带", "必须带什么"), ("不要带", "不要带什么"),
+                          ("pip install", "安装方式"), ("hosts.toml", "宿主适配"),
+                          ("常见问题", "排障")):
+        check(needle in migration, f"迁移指南覆盖「{label}」")
+
+
+def run_structure_doc() -> None:
+    """《仓库结构说明.md》必须与真实文件树一致（既不列不存在的，也不漏代码文件）。"""
+    print("[test_structure]")
+    text = DOC_STRUCTURE.read_text(encoding="utf-8")
+    listed = {p for p in re.findall(r"`((?:skillverify|tests)/[A-Za-z0-9_./-]+)`", text)
+              if "*" not in p}
+    missing = sorted(p for p in listed if not (REPO / p).exists())
+    check(not missing, f"结构说明列出的路径都真实存在（不存在: {missing}）")
+
+    on_disk = {str(p.relative_to(REPO)).replace("\\", "/")
+               for p in list((REPO / "skillverify").rglob("*.py"))
+               + list((REPO / "tests").glob("*.py"))
+               + list((REPO / "skillverify" / "data").glob("*"))
+               if "__pycache__" not in p.parts}
+    not_listed = sorted(on_disk - listed)
+    check(not not_listed, f"所有代码与数据文件都在结构说明里列出（漏: {not_listed}）")
+    check(len(on_disk) >= 30, f"结构说明覆盖 {len(on_disk)} 个代码/数据文件")
+
+    for name in ("pyproject.toml", ".gitattributes", ".gitignore", "AGENTS.md",
+                 "AGENTS.local.md"):
+        check(f"`{name}`" in text, f"结构说明提到根文件 {name}")
+    for dirname in ("skillverify/cli/", "skillverify/lint/", "skillverify/data/", "tests/"):
+        check(dirname in text, f"结构说明展开了 {dirname}")
 
 
 # --------------------------------------------------------------------------- #
@@ -514,7 +710,11 @@ def main() -> int:
     try:
         run_consistency()
         run_agent_notes()
+        run_new_docs()
+        run_structure_doc()
         run_walkthrough(tmp)
+        run_manual(tmp)
+        run_migration(tmp)
         run_doc_semantics(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
