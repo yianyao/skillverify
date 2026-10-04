@@ -19,7 +19,8 @@
 
 数据文件（`data/`，宿主名与提示词都是数据，不是代码）：
   hosts.toml            宿主布局声明
-  review-prompts.json   29 条语义评审提示词（含 PASS/FAIL 判据与证据要求）
+  review-prompts.json   语义评审提示词目录（旧体系 29 条 + 新增 W-17 指令注入；
+                      每条含 PASS/FAIL 判据与证据要求）
 
 版本前提：`discover` / `check` / `watch` / `deliver` / `hook` 需要 Python ≥3.11
 （标准库 tomllib 解析 hosts.toml）；`spec` / `lint` / `evals` 不依赖它，

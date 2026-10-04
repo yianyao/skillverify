@@ -130,7 +130,7 @@ def run_static() -> None:
     from skillverify.discover import load_config
     from skillverify.review import load_catalog
 
-    check(len(load_catalog()) == 29, "提示词目录可加载且为 29 条")
+    check(len(load_catalog()) >= 29, "提示词目录可加载（≥ 旧体系 29 条）")
     tmp_home = Path(tempfile.mkdtemp(prefix="sv_pkg_home_"))
     try:
         cfg = load_config(REPO, tmp_home, use_discovered_files=False)
@@ -196,10 +196,10 @@ def run_install(tmp: Path) -> None:
     ok_prompts = False
     if prompts.returncode == 0:
         try:
-            ok_prompts = len(json.loads(prompts.stdout)["prompts"]) == 29
+            ok_prompts = len(json.loads(prompts.stdout)["prompts"]) >= 29
         except (json.JSONDecodeError, KeyError):
             ok_prompts = False
-    check(ok_prompts, "任意目录可读 29 条提示词（package-data 生效）")
+    check(ok_prompts, "任意目录可读提示词目录（package-data 生效）")
 
     discover = _run([*target, "discover", "--show-config"], cwd=elsewhere)
     check(discover.returncode == 0 and "[defaults]" in discover.stdout,
@@ -240,7 +240,7 @@ def run_install(tmp: Path) -> None:
     rtarget = [str(rexe)] if rexe.is_file() else [str(rpy), "-m", "skillverify.cli"]
     if installed.returncode == 0:
         fresh = _run([*rtarget, "review", "prompts", "--json"], cwd=elsewhere)
-        check(fresh.returncode == 0 and len(json.loads(fresh.stdout)["prompts"]) == 29,
+        check(fresh.returncode == 0 and len(json.loads(fresh.stdout)["prompts"]) >= 29,
               "非 editable 安装后提示词仍可读（数据真的进了 site-packages）")
     else:
         fail(f"wheel 安装失败: {(installed.stderr or installed.stdout).strip()[-300:]}")

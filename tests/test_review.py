@@ -118,14 +118,25 @@ def run_catalog(tmp: Path) -> None:
     print("[test_catalog]")
     catalog = review.load_catalog()
     ids = [p.id for p in catalog]
-    check(len(catalog) == 29, f"目录含 29 条提示词（实得 {len(catalog)}）")
-    check(sorted(ids) == sorted(EXPECTED_IDS),
-          f"id 与旧体系 29 条一一对应（缺: {sorted(set(EXPECTED_IDS) - set(ids))}；"
-          f"多: {sorted(set(ids) - set(EXPECTED_IDS))}）")
+    # 旧体系 29 条**一条不少、编号不改**（M0 的约定）；但"只能有 29 条"不是约束：
+    # 本项目允许新增（如 W-17 指令注入），前提是新增条目自己声明来历。
+    legacy = [p.id for p in catalog if p.legacy_id]
+    check(sorted(legacy) == sorted(EXPECTED_IDS),
+          f"旧体系 29 条一一对应（缺: {sorted(set(EXPECTED_IDS) - set(legacy))}；"
+          f"多: {sorted(set(legacy) - set(EXPECTED_IDS))}）")
+    check(len(catalog) >= 29, f"目录至少含旧体系 29 条（实得 {len(catalog)}）")
     check(len(set(ids)) == len(ids), "id 无重复")
 
+    added = [p for p in catalog if not p.legacy_id]
+    bad_added = [p.id for p in added
+                 if not p.legacy_source or "新增" not in p.legacy_source]
+    check(not bad_added,
+          f"新增条目必须自己声明来历（缺说明: {bad_added}）——"
+          f"当前新增 {len(added)} 条: {', '.join(p.id for p in added)}")
+
     counts = {f: sum(1 for p in catalog if p.family == f) for f in review.FAMILY_ORDER}
-    check(counts == {"D": 1, "W": 16, "E": 10, "R": 2}, f"家族分布与旧体系一致（实得 {counts}）")
+    check(counts == {"D": 1, "W": 17, "E": 10, "R": 2},
+          f"家族分布 = 旧体系 + 新增 W-17（实得 {counts}）")
 
     thin = [p.id for p in catalog if len(p.prompt) < 40]
     check(not thin, f"每条提示词都有实质指令（过于简短的: {thin}）")
@@ -152,7 +163,7 @@ def run_catalog(tmp: Path) -> None:
 
     # 选择器
     check(len(review.select_prompts(catalog, "W-01,W-13")) == 2, "--prompts 按 id 选择")
-    check(len(review.select_prompts(catalog, None, ["W"])) == 16, "--family 按家族选择")
+    check(len(review.select_prompts(catalog, None, ["W"])) == 17, "--family 按家族选择")
     try:
         review.select_prompts(catalog, "W-99")
         fail("未知 id 未报错")
@@ -456,7 +467,8 @@ def run_emit_skill(tmp: Path) -> None:
     check(len(skill_md.split("---")[1].split("description:")[1].split("\n")[0]) < 1024,
           "description 在官方长度上限内")
     asset = json.loads((target / "assets" / "review-prompts.json").read_text(encoding="utf-8"))
-    check(len(asset["prompts"]) == 29, "资产里是同一份 29 条目录")
+    check(len(asset["prompts"]) == len(review.load_catalog()),
+          "资产里是同一份提示词目录（条数随目录走）")
 
     # 自洽性：我们产出的技能必须过我们自己的门禁
     _doc, spec_report = check_spec(target)
@@ -484,10 +496,11 @@ def run_cli_chain(tmp: Path) -> None:
 
     code, out, _err = run_cli(["review", "prompts", "--json"])
     payload = json.loads(out)
-    check(code == 0 and len(payload["prompts"]) == 29, "`review prompts --json` 输出 29 条")
+    check(code == 0 and len(payload["prompts"]) == len(review.load_catalog()),
+          "`review prompts --json` 输出与目录一致")
 
     code, out, _err = run_cli(["review", "prompts", "--family", "W"])
-    check(code == 0 and out.count("### W-") == 16, "`--family W` 只渲染 W 组 16 条")
+    check(code == 0 and out.count("### W-") == 17, "`--family W` 只渲染 W 组 17 条")
 
     # ① 任务包
     pack_dir = root / "packout"

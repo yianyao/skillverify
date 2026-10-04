@@ -305,7 +305,8 @@ def build_parser() -> _ArgParser:
         "review",
         help="语义评审：提示词目录 / 任务包 / 回写汇总 / 独立技能包",
         description=(
-            "机械检查之外的判断交给语义评审：29 条提示词，每条带 PASS/FAIL 判据与证据要求。"
+            "机械检查之外的判断交给语义评审：提示词目录（旧体系 29 条 + 本项目新增，"
+            "含指令注入 W-17），每条带 PASS/FAIL 判据与证据要求。"
             "三档执行器产出同一 schema——档 1 任意 CLI（把任务包喂给它）、"
             "档 2 会话任务包（任意 LLM 或人填写）、档 3 人工兜底（手写同一 JSON）。"
         ),
@@ -323,7 +324,7 @@ def build_parser() -> _ArgParser:
 
     r_pack = review_sub.add_parser("pack", help="生成语义评审任务包（含回写模板）")
     r_pack.add_argument("path", help="被评审的技能目录")
-    r_pack.add_argument("--prompts", metavar="id1,id2", help="只评指定 id（默认全部 29 条）")
+    r_pack.add_argument("--prompts", metavar="id1,id2", help="只评指定 id（默认全部条目）")
     r_pack.add_argument("--family", action="append", metavar="D|W|E|R",
                         help="只评某家族（可重复）")
     r_pack.add_argument("--out", metavar="目录",
@@ -357,7 +358,7 @@ def build_parser() -> _ArgParser:
     r_run.add_argument("path", help="被评审的技能目录")
     r_run.add_argument("--runner", metavar="命令",
                        help="评审命令（读 stdin、把 JSON 打到 stdout）；以你的权限执行")
-    r_run.add_argument("--prompts", metavar="W-01,W-13", help="只跑指定提示词（默认全部 29 条）")
+    r_run.add_argument("--prompts", metavar="W-01,W-13", help="只跑指定提示词（默认全部条目）")
     r_run.add_argument("--timeout", type=float, default=180.0, metavar="秒",
                        help="单条提示词超时（默认 180 秒）")
     r_run.add_argument("--allow-partial", action="store_true",

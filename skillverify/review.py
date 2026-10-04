@@ -185,7 +185,8 @@ class Prompt:
     legacy_source: str = ""
     official: str = ""
     #: 与相邻提示词的分工（id -> 说明）。旧体系里有几对条目本就重叠，
-    #: 这里把"谁负责判什么"写进数据，而不是合并条目（29 条是既定约定）。
+    #: 这里把"谁负责判什么"写进数据，而不是合并条目（旧体系 29 条保留原编号，
+    #: 本项目可在其后**新增**条目，新增者必须在 `legacy_source` 里声明来历）。
     overlaps: dict[str, str] = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
 
@@ -833,7 +834,8 @@ def emit_skill(out_root: Path, catalog: list[Prompt], *, name: str = "skillverif
 
     blocking = [p.id for p in catalog if p.blocking]
     description = (
-        "对 Agent Skill 做语义评审（29 条提示词，每条带 PASS/FAIL 判据与证据要求）："
+        "对 Agent Skill 做语义评审（提示词目录：旧体系 29 条 + 本项目新增，"
+        "每条带 PASS/FAIL 判据与证据要求）："
         "检查描述触发质量、渐进式披露、取材真实性、破坏性操作防护、断言可验证性等"
         "机械检查覆盖不到的问题。当需要判断一个技能「写得好不好、会不会误导 Agent」时使用；"
         "当技能已通过 skillverify check 但仍需人工或模型复核时使用。"
