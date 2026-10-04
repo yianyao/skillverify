@@ -1,0 +1,85 @@
+# AGENTS.md —— 本仓库的工作约定与已踩过的坑
+
+> 给**改这个工具的人**（含 AI 协作者）看。技能作者与流水线使用者请看两份交付文档：
+> 《技能编写指南.md》《验证流程指南.md》。
+> 想知道"旧体系那套方案（237 条）我们覆盖了多少、漏了什么、凭什么这么决定"：
+> 看《覆盖对照-生命周期验证方案.md》。
+> 机器专属信息（解释器绝对路径、沙箱等）在 `AGENTS.local.md`（不提交），见文末。
+
+## 一、这是什么
+
+`skillverify`：宿主无关的 Agent Skill 全生命周期验证套件（纯标准库、强制 UTF-8）。
+九个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `watch` / `deliver` / `hook`。
+`legacy/` 是**旧体系归档，已冻结**（见 `legacy/归档冻结说明.md`）：不修、不迁、不跟进，
+它只作为 `--dogfood` 的回归语料。
+
+## 二、跑起来
+
+```powershell
+python -m tests.run_all              # 9 个套件，约 1 分钟（离线）
+python -m tests.run_all --dogfood    # 另把 legacy/ 下的旧技能拉进来跑
+python -m tests.run_all --install    # 再跑打包真装检查（需要网络，约 1 分钟）
+python -m tests.test_lint            # 也可以单跑某一套
+```
+
+解释器路径与 UTF-8 环境变量见 `AGENTS.local.md`。要求 Python ≥3.11（`tomllib`）。
+
+## 三、不许破坏的不变量（每条都有测试守着）
+
+1. **运行时零第三方依赖**：`pyproject.toml` 的 `dependencies` 必须为空（测试里查）。
+2. **强制 UTF-8（无 BOM）与 LF**：写文件用 `encoding="utf-8", newline="\n"`。
+3. **代码里不得出现宿主名**：宿主布局一律走 `data/hosts.toml`，有测试作为不变量。
+4. **判定分级不许混淆**：`FAIL` 阻断 ｜ `WARN` 人工甄别 ｜ `SKIP` = **本项未执行**（计入退出码 2）
+   ｜ `INFO` = 不适用（不影响退出码）。"没执行"永远不许伪装成"通过"。
+5. **stdout 只放报告，进度/落盘提示走 stderr**：否则 `--json` 会被污染（踩过：`review material`、
+   `_emit` 的"报告已落盘"）。`--quiet` 会连 JSON 一起静音，机读场景不要加它。
+6. **运行时数据必须随包分发**：`skillverify/data/hosts.toml` 与 `data/review-prompts.json`
+   要在 `pyproject.toml` 的 `package-data` 里；漏了 `discover`/`review` 直接失效，
+   而且**在源码目录里跑永远发现不了**——必须构建 wheel 才看得出（`--install` 会查）。
+7. **两份交付文档必须自包含**：不得引用 `handoff/`、`legacy/`、会话文档，不得出现盘符路径。
+8. **`legacy/` 冻结**：不要"顺手修好"里面的技能——它是回归基准，改了等于改基准。
+
+## 四、测试里两个"被执行的机制"（改东西前务必知道）
+
+1. **文档里的命令是真跑的**：`tests/test_docs.py` 会执行《验证流程指南.md》里
+   `<!-- runnable -->` 块中的每条命令，并核对实际退出码与行尾 `# N` 标注一致。
+   - 块内**整行注释会被忽略**（那里正好用来写"这一步在干什么"）；
+   - 行尾注释里的**第一个数字**被当作期望退出码，所以别在行尾注释里写别的数字；
+   - 改命令就要同步改期望退出码；新增命令要放进这个块。
+2. **注入自测是变异测试**：`tests/test_injection.py` 先造一份全绿基线（99 条规则参与判定），
+   再对**独立副本**注入 38 处缺陷，要求"期望规则里至少一条必须报错"且"不许牵连无关规则"。
+   - 加新规则时，最好同时加一处覆盖它的变异（`test_coverage` 会检查 16 个规则族全覆盖）；
+   - 容忍项（`tolerate`）必须写清理由，不要为了让测试变绿。
+
+## 五、踩过的坑（改之前先读，能省一轮返工）
+
+1. **PowerShell here-string 会改坏代码内容**（反引号是转义符、内层引号被吃）。
+   症状：`SyntaxError ... Perhaps you forgot a comma?` 指向中文串；更坏的是**内容错了但脚本照跑**。
+   → **用 write 工具把补丁写成 `.py` 再执行**。本仓库的历史提交里多处这么做，就是为这个。
+2. **中文串里别嵌 ASCII 双引号**，用「」。本仓库代码里大量中文提示语，这条踩过六七次。
+3. **模块变包会让 `python -m 包.模块` 失效**（缺 `__main__.py`）。`skillverify/cli/` 拆包时
+   正是如此——而 **git hook 的兜底调用就是这个形式**，结果所有提交被拦。
+   → 拆包要同时补 `__main__.py`，并把 `packages` 加进 `pyproject.toml`。
+4. **评测工作区是技能目录的兄弟目录**（`<技能名>-workspace/`），不是它的子目录。
+   写测试夹具时路径写错会**静默地什么都没改**（变异自测里 4 处变异因此没跑到）。
+5. **变异文本可能自己抵消变异**：给"无参数解析"的脚本写文档字符串时提到了 `sys.argv` / `--help`，
+   静态启发式于是正确地不报——变异白做。改脚本夹具时注意不要引入被检查的关键词。
+6. **`sys.argv` 也算"参数解析线索"**（`SCRIPT-003`）；不提供 `--help` 由运行期 `SCRIPT-004` 抓。
+7. **规则的范围以规则标题为准**：`I18N-001` 只管**代码块内**的命令行（行内 code span 不算）；
+   `REF-007` 认为"正文调用示例里出现"也算列出脚本；`HYG-005` 不把 `evals/files/` 当未归置素材。
+   改规则前先读实现，别按直觉改判据。
+8. **`pip install -e .` 证明不了 `package-data`**：editable 直接用源码树。
+   要验证发布物必须**构建 wheel 并检查包内文件**（`tests/test_packaging.py --install` 做的就是这个）。
+9. **Windows 上 `venv/Scripts/x`（无扩展名）跑得起来但 `is_file()` 说不存在**；判存在性带 `.exe`。
+10. **测试 helper 抛出前要打印捕获的 stdout/stderr**：否则现象是"套件跑到一半安静地没了"
+    （本仓库的 `run_cli` 全都这么做）。
+
+## 六、迁移/分发这个项目时要留意
+
+- `handoff/` 与 `.agents/skillverify/` 是本地会话/留痕目录（已 gitignore），**不是交付物**；
+  交付物是 `pyproject.toml` 与两份根目录文档。
+- `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
+- 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
+- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（9 套件 ≈540 断言 + 打包 32 断言）。
+- 新增规则/命令时的固定动作：① 规则要写 level 与出处（官方条款或"本项目收紧"）；
+  ② 文档里补上并放进演练块（带期望退出码）；③ 补回归断言；④ 跑一遍死代码与过期措辞扫描。

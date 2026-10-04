@@ -176,6 +176,47 @@ def run_consistency() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 项目级工作记忆（AGENTS.md）与其本地覆盖层
+# --------------------------------------------------------------------------- #
+
+
+def run_agent_notes() -> None:
+    """`AGENTS.md` 是改这个工具的人（含 AI 协作者）读的工作约定与踩坑记录。
+
+    它**不是**面向使用者的交付文档，所以不受"自包含"约束（可以提 legacy/），
+    但它必须①存在且带关键不变量，②不含机器专属路径（否则迁移到别人的机器就是错的），
+    ③其本地覆盖层 `AGENTS.local.md` 必须被 gitignore 挡住。
+    """
+    print("[test_agent_notes]")
+    notes = REPO / "AGENTS.md"
+    check(notes.is_file() and notes.stat().st_size > 2000,
+          f"AGENTS.md 存在且有实质内容（{notes.stat().st_size if notes.is_file() else 0} 字节）")
+    if not notes.is_file():
+        return
+    text = notes.read_text(encoding="utf-8")
+
+    topics = {
+        "运行时零依赖": "dependencies",
+        "判定分级（SKIP=未执行）": "SKIP",
+        "legacy 冻结": "冻结",
+        "运行时数据随包分发": "package-data",
+        "文档命令真跑": "runnable",
+        "注入自测": "变异",
+    }
+    missing = [label for label, needle in topics.items() if needle not in text]
+    check(not missing, f"AGENTS.md 覆盖关键不变量（缺: {missing}）")
+
+    # 机器专属路径绝不能进这份（它要随仓库分发）
+    drives = re.findall(r"(?<![\w.])[A-Za-z]:[\\/]\w", text)
+    check(not drives, f"AGENTS.md 不含机器专属盘符路径（命中: {drives}）")
+    check("AGENTS.local.md" in text, "AGENTS.md 指明机器专属信息放 AGENTS.local.md")
+
+    ignore = (REPO / ".gitignore").read_text(encoding="utf-8")
+    for entry in ("AGENTS.local.md", "CLAUDE.local.md", "handoff/", ".agents/skillverify/"):
+        check(entry in ignore, f".gitignore 挡住 {entry}")
+
+
+# --------------------------------------------------------------------------- #
 # 4：把文档里的命令块真跑一遍
 # --------------------------------------------------------------------------- #
 
@@ -472,6 +513,7 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="sv_test_docs_"))
     try:
         run_consistency()
+        run_agent_notes()
         run_walkthrough(tmp)
         run_doc_semantics(tmp)
     finally:

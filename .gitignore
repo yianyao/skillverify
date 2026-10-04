@@ -13,6 +13,10 @@ venv/
 # 会话交接文档：工作用，不属交付物
 handoff/
 
+# 指令文件的本地覆盖层（机器专属路径/环境，不随仓库分发）
+AGENTS.local.md
+CLAUDE.local.md
+
 # 编辑器/系统
 .vscode/
 .idea/
