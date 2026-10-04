@@ -14,7 +14,8 @@ from pathlib import Path
 
 from . import __version__
 from .encoding import force_utf8_stdio, write_text
-from .report import FAIL, Report
+from .lint import lint_skill
+from .report import FAIL, SKIP, Report
 from .spec import check_spec, find_official_cli, run_official
 
 PROG = "skillverify"
@@ -84,6 +85,33 @@ def cmd_spec(args: argparse.Namespace) -> int:
     return report.exit_code()
 
 
+def cmd_lint(args: argparse.Namespace) -> int:
+    """官方校验器留白的补检（引用/预算/卫生/脚本契约/依赖/安全/编码）。"""
+    path = Path(args.path)
+    if not path.exists():
+        print(f"FAIL: 路径不存在: {path}", file=sys.stderr)
+        return 1
+
+    report = lint_skill(
+        path,
+        run_scripts=args.scripts,
+        script_timeout_s=args.script_timeout,
+    )
+    report.meta["工具版本"] = f"{PROG} {__version__}"
+
+    _emit(report, args)
+
+    if not args.scripts:
+        skipped = [r for r in report.results if r.status == SKIP and "--scripts" in r.evidence]
+        if skipped:
+            print(
+                f"提示：{len(skipped)} 项脚本契约实测未执行（因此退出码为 2 而非 0）；"
+                f"加 --scripts 开启（注意：会以 `--help` 调用技能自带脚本）。",
+                file=sys.stderr,
+            )
+    return report.exit_code()
+
+
 def _emit(report: Report, args: argparse.Namespace) -> None:
     """按参数输出报告，并把 FAIL 明细同步到 stderr（便于管道消费）。"""
     if args.json:
@@ -127,6 +155,27 @@ def build_parser() -> _ArgParser:
                         help="额外调用官方 agentskills validate 对账")
     _add_common(p_spec)
     p_spec.set_defaults(func=cmd_spec)
+
+    p_lint = sub.add_parser(
+        "lint",
+        help="官方留白的补检（引用/预算/卫生/脚本契约/依赖/安全/编码）",
+        description=(
+            "对单个技能做官方校验器不覆盖的检查。默认只做静态检查，"
+            "不执行任何脚本；--scripts 会以 `--help` 与一个非法参数调用技能自带脚本，"
+            "用于实测脚本契约（存在副作用风险，故须显式开启）。"
+        ),
+    )
+    p_lint.add_argument("path", help="技能目录（含 SKILL.md）")
+    p_lint.add_argument(
+        "--scripts", action="store_true",
+        help="执行技能自带脚本以实测 --help/错误路径/幂等（默认关闭）",
+    )
+    p_lint.add_argument(
+        "--script-timeout", type=float, default=10.0, metavar="秒",
+        help="单个脚本的超时上限（默认 10 秒）",
+    )
+    _add_common(p_lint)
+    p_lint.set_defaults(func=cmd_lint)
 
     return parser
 
