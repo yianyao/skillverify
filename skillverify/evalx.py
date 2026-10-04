@@ -67,7 +67,12 @@ TOL_REL = 0.02
 #: 官方点名的"空洞/脆弱"断言措辞（机械初筛，命中须人工判断）
 VAGUE_ASSERTION_RE = re.compile(
     r"^\s*(?:the\s+)?output\s+(?:is|looks)\s+(?:good|fine|ok|okay|nice|correct)\s*[.。]?\s*$"
-    r"|^\s*(?:looks?\s+good|works?\s+well|没问题|看着不错|效果不错)\s*[.。]?\s*$",
+    r"|^\s*(?:looks?\s+good|works?\s+well|没问题|看着不错|效果不错)\s*[.。]?\s*$"
+    # 中文里最常见的空洞断言形态：「输出是好的」「结果正确」「功能正常」——
+    # 规则自己的整改文案就点名了「输出是好的」，正则里必须有它，否则规则抓不到自己说的例子
+    r"|^\s*(?:输出|结果|效果|功能|表现)(?:是|看起来|看着)?"
+    r"(?:好的?|正常的?|正确的?|对的?|没错|没问题|可以|还行|不错|能用|可用)"
+    r"\s*[.。]?\s*$",
     re.I,
 )
 BRITTLE_ASSERTION_RE = re.compile(r"exactly\s+the\s+phrase|逐字包含|一字不差", re.I)

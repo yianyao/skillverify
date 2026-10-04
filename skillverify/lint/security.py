@@ -70,9 +70,10 @@ RULES: dict[str, Rule] = {
     ),
     "SEC-006": Rule(
         "SEC-006",
-        "URL 中不得携带凭据参数",
+        "URL 中不得携带凭据（query 参数或 userinfo）",
         "HOUSE",
-        "本项目收紧；判据为 query 中出现 token/apikey/password 等字段",
+        "本项目收紧；判据为 query 出现 token/apikey/password 等字段，"
+        "或 URL 里出现 `user:password@host` 形态",
         "凭据改走请求头或环境变量，不要放在 URL 里（URL 会进日志与浏览器历史）",
     ),
     "SEC-007": Rule(
@@ -136,11 +137,16 @@ OBFUSCATION_RE = re.compile(
     r"|\bnew\s+Function\s*\(\s*atob\s*\(",
     re.I,
 )
+#: 任意 scheme 都算（凭据进 URL 就是进日志，与协议无关）
+_URL_SCHEME = r"[a-z][a-z0-9+.\-]*://"
 EXFIL_URL_RE = re.compile(
-    r"https?://\S+[?&](?:token|apikey|api_key|access_key|password|passwd|secret|auth|session)=",
+    # query 里带凭据字段
+    _URL_SCHEME + r"\S+[?&](?:token|apikey|api_key|access_key|password|passwd|"
+    r"secret|auth|session)="
+    # 或 URL 的 userinfo 里直接写 `user:password@host`
+    r"|" + _URL_SCHEME + r"[^\s/?#@]+:[^\s/?#@]+@",
     re.I,
 )
-
 #: 常见公共端点（无需声明；只覆盖"引用文档/包仓库"这类噪音源）
 DEFAULT_ALLOWED_HOSTS = frozenset(
     {"localhost", "127.0.0.1", "0.0.0.0", "::1", "example.com", "example.org",
