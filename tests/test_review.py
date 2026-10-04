@@ -710,6 +710,121 @@ def run_material(tmp: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 档 1 执行器（review run --runner）
+# --------------------------------------------------------------------------- #
+
+#: 假评审命令的源码；用行列表拼装，避免多层引号互相截断
+_RUNNER_SOURCES: dict[str, list[str]] = {
+    "good": [
+        "import json, re, sys",
+        "payload = sys.stdin.read()",
+        "m = re.search(r'提示词 (\\S+)：', payload)",
+        "pid = m.group(1) if m else 'W-01'",
+        "print('我来看看这个技能……')",
+        "print('```json')",
+        "print(json.dumps({'prompt_id': pid, 'verdict': 'PASS',",
+        "                  'evidence': '见 SKILL.md:2 的 description 字段，含 CSV 与统计两个关键词',",
+        "                  'finding': '', 'suggestion': ''}, ensure_ascii=False))",
+        "print('```')",
+    ],
+    "bad_json": [
+        "import sys",
+        "sys.stdin.read()",
+        "print('我觉得还行吧，没什么问题。')",
+    ],
+    "crash": [
+        "import sys",
+        "sys.stdin.read()",
+        "sys.stderr.write('模型服务不可用')",
+        "raise SystemExit(3)",
+    ],
+    "empty_evidence": [
+        "import json, re, sys",
+        "payload = sys.stdin.read()",
+        "m = re.search(r'提示词 (\\S+)：', payload)",
+        "pid = m.group(1) if m else 'W-01'",
+        "print(json.dumps({'prompt_id': pid, 'verdict': 'PASS', 'evidence': ''}, ensure_ascii=False))",
+    ],
+}
+
+
+def fake_runner(tmp: Path, mode: str) -> str:
+    """写一个假的评审命令，返回可直接当 --runner 用的命令行。"""
+    script = tmp / f"runner-{mode}.py"
+    script.write_text("\n".join(_RUNNER_SOURCES[mode]) + "\n", encoding="utf-8", newline="")
+    return f'"{sys.executable}" "{script}"'
+
+
+def run_runner_suite(tmp: Path) -> None:
+    print("[test_runner]")
+    from skillverify import runner
+
+    root = tmp / "run"
+    skill = write_skill(root, "run-skill")
+
+    # 正常：产出合法回写，且与档 2/档 3 走同一条校验
+    good = fake_runner(tmp, "good")
+    report, writeback = runner.run_runner(skill, good, prompt_ids=["W-01", "W-13"])
+    check(statuses(report)["RUN-001"] == PASS and len(writeback["results"]) == 2,
+          f"档 1 正常跑完（{len(writeback['results'])} 条；含围栏与寒暄的输出也能解析）")
+    check(writeback["tier"] == "cli" and writeback["reviewer"].startswith("档 1 CLI："),
+          "回写带 tier=cli，并以「实际跑的命令」作为签署")
+    check(writeback["schema"] == "skillverify.review/1",
+          "档 1 产出与档 2/档 3 完全相同的 schema")
+    checks = runner.validate(writeback)
+    bad = [r.rid for r in checks if r.status in (FAIL, WARN)]
+    check(not bad, f"runner 产出通过同一条回写校验（异常：{bad}）")
+    check(writeback["results"][0]["prompt_id"] == "W-01",
+          "prompt_id 以我们的为准（runner 改不动归属）")
+
+    # 结论再好也要过证据要求（三档共用同一条校验）
+    empty = fake_runner(tmp, "empty_evidence")
+    _rep, wb = runner.run_runner(skill, empty, prompt_ids=["W-01"])
+    check(any(r.status == FAIL for r in runner.validate(wb)),
+          "runner 的结论同样要过证据要求（空证据被拦下）")
+
+    # 输出无法解析 → FAIL，且不写成 NA
+    bad_json = fake_runner(tmp, "bad_json")
+    report, writeback = runner.run_runner(skill, bad_json, prompt_ids=["W-01"])
+    check(statuses(report)["RUN-001"] == FAIL and writeback["results"] == [],
+          "输出不可解析 → RUN-001 FAIL（不伪装成 NA）")
+    check(report.exit_code() == 1, "runner 失败时退出码非零")
+
+    # runner 崩溃（非零退出）
+    crash = fake_runner(tmp, "crash")
+    report, _wb = runner.run_runner(skill, crash, prompt_ids=["W-01"])
+    check(statuses(report)["RUN-001"] == FAIL
+          and "退出码 3" in evidence_of(report, "RUN-001"),
+          "runner 非零退出 → FAIL 且报出退出码")
+    report, _wb = runner.run_runner(skill, crash, prompt_ids=["W-01"], allow_partial=True)
+    check(statuses(report)["RUN-001"] == WARN, "--allow-partial 时只记 WARN")
+
+    # CLI 端到端：产出可复核的回写文件 + --collect 写中央记录
+    out_dir = root / "cli-out"
+    code, out, err = run_cli(["review", "run", str(skill), "--runner", good,
+                              "--prompts", "W-01,W-13", "--out", str(out_dir),
+                              "--collect", "--project", str(root), "--json"])
+    written = out_dir / "run-skill-review-cli.json"
+    payload = json.loads(out)
+    check(code == 0 and written.is_file(),
+          f"`review run` 产出可复核的回写文件（exit={code}）")
+    check(payload["stage"] == "review-run"
+          and any(r["rid"].startswith("REV-") for r in payload["results"]),
+          "CLI 把 collect 的校验结果一并汇总（档 1 不走捷径）")
+    record = root / ".agents" / "skillverify" / "review" / "run-skill.json"
+    check(record.is_file(), "`--collect` 把档 1 的结论写进中央记录")
+    if record.is_file():
+        stored = json.loads(record.read_text(encoding="utf-8"))
+        check(stored["tiers"] == ["cli"] and stored["reviewers"][0].startswith("档 1 CLI："),
+              f"中央记录里保留了档 1 的签署与来源（tiers={stored.get('tiers')}）")
+    check("已生成" in err, "落盘提示走 stderr（不污染 --json 的 stdout）")
+
+    # 缺 --runner 时明确报错，而不是静默什么都不做
+    code, _out, err = run_cli(["review", "run", str(skill)])
+    check(code == 1 and "--runner" in err, "缺 --runner → 明确报错")
+
+
+# --------------------------------------------------------------------------- #
 # dogfood
 # --------------------------------------------------------------------------- #
 
@@ -751,6 +866,7 @@ def main() -> int:
         run_emit_skill(tmp)
         run_cli_chain(tmp)
         run_material(tmp)
+        run_runner_suite(tmp)
         if args.dogfood:
             run_dogfood(Path(__file__).resolve().parent.parent)
     finally:

@@ -618,6 +618,7 @@ def collect(
     warnings: list[str] = []
     skills: set[str] = set()
     reviewers: set[str] = set()
+    tiers: set[str] = set()
 
     for path in paths:
         data, error = read_json(path)
@@ -631,6 +632,8 @@ def collect(
             continue
         skills.add(normalized["skill"])
         reviewers.add(normalized["reviewer"])
+        if normalized.get("tier"):
+            tiers.add(str(normalized["tier"]))
         declared_by_source.append((normalized["source"],
                                    {str(x) for x in normalized["prompt_ids"]}))
         for item in normalized["results"]:
@@ -684,6 +687,8 @@ def collect(
                                                             else (sorted(skills)[0] if skills else "")),
         "skills": sorted(skills),
         "reviewers": sorted(reviewers),
+        # 这批结论出自哪一档执行器（cli / pack / manual）——三档同 schema，来源要留痕
+        "tiers": sorted(tiers),
         "fingerprint": fingerprint,
         "collected_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "tool_version": __version__,

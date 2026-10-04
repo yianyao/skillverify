@@ -163,6 +163,7 @@ def run_consistency() -> None:
     required = ["skillverify spec", "skillverify lint", "skillverify evals",
                 "skillverify review pack", "review collect", "review material",
                 "skillverify deliver", "skillverify hook install", "skillverify check",
+                "review run",
                 "skillverify watch", "skillverify discover", "review skill"]
     missing = [cmd for cmd in required if cmd not in texts["验证流程指南.md"]]
     check(not missing, f"流程指南覆盖全程所需命令（缺: {missing}）")
@@ -179,7 +180,7 @@ def run_consistency() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
+def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     """建一份**能过全部门禁**的演示技能（临时 git 仓库）。"""
     project = tmp / "demo-proj"
     skills_root = project / ".agents" / "skills"
@@ -283,6 +284,18 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
     (skill.parent / "demo-skill-workspace" / "feedback.json").write_text(json.dumps(
         {"eval-top-months": ""}), encoding="utf-8", newline="")
 
+    # 假的评审命令（档 1 执行器用）：读 stdin、把 JSON 打到 stdout
+    runner = tmp / "fake-runner.py"
+    runner.write_text("\n".join([
+        "import json, re, sys",
+        "payload = sys.stdin.read()",
+        "m = re.search(r'提示词 (\\\\S+)：', payload)",
+        "pid = m.group(1) if m else 'W-01'",
+        "print(json.dumps({'prompt_id': pid, 'verdict': 'PASS',",
+        "                  'evidence': '见 SKILL.md:2 的 description 字段',",
+        "                  'finding': '', 'suggestion': ''}, ensure_ascii=False))",
+    ]) + "\n", encoding="utf-8", newline="")
+
     # 盲评用的两版产物（review material --blind 的输入）
     blind = tmp / "blind-src"
     (blind / "old").mkdir(parents=True, exist_ok=True)
@@ -307,7 +320,7 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path]:
                 "当用户提到销售数据、CSV 统计或月度汇总时使用。",
                 "当用户提到销售数据、CSV 统计、月度汇总或季度对比时使用。"),
             encoding="utf-8", newline="")
-    return project, skills_root, skill, home, pack_dir
+    return project, skills_root, skill, home, pack_dir, runner
 
 
 def extract_runnable(text: str) -> list[tuple[str, int | None]]:
@@ -353,7 +366,7 @@ def fill_template(template: Path, out: Path) -> None:
 
 def run_walkthrough(tmp: Path) -> None:
     print("[test_walkthrough]")
-    project, skills_root, skill, home, pack_dir = make_fixture(tmp)
+    project, skills_root, skill, home, pack_dir, runner = make_fixture(tmp)
     steps = extract_runnable(DOC_PIPELINE.read_text(encoding="utf-8"))
     check(len(steps) >= 12, f"演练块解析出 {len(steps)} 个步骤")
 
@@ -370,8 +383,15 @@ def run_walkthrough(tmp: Path) -> None:
         "<材料目录>": str(tmp / "demo-material"),
         "<独立技能目录>": str(tmp / "emitted"),
         "<盲评旧版>": str(tmp / "blind-src" / "old"),
+        "<回写目录>": str(tmp / "cli-writeback"),
+        # --runner 收的是**一个命令字符串**：这里不能嵌双引号，
+        # 否则演练行 `--runner "<评审命令>"` 经 shlex 拆分会碎成多个参数。
+        "<评审命令>": f"{sys.executable} {runner}",
         "<盲评新版>": str(tmp / "blind-src" / "new"),
     }
+
+    check('"' not in mapping["<评审命令>"],
+          "评审命令不含双引号（含空格路径需改用别的引用方式，见文档说明）")
 
     executed = 0
     for raw, expected in steps:
@@ -419,7 +439,7 @@ def run_walkthrough(tmp: Path) -> None:
 def run_doc_semantics(tmp: Path) -> None:
     """确认文档里那几条"非零退出码"的解释与实际行为一致。"""
     print("[test_doc_semantics]")
-    project, skills_root, skill, home, _pack = make_fixture(tmp / "sem")
+    project, skills_root, skill, home, _pack, _runner = make_fixture(tmp / "sem")
 
     code, _out, err = run_cli(["lint", str(skill)])
     check(code == 2 and "--scripts" in err,

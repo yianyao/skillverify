@@ -260,6 +260,32 @@ def build_parser() -> _ArgParser:
     _add_discovery_options(r_collect)
     r_collect.set_defaults(func=cmd_review)
 
+    r_run = review_sub.add_parser(
+        "run",
+        help="档 1 执行器：把提示词喂给任意命令，收回同一 schema 的回写",
+        description=(
+            "逐条把提示词送上 runner 的 stdin，从 stdout 取回 JSON 结论，组装成与"
+            "档 2（会话任务包）/档 3（人工）**完全相同**的回写，再走同一条 collect 校验。"
+            "runner 失败（非零退出/超时/输出不可解析）不会被写成 NA——那会把工具故障"
+            "伪装成「本项不适用」；失败条目直接不产出并以非零退出码报出来。"
+        ),
+    )
+    r_run.add_argument("path", help="被评审的技能目录")
+    r_run.add_argument("--runner", metavar="命令",
+                       help="评审命令（读 stdin、把 JSON 打到 stdout）；以你的权限执行")
+    r_run.add_argument("--prompts", metavar="W-01,W-13", help="只跑指定提示词（默认全部 29 条）")
+    r_run.add_argument("--timeout", type=float, default=180.0, metavar="秒",
+                       help="单条提示词超时（默认 180 秒）")
+    r_run.add_argument("--allow-partial", action="store_true",
+                       help="部分条目失败时只记 WARN（默认记 FAIL 并返回非零）")
+    r_run.add_argument("--out", metavar="目录", help="把回写落到该目录（便于复核 runner 产出）")
+    r_run.add_argument("--collect", action="store_true",
+                       help="顺带跑 collect，把结论写进中央记录")
+    _add_discovery_options(r_run)   # --collect 需要留痕目录（与 collect 动作同一套定位方式）
+    r_run.add_argument("--json", action="store_true", help="输出机读 JSON")
+    r_run.add_argument("--quiet", action="store_true", help="不打印报告正文")
+    r_run.set_defaults(func=cmd_review)
+
     r_material = review_sub.add_parser(
         "material",
         help="生成语义评审所需材料（E-02 描述 diff / E-03 修订信号 / E-06 盲评 / E-07·E-08 工作区数字）",

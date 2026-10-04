@@ -167,8 +167,9 @@ A2 = ["A cleaned CSV is produced", "A count of missing emails is reported"]
 
 def build_workspace(root: Path, name: str = "csv-analyzer", *, second_iteration: bool = False,
                     skip_baseline: bool = False) -> Path:
-    """按官方工作区结构造一份**正确**的产物。"""
+    """按官方工作区结构造一份**正确**的产物（每次调用都干净重建，避免上一用例的残留污染聚合）。"""
     ws = root / f"{name}-workspace"
+    shutil.rmtree(ws, ignore_errors=True)
     it = ws / "iteration-1"
     arm(it, "eval-top-months-chart", "with_skill", assertions=A1, passed=[True, True],
         tokens=1000, ms=2000)
@@ -460,6 +461,10 @@ def run_benchmark(tmp: Path) -> None:
                    if rid.startswith(("BENCH", "TIME", "WS"))}
     bad = {rid: st for rid, st in interesting.items() if st in (FAIL, WARN)}
     check(not bad, f"正确的工作区：BENCH/TIME/WS 全绿（异常：{bad}）")
+    # 逐次数值只能收集一次：夹具里 with_skill 有 2 个 arm，报"各 4 次"就是把每个 timing 算了两遍
+    # （均值不受影响，stddev 与次数会错——这正是加 stddev 对账后暴露出来的缺陷）
+    check("各 2 次" in evidence_of(report, "BENCH-005"),
+          f"逐次产物计数为真实 arm 数（{evidence_of(report, 'BENCH-005')[:80]}）")
 
     # delta 与两侧 mean 不符
     it = ws / "iteration-1"
@@ -487,6 +492,15 @@ def run_benchmark(tmp: Path) -> None:
     report = evalx.check_evals(skill)
     check(statuses(report)["BENCH-004"] == PASS,
           "样本标准差（n-1）与总体标准差都被接受（官方未定义口径）")
+
+    # 两种口径都对不上 → 必须报出来（否则 stddev 根本没被检查）
+    bench = json.loads((it / "benchmark.json").read_text(encoding="utf-8"))
+    bench["run_summary"]["with_skill"]["tokens"]["stddev"] = 999
+    write_json(it / "benchmark.json", bench)
+    report = evalx.check_evals(skill)
+    check(statuses(report)["BENCH-004"] == WARN
+          and "stddev=999" in evidence_of(report, "BENCH-004"),
+          "stddev 与逐次产物不符（两种口径都不符）→ BENCH-004 WARN")
     build_workspace(root)
 
     # 布尔冒充整数

@@ -681,7 +681,13 @@ def _check_grading(where: str, data: dict, declared_assertions: set[str],
     sink.setdefault("texts", set()).update(texts)
 
 
-def _check_timing(where: str, arm: Path, sink: dict) -> Result:
+def _check_timing(where: str, arm: Path) -> Result:
+    """校验 timing.json 的形状。**不**在这里收集数值序列。
+
+    数值序列（tokens / seconds / pass_rates）的唯一收集处是 `_arm_stats`。
+    早先这里也往同一个 dict 追加，于是每个 timing 被算了两遍：均值恰好不受影响
+    （重复值不改变均值），但 stddev 与"各 N 次"会错——加上 stddev 对账后才暴露。
+    """
     path = arm / "timing.json"
     if not path.is_file():
         return _res(RULES["TIME-001"], SKIP, f"未执行：{where} 缺 timing.json（见 WS-003）")
@@ -699,8 +705,6 @@ def _check_timing(where: str, arm: Path, sink: dict) -> Result:
             issues.append(f"{key} 不得为负（{value}）")
     if issues:
         return _res(RULES["TIME-001"], FAIL, f"{where}: " + "；".join(issues))
-    sink.setdefault("tokens", []).append(data["total_tokens"])
-    sink.setdefault("seconds", []).append(data["duration_ms"] / 1000.0)
     return _res(RULES["TIME-001"], PASS,
                 f"{where}: {data['total_tokens']} tokens / {data['duration_ms']} ms")
 
@@ -715,6 +719,19 @@ def _mean_stddev(values: list[float]) -> tuple[float, float]:
 
 def _close(a: float, b: float) -> bool:
     return abs(a - b) <= max(TOL_ABS, TOL_REL * max(abs(a), abs(b)))
+
+
+def _stddev_candidates(values: list[float]) -> list[float]:
+    """总体（÷n）与样本（÷n−1）两种标准差都算出来。
+
+    官方没定义用哪一种，所以**任一匹配即算一致**；只认一种会把正确数据判错。
+    少于 2 个样本时只有一种可能（0），直接返回。
+    """
+    if len(values) < 2:
+        return [_mean_stddev(values)[1]]
+    mean, pop = _mean_stddev(values)
+    sample = (sum((v - mean) ** 2 for v in values) / (len(values) - 1)) ** 0.5
+    return [pop, sample]
 
 
 def _num_map(data: dict, key: str) -> tuple[dict, list[str]]:
@@ -830,12 +847,21 @@ def _check_benchmark(
             values = stats.get(values_key) or []
             if not values:
                 continue
-            mean, _stddev = _mean_stddev([float(v) for v in values])
+            numeric = [float(v) for v in values]
+            mean, _stddev = _mean_stddev(numeric)
             declared = parsed[key][metric].get("mean")
             if _is_num(declared) and not _close(float(declared), mean):
                 agg_issues.append(
                     f"{key}.{metric}.mean={declared} 与逐次产物算得的 {mean:.6g}"
                     f"（{len(values)} 次）不符")
+            declared_sd = parsed[key][metric].get("stddev")
+            if _is_num(declared_sd) and len(numeric) >= 2:
+                candidates = _stddev_candidates(numeric)
+                if not any(_close(float(declared_sd), c) for c in candidates):
+                    agg_issues.append(
+                        f"{key}.{metric}.stddev={declared_sd} 与逐次产物算得的 "
+                        + " 或 ".join(f"{c:.6g}" for c in candidates)
+                        + f"（{len(numeric)} 次；总体/样本两种口径都不符）")
     out.append(
         _res(RULES["BENCH-004"], WARN if agg_issues else PASS,
              _summarize([f"{where}: {i}" for i in agg_issues]) if agg_issues
@@ -995,7 +1021,7 @@ def _check_workspace(skill_dir: Path, workspace: Path, doc: EvalsDoc,
                     outputs_missing.append(f"{label}: 缺 {'、'.join(lacks)}")
 
                 stats = arm_stats.setdefault(arm.name, {})
-                timing_results.append(_check_timing(label, arm, stats))
+                timing_results.append(_check_timing(label, arm))
 
                 data, error = _grading_of(arm)
                 if error:

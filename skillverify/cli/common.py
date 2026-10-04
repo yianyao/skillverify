@@ -118,7 +118,7 @@ def _emit(report: Report, args: argparse.Namespace) -> None:
 
     if args.out:
         write_text(Path(args.out), text if text.endswith("\n") else text + "\n")
-        print(f"报告已落盘: {args.out}")
+        print(f"报告已落盘: {args.out}", file=sys.stderr)
 
     if not args.quiet:
         print(text if text.endswith("\n") else text + "\n")

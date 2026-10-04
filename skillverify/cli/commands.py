@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 from .. import __version__
@@ -26,6 +27,8 @@ from ..encoding import write_text
 from ..evalx import check_evals
 from ..lint import lint_skill
 from ..material import build_materials
+from ..runner import run_runner
+from ..runner import validate as runner_validate
 from ..report import FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report
 from ..report import merge
 from ..review import (
@@ -70,8 +73,8 @@ def cmd_spec(args: argparse.Namespace) -> int:
             for cand in candidates:
                 print(f"  - {cand}", file=sys.stderr)
             print(
-                "请对具体技能目录运行，或用 `skillverify check` 对整库批量运行"
-                "（该命令在后续版本提供）。",
+                f"请对具体技能目录运行，或用 `{PROG} check --root {path}` 对整库批量运行"
+                f"（`{PROG} discover` 可先看会发现哪些技能）。",
                 file=sys.stderr,
             )
             return 1
@@ -496,6 +499,62 @@ def cmd_review(args: argparse.Namespace) -> int:
             print(f"评审记录: {latest}", file=sys.stderr)
         print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
               f"未覆盖 {len(record['uncovered_prompts'])}）", file=sys.stderr)
+        return report.exit_code()
+
+    if action == "run":
+        skill_dir = Path(args.path)
+        if not skill_dir.is_dir():
+            print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
+            return 1
+        if not args.runner:
+            print("FAIL: 档 1 执行器需要 `--runner <命令>`（该命令会读到提示词并以 JSON 回结论）。",
+                  file=sys.stderr)
+            return 1
+        prompt_ids = [x.strip() for x in args.prompts.split(",") if x.strip()] if args.prompts else None
+        report, writeback = run_runner(
+            skill_dir,
+            args.runner,
+            prompt_ids=prompt_ids,
+            timeout_s=args.timeout,
+            allow_partial=args.allow_partial,
+        )
+        # 与档 2/档 3 走**同一条**校验
+        checks = runner_validate(writeback)
+        for res in checks:
+            report.add(res)
+        report.meta["工具版本"] = f"{PROG} {__version__}"
+
+        out_dir = Path(args.out) if args.out else None
+        target = None
+        if out_dir is not None:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            target = out_dir / f"{skill_dir.name}-review-cli.json"
+            target.write_text(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n",
+                              encoding="utf-8", newline="")
+            print(f"已生成: {target}", file=sys.stderr)
+
+        if args.collect:
+            if target is None:
+                scratch = Path(tempfile.mkdtemp(prefix="sv_runner_"))
+                target = scratch / f"{skill_dir.name}-review-cli.json"
+                target.write_text(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n",
+                                  encoding="utf-8", newline="")
+            collect_report, record = collect_reviews(
+                [target], load_catalog(), skill_dir=skill_dir,
+                expected_ids=writeback.get("prompt_ids"))
+            for res in collect_report.results:
+                report.add(res)
+            discovery, _config = _load_discovery(args)
+            assert discovery.trace_dir is not None
+            latest = write_review_record(discovery.trace_dir / "review", record)
+            print(f"评审记录: {latest}", file=sys.stderr)
+            print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
+                  f"未覆盖 {len(record['uncovered_prompts'])}）", file=sys.stderr)
+
+        text = report.to_json() if args.json else report.to_markdown()
+        if not args.quiet:
+            print(text if text.endswith("\n") else text + "\n")
+        # runner 失败时报告里已有 FAIL（除非 --allow-partial），退出码随之非零
         return report.exit_code()
 
     if action == "material":
