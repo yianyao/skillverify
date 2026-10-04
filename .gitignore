@@ -6,6 +6,7 @@ build/
 dist/
 .venv/
 venv/
+legacy/
 
 # 本地验证产物（中央留痕目录，默认不纳入版本控制；如需归档请显式 -f 添加）
 .agents/skillverify/

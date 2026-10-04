@@ -1,9 +1,0 @@
-request_id: gate-d-armA-20261002
-entry_type: full_pipeline
-output_docx_path: c:/Users/yianyao/WorkBuddy/2026-10-02-16-21-34/.verification/gate-d/outputs/with-skill-minutes.docx
-current_stage: 1
-stages:
-  stage_0: {status: completed}
-  stage_1: {status: in_progress}
-  stage_2: {status: pending}
-  stage_3: {status: pending}
