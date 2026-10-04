@@ -140,11 +140,14 @@ def run_consistency() -> None:
         check(not unknown, f"{name} 提到的子命令都真实存在（凭空出现的: {unknown}）")
 
     # 只有流程指南会提到 CLI 旗标；编写指南里的 --dry-run/--confirm 是**用户脚本**的旗标
-    # `--no-verify` 是 git 自己的旗标（逃生阀），不是我们的 CLI 选项
+    # 只校验**跟着 skillverify 出现**的旗标：文档里还有 git 的 --no-verify、
+    # 用户脚本的 --dry-run、测试入口的 --dogfood，它们不是本工具的选项。
     external_flags = {"--no-verify"}
-    pipeline_flags = set(FLAG_RE.findall(texts["验证流程指南.md"]))
+    cli_lines = [ln for ln in texts["验证流程指南.md"].splitlines() if "skillverify" in ln]
+    pipeline_flags = {f for ln in cli_lines for f in FLAG_RE.findall(ln)}
     unknown_flags = sorted(f for f in pipeline_flags if f not in flags | external_flags)
-    check(not unknown_flags, f"流程指南提到的旗标都真实存在（凭空出现的: {unknown_flags}）")
+    check(not unknown_flags,
+          f"流程指南里跟 skillverify 一起出现的旗标都真实存在（凭空出现的: {unknown_flags}）")
 
     known_rules = set(SPEC_RULES) | set(LINT_RULES) | set(EVAL_RULES) | set(DISC_RULES) \
         | set(review.RULES) | {p.id for p in review.load_catalog()}

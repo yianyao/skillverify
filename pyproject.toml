@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillverify"
+dynamic = ["version"]
+description = "Agent Skill 生命周期验证套件（个人小团队版，宿主无关）"
+readme = "验证流程指南.md"
+requires-python = ">=3.10"
+keywords = ["agent", "skill", "validation", "lint", "review"]
+dependencies = []          # 纯标准库：不引入任何第三方运行时依赖
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.scripts]
+skillverify = "skillverify.cli:main"
+
+[project.urls]
+Documentation = "https://agentskills.io/specification"
+
+[tool.setuptools]
+# 显式列出包：避免把 legacy/（归档的旧体系）与 tests/ 打进发布物
+packages = ["skillverify", "skillverify.lint"]
+
+[tool.setuptools.dynamic]
+# 版本号的唯一真源是 skillverify/__init__.py 的 __version__
+# （旧体系把版本只写在文档字符串里，评审时漏掉了——一个看不见的常量等于不存在）
+version = { attr = "skillverify.__version__" }
+
+[tool.setuptools.package-data]
+# **运行时数据必须随包分发**：hosts.toml（宿主布局声明）与
+# review-prompts.json（29 条评审提示词目录）。漏了这两样，
+# `discover`/`check`/`review` 会直接失效——而且在源码目录里跑永远发现不了。
+skillverify = ["data/*.toml", "data/*.json"]
