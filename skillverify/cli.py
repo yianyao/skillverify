@@ -25,6 +25,7 @@ from .deliver import (
 )
 from .discover import Config, ConfigError, Discovery, load_config, discover_skills, render_config
 from .encoding import force_utf8_stdio, write_text
+from .evalx import check_evals
 from .lint import lint_skill
 from .report import FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report, Result
 from .spec import check_spec, find_official_cli, run_official
@@ -131,6 +132,35 @@ def _status_exit(results: list[Result]) -> int:
     if any(r.status in (WARN, SKIP) for r in results):
         return 2
     return 0
+
+
+def _wants(stages: str, name: str) -> bool:
+    """`--stages` 的选择语义：all=全跑；both=spec+lint（M2/M3 的既有默认，保留兼容）；
+    其余为单阶段。"""
+    if stages == "all":
+        return True
+    if stages == "both":
+        return name in ("spec", "lint")
+    return stages == name
+
+
+def _stage_results(skill_path: Path, args: argparse.Namespace) -> list[Result]:
+    """按 --stages 依次跑各阶段，返回合并后的结果列表。"""
+    results: list[Result] = []
+    if _wants(args.stages, "spec"):
+        _doc, rep = check_spec(skill_path)
+        results.extend(rep.results)
+        if getattr(args, "official", False):
+            results.append(run_official(skill_path, getattr(args, "_official_cli", None)))
+    if _wants(args.stages, "lint"):
+        rep = lint_skill(skill_path, run_scripts=getattr(args, "scripts", False),
+                         script_timeout_s=getattr(args, "script_timeout", 10.0))
+        results.extend(rep.results)
+    if _wants(args.stages, "evals"):
+        rep = check_evals(skill_path, workspace=getattr(args, "workspace", None),
+                          iteration=getattr(args, "iteration", None))
+        results.extend(rep.results)
+    return results
 
 
 def _load_discovery(args: argparse.Namespace) -> tuple[Discovery, Config]:
@@ -243,21 +273,11 @@ def cmd_check(args: argparse.Namespace) -> int:
     official = find_official_cli() if args.official else None
     if args.official:
         library.meta["官方校验器"] = official or "未找到（对账项记 SKIP）"
+    args._official_cli = official
 
     for ref in discovery.skills:
-        results: list[Result] = []
-        if args.stages in ("both", "spec"):
-            _doc, rep = check_spec(ref.path)
-            results.extend(rep.results)
-            if args.official:
-                results.append(run_official(ref.path, official))
-        if args.stages in ("both", "lint"):
-            rep = lint_skill(
-                ref.path, run_scripts=args.scripts, script_timeout_s=args.script_timeout
-            )
-            results.extend(rep.results)
         merged = Report(target=str(ref.path), stage="check")
-        merged.results = results
+        merged.results = _stage_results(ref.path, args)
         library.add_entry(
             LibraryEntry(skill=ref.name, scope=ref.scope, path=str(ref.path), report=merged)
         )
@@ -308,7 +328,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    if args.stages == "both" and not args.scripts:
+    if _wants(args.stages, "lint") and not args.scripts:
         skipped = sum(
             1 for entry in library.entries for r in entry.report.results
             if r.status == SKIP and "--scripts" in r.evidence
@@ -372,15 +392,8 @@ def cmd_deliver(args: argparse.Namespace) -> int:
         library.add(res)
 
     for ref in discovery.skills:
-        results: list[Result] = []
-        if args.stages in ("both", "spec"):
-            _doc, rep = check_spec(ref.path)
-            results.extend(rep.results)
-        if args.stages in ("both", "lint"):
-            rep = lint_skill(ref.path, run_scripts=False, script_timeout_s=args.script_timeout)
-            results.extend(rep.results)
         merged = Report(target=str(ref.path), stage="deliver")
-        merged.results = results
+        merged.results = _stage_results(ref.path, args)
         library.add_entry(
             LibraryEntry(skill=ref.name, scope=ref.scope, path=str(ref.path), report=merged)
         )
@@ -423,6 +436,23 @@ def cmd_deliver(args: argparse.Namespace) -> int:
     written = write_record(discovery.trace_dir, record, markdown)
     print("交付记录: " + "；".join(str(p) for p in written), file=sys.stderr)
     return 0 if gate.passed else 1
+
+
+def cmd_evals(args: argparse.Namespace) -> int:
+    """校验技能的评测资产（evals.json 与评测工作区产物）。"""
+    path = Path(args.path)
+    if not path.exists():
+        print(f"FAIL: 路径不存在: {path}", file=sys.stderr)
+        return 1
+    report = check_evals(
+        path,
+        workspace=Path(args.workspace) if args.workspace else None,
+        iteration=args.iteration,
+    )
+    report.meta["工具版本"] = f"{PROG} {__version__}"
+    report.meta["官方口径"] = "agentskills.io/skill-creation/evaluating-skills"
+    _emit(report, args)
+    return report.exit_code()
 
 
 def cmd_hook(args: argparse.Namespace) -> int:
@@ -516,6 +546,24 @@ def build_parser() -> _ArgParser:
     _add_common(p_lint)
     p_lint.set_defaults(func=cmd_lint)
 
+    p_evals = sub.add_parser(
+        "evals",
+        help="评测资产校验（官方 evals.json + 评测工作区产物）",
+        description=(
+            "校验官方评测约定：evals/evals.json 的形状，以及并列工作区 "
+            "`<技能名>-workspace/iteration-N/eval-*/{with_skill,without_skill|old_skill}/"
+            "{outputs,timing.json,grading.json}` 与 benchmark.json / feedback.json。"
+            "没有评测资产时记 WARN 并说明（「没有 evals」不该和「evals 全绿」长得一样）。"
+        ),
+    )
+    p_evals.add_argument("path", help="技能目录（含 SKILL.md）")
+    p_evals.add_argument("--workspace", metavar="目录",
+                         help="评测工作区（默认找并列的 <技能名>-workspace/）")
+    p_evals.add_argument("--iteration", type=int, metavar="N",
+                         help="只校验 iteration-N（默认校验全部）")
+    _add_common(p_evals)
+    p_evals.set_defaults(func=cmd_evals)
+
     p_disc = sub.add_parser(
         "discover",
         help="列出技能发现结果（声明式宿主适配，不做检查）",
@@ -540,8 +588,14 @@ def build_parser() -> _ArgParser:
         ),
     )
     _add_discovery_options(p_check)
-    p_check.add_argument("--stages", choices=("both", "spec", "lint"), default="both",
-                         help="只跑某一阶段（默认两者都跑）")
+    p_check.add_argument("--stages", choices=("all", "both", "spec", "lint", "evals"),
+                         default="both",
+                         help="跑哪些阶段（默认 both = spec+lint，日常快查；"
+                              "all = 再加评测资产）")
+    p_check.add_argument("--workspace", metavar="目录",
+                         help="评测工作区（默认找并列的 <技能名>-workspace/）")
+    p_check.add_argument("--iteration", type=int, metavar="N",
+                         help="只校验 iteration-N（默认全部）")
     p_check.add_argument("--scripts", action="store_true",
                          help="执行技能自带脚本以实测脚本契约（默认关闭，存在副作用风险）")
     p_check.add_argument("--script-timeout", type=float, default=10.0, metavar="秒",
@@ -564,7 +618,8 @@ def build_parser() -> _ArgParser:
     )
     _add_discovery_options(p_watch)
     p_watch.add_argument("--stages", choices=("both", "spec", "lint"), default="both",
-                         help="只跑某一阶段（默认两者都跑）")
+                         help="跑哪些阶段（默认 spec+lint；评测资产不随敲代码变化，"
+                              "要看评测资产请用 `check --stages evals`）")
     p_watch.add_argument("--interval", type=float, default=1.0, metavar="秒",
                          help="轮询间隔（默认 1 秒，最小 0.01）")
     p_watch.add_argument("--cycles", type=int, metavar="N",
@@ -591,8 +646,14 @@ def build_parser() -> _ArgParser:
                            help="只检查 git 暂存内容涉及的技能（pre-commit 用）")
     p_deliver.add_argument("--strict", action="store_true",
                            help="连「未覆盖项」也阻断（发行前跑一次）")
-    p_deliver.add_argument("--stages", choices=("both", "spec", "lint"), default="both",
-                           help="只跑某一阶段（默认两者都跑）")
+    p_deliver.add_argument("--stages", choices=("all", "both", "spec", "lint", "evals"),
+                           default="all",
+                           help="跑哪些阶段（默认 all = spec+lint+evals：交付要考虑"
+                                "该技能已有的全部资产；both = spec+lint）")
+    p_deliver.add_argument("--workspace", metavar="目录",
+                           help="评测工作区（默认找并列的 <技能名>-workspace/）")
+    p_deliver.add_argument("--iteration", type=int, metavar="N",
+                           help="只校验 iteration-N（默认全部）")
     p_deliver.add_argument("--script-timeout", type=float, default=10.0, metavar="秒",
                            help="单个脚本的超时上限（默认 10 秒）")
     p_deliver.add_argument("--no-record", action="store_true",
