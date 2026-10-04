@@ -576,7 +576,10 @@ MUTATIONS: list[Mutation] = [
 ]
 
 REQUIRED_FAMILIES = ("SKILL", "REF", "BUDGET", "BODY", "HYG", "ENC", "I18N", "SCRIPT",
-                     "DEP", "SEC", "EVAL", "GRAD", "TIME", "BENCH", "WS", "TRIG")
+                     "DEP", "SEC", "EVAL", "GRAD", "TIME", "BENCH", "WS", "TRIG", "LIB")
+#: 注：`AUDIT-*` 不在上面——审计的注入式断言在 `tests/test_library.py`
+#: （篡改内容 → `AUDIT-002`、名字近似 → `AUDIT-003`），本文件的变异都经由 `check` 求值，
+#: 而 `audit` 是独立命令。
 
 
 # --------------------------------------------------------------------------- #
@@ -611,7 +614,37 @@ def m_dup_across_roots(skill: Path) -> None:
     shutil.copytree(skill, other / SKILL)
 
 
+def _clone_skill(skill: Path, new_name: str, description: str | None = None) -> Path:
+    """把技能复制成库里的另一个技能（改目录名与 frontmatter 的 name，必要时换描述）。"""
+    target = skill.parent / new_name
+    shutil.copytree(skill, target)
+    md = target / "SKILL.md"
+    text = md.read_text(encoding="utf-8")
+    text = text.replace(f"name: {SKILL}\n", f"name: {new_name}\n", 1)
+    if description is not None:
+        text = text.replace(f"description: {DESCRIPTION}", f"description: {description}", 1)
+    write(md, text)
+    return target
+
+
+def m_metadata_over_budget(skill: Path) -> None:
+    """库级：库里技能一多，name+description 总量就会顶到宿主启动时的元数据预算。"""
+    for index in range(12):
+        _clone_skill(skill, f"extra-skill-{index:02d}")
+
+
+def m_description_overlap(skill: Path) -> None:
+    """库级：另一个技能的描述与本技能高度重合（触发会互相抢）。"""
+    _clone_skill(skill, "similar-skill", description=DESCRIPTION + " Also handle refunds.")
+
+
 LIBRARY_MUTATIONS: list[Mutation] = [
+    Mutation("library:元数据总量超预算", m_metadata_over_budget, ("LIB-001",),
+             extra_args=("--metadata-budget", "500"),
+             note="12 个同类技能的 name+description 加起来超过 500 字符预算："
+                  "宿主会把它们一起读进上下文，超了就会静默丢弃"),
+    Mutation("library:两个技能描述高度重叠", m_description_overlap, ("LIB-002",),
+             note="词面重叠不等于冲突，但必须报出来让人看一眼"),
     Mutation("review:评审后改了技能（记录过期）", m_review_stale, ("REV-000",),
              note="按内容指纹而非 mtime 判断新鲜度"),
     Mutation("discover:同名技能出现在两个根", m_dup_across_roots, ("DISC-001",),
@@ -708,7 +741,8 @@ def main() -> int:
         print("[test_coverage]")
         missing = sorted(set(REQUIRED_FAMILIES) - covered)
         check(not missing, f"变异自测覆盖全部规则族（缺: {missing}）")
-        check(len(MUTATIONS) >= 30, f"变异数量 {len(MUTATIONS)} 个（覆盖 16 个族）")
+        check(len(MUTATIONS) >= 30,
+              f"变异数量 {len(MUTATIONS)} 个（另有库级变异 {len(LIBRARY_MUTATIONS)} 个）")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -77,6 +77,12 @@ VAGUE_ASSERTION_RE = re.compile(
 )
 BRITTLE_ASSERTION_RE = re.compile(r"exactly\s+the\s+phrase|逐字包含|一字不差", re.I)
 
+#: 委托执行的评测命令失败时的整改提示
+RUN_HINT = (
+    "看命令输出的最后几行。评测的**执行**由官方 skill-creator 或你的宿主负责，"
+    "本工具只校验产物；命令不对（路径/参数/环境）时先修命令再重跑"
+)
+
 RULES: dict[str, Rule] = {
     # ---- evals/evals.json ----
     "EVAL-000": Rule(

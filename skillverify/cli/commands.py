@@ -27,12 +27,14 @@ from ..discover import Config, ConfigError, Discovery, render_config
 from ..encoding import write_text
 from ..evalx import check_evals
 from ..lint import lint_skill
+from ..audit import audit_markdown, audit_skill, write_record as write_audit_record
+from ..library import run_library
 from ..material import build_materials
 from ..mount import load as load_mount_config
 from ..mount import run_mount
 from ..runner import run_runner
 from ..runner import validate as runner_validate
-from ..report import FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report
+from ..report import Result, FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report
 from ..report import merge
 from ..review import (
     CatalogError,
@@ -191,6 +193,72 @@ def cmd_mount(args: argparse.Namespace) -> int:
     return report.exit_code()
 
 
+def _run_with(workdir: Path, command: str, timeout_s: float) -> tuple[int, str]:
+    """在技能目录里跑使用者给的命令（委托执行）。返回（退出码, 附注）。
+
+    命令字符串按 shell 语义执行：它通常指向官方评测器或宿主提供的入口脚本。
+    **本工具不猜测官方评测器的参数**——参数由使用者给出，这里只负责执行、限时、报退出码。
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(command, shell=True, cwd=str(workdir),
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        return 124, f"超时（>{timeout_s:.0f}s）：{command}"
+    except OSError as exc:
+        return 127, f"无法执行: {exc}"
+    detail = (proc.stdout or "")[-800:] + (proc.stderr or "")[-800:]
+    return proc.returncode, detail.strip()
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """外来技能审计：把各阶段结论组合成一张"要不要用它"的单子，并留下指纹。
+
+    明确不做的事写在命令说明与审计单里：不跑技能脚本、不模拟触发、不做信任分级。
+    """
+    target = Path(args.target).expanduser()
+    if not target.is_absolute():
+        target = (Path(args.project).expanduser() / target).resolve()
+    if not target.exists():
+        # 也可以直接给"已发现的技能名"
+        try:
+            discovery, _config = _load_discovery(args)
+        except ConfigError as exc:
+            print(f"配置错误: {exc}", file=sys.stderr)
+            return 1
+        hit = next((ref for ref in discovery.skills if ref.name == args.target), None)
+        if hit is None:
+            print(f"FAIL: 找不到技能或目录: {args.target}", file=sys.stderr)
+            return 1
+        target = Path(hit.path)
+
+    others: list[str] = []
+    try:
+        discovery, _config = _load_discovery(args)
+        others = [ref.name for ref in discovery.skills if Path(ref.path) != target]
+        trace_dir = discovery.trace_dir or (Path(args.project).expanduser() / ".agents" / "skillverify")
+    except ConfigError:
+        trace_dir = Path(args.project).expanduser() / ".agents" / "skillverify"
+
+    try:
+        report, record = audit_skill(target, trace_dir=trace_dir, others=others,
+                                     run_scripts=args.scripts)
+    except OSError as exc:
+        print(f"FAIL: 无法审计 {target}: {exc}", file=sys.stderr)
+        return 1
+
+    if args.out or args.record:
+        write_audit_record(trace_dir, record, audit_markdown(record, report))
+        print(f"审计单已落盘: {trace_dir / 'audit' / (record.skill + '.md')}", file=sys.stderr)
+    _emit(report, args)
+    # `--json` 时**不能**再打印审计单正文：stdout 只放一种东西（否则机读输出被污染）
+    if not args.quiet and not args.out and not args.json:
+        print(audit_markdown(record, report))
+    return report.exit_code()
+
+
 def cmd_discover(args: argparse.Namespace) -> int:
     """列出技能发现结果（含每个根的命中情况），不执行任何检查。"""
     try:
@@ -202,6 +270,12 @@ def cmd_discover(args: argparse.Namespace) -> int:
     if args.show_config:
         print(render_config(config))
         return 0
+
+    for res in run_library(discovery.skills, budget=args.metadata_budget,
+                           overlap_threshold=args.desc_overlap):
+        discovery.results.append(res)
+        if res.status == WARN:
+            print(f"  {res.rid} {res.evidence}", file=sys.stderr)
 
     text = discovery.to_json() if args.json else _render_discovery(
         discovery, Path(args.project).expanduser().resolve(), config
@@ -236,6 +310,11 @@ def cmd_check(args: argparse.Namespace) -> int:
     library.meta["配置来源"] = " < ".join(config.sources)
     library.meta["检查阶段"] = args.stages
     for res in discovery.results:
+        library.add(res)
+    # 库级检查（多技能组合视角）：元数据预算 + 描述词面重叠。
+    # 放这里而不是只放 discover：`check` 才是日常与 CI 的入口。
+    for res in run_library(discovery.skills, budget=args.metadata_budget,
+                           overlap_threshold=args.desc_overlap):
         library.add(res)
 
     official = find_official_cli() if args.official else None
@@ -429,6 +508,37 @@ def cmd_evals(args: argparse.Namespace) -> int:
     report = merge([official, trigger], target=str(path), stage="evals")
     report.meta["工具版本"] = f"{PROG} {__version__}"
     report.meta["官方口径"] = "agentskills.io/skill-creation/evaluating-skills"
+    report.meta["执行层"] = (
+        "本工具**不执行**评测（不发网络、不调模型）。要真跑一遍，请用官方 skill-creator "
+        "或你的宿主；也可以把它的入口命令交给 `--run-with` 委托执行，本工具执行后照旧校验产物"
+    )
+
+    # 委托执行：命令由使用者给出（本工具不猜官方评测器的参数）
+    if args.run_with:
+        from ..evalx import RUN_HINT
+
+        code, note = _run_with(path, args.run_with, args.run_timeout)
+        report.meta["委托执行"] = f"{args.run_with}（退出码 {code}）"
+        if code != 0:
+            # 失败**绝不**写成"不适用/通过"：这是既有约定（review run 同样处理）
+            print(f"FAIL: 委托执行的命令失败（退出码 {code}）：{args.run_with}", file=sys.stderr)
+            if note:
+                print(note, file=sys.stderr)
+            report.add(Result("RUN-101", "委托执行的评测命令正常结束", FAIL, "HOUSE",
+                              f"命令 {args.run_with!r} 退出码 {code}", RUN_HINT))
+            _emit(report, args)
+            return report.exit_code()
+        print(f"委托执行完成（退出码 0）：{args.run_with}", file=sys.stderr)
+        # 执行之后**重新校验产物**：这正是本工具的定位（校验官方执行层的产物）
+        refreshed = merge([check_evals(
+            path,
+            workspace=Path(args.workspace) if args.workspace else None,
+            iteration=args.iteration,
+        ), check_trigger(path)], target=str(path), stage="evals")
+        report = refreshed
+        report.meta["工具版本"] = f"{PROG} {__version__}"
+        report.meta["执行层"] = f"已委托执行：{args.run_with}（退出码 0）；以下为执行后的产物校验"
+        report.meta["委托执行"] = args.run_with
     report.meta.update({k: v for k, v in official.meta.items() if k not in report.meta})
     _emit(report, args)
     return report.exit_code()

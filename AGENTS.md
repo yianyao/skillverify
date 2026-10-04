@@ -10,14 +10,14 @@
 ## 一、这是什么
 
 `skillverify`：宿主无关的 Agent Skill 全生命周期验证套件（纯标准库、强制 UTF-8）。
-十个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `mount` / `watch` / `deliver` / `hook`。
+十一个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `mount` / `audit` / `watch` / `deliver` / `hook`。
 `legacy/` 是**旧体系归档，已冻结**（见 `legacy/归档冻结说明.md`）：不修、不迁、不跟进，
 它只作为 `--dogfood` 的回归语料。
 
 ## 二、跑起来
 
 ```powershell
-python -m tests.run_all              # 10 个套件，约 1.5 分钟（离线）
+python -m tests.run_all              # 11 个套件，约 2 分钟（离线）
 python -m tests.run_all --dogfood    # 另把 legacy/ 下的旧技能拉进来跑
 python -m tests.run_all --install    # 再跑打包真装检查（需要网络，约 1 分钟）
 python -m tests.test_lint            # 也可以单跑某一套
@@ -52,8 +52,9 @@ python -m tests.test_lint            # 也可以单跑某一套
    - 行尾注释里的**第一个数字**被当作期望退出码，所以别在行尾注释里写别的数字；
    - 改命令就要同步改期望退出码；新增命令要放进这个块。
 2. **注入自测是变异测试**：`tests/test_injection.py` 先造一份全绿基线（99 条规则参与判定），
-   再对**独立副本**注入 38 处缺陷，要求"期望规则里至少一条必须报错"且"不许牵连无关规则"。
-   - 加新规则时，最好同时加一处覆盖它的变异（`test_coverage` 会检查 16 个规则族全覆盖）；
+   再对**独立副本**注入 40 处缺陷（38 处单技能 + 2 处库级，见 `LIBRARY_MUTATIONS`），要求「期望规则里至少一条必须报错」且「不许牵连无关规则」。
+   - 加新规则时，最好同时加一处覆盖它的变异（`test_coverage` 会检查 17 个规则族全覆盖；
+  `AUDIT-*` 由 `tests/test_library.py` 的注入式断言承担，注释里写明了为什么）；
    - 容忍项（`tolerate`）必须写清理由，不要为了让测试变绿。
 
 ## 五、踩过的坑（改之前先读，能省一轮返工）
@@ -88,8 +89,13 @@ python -m tests.test_lint            # 也可以单跑某一套
   另有开发者向的《覆盖对照-生命周期验证方案.md》与本文件。
 - `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
 - 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
-- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（10 个套件 + 打包真装；具体断言数看输出，本文件不写死数字）。
+- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（11 个套件 + 打包真装；具体断言数看输出，本文件不写死数字）。
 - CI 样例在 `.github/workflows/skillverify.yml`：改门禁口径时同步它。
+- 库级检查 `LIB-001/002` 在 `library.py`：预算默认 8000 **是本项目约定**（文档里必须保留这句，
+  别写成官方口径）；两条都只记 WARN——预算口径由宿主决定，工具不替宿主阻断。
+- `audit` 只做「机械结论的汇总 + 指纹留痕」，**不做信任分级**（审计单里留给人填）；
+  改审计单时不要删掉「不是安全背书」那句。
+- 评测**执行层不自研**：要真跑就 `evals --run-with <命令>` 委托官方工具/宿主，跑完再校验产物。
 - `mount` 只做**仓库侧**挂载前置检查（可发现性 / name·description 可读 / 同名冲突 / fail-loud）；
   「不验证宿主注册表」这句写在命令说明与报告 meta 里，**不要删**——它防的是过度承诺。
 - 新增规则/命令时的固定动作：① 规则要写 level 与出处（官方条款或"本项目收紧"）；

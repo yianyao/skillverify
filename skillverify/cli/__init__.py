@@ -15,7 +15,9 @@ import sys
 
 from .. import __version__
 from ..encoding import force_utf8_stdio
+from ..library import DEFAULT_METADATA_BUDGET, DEFAULT_OVERLAP
 from .commands import (
+    cmd_audit,
     cmd_check,
     cmd_mount,
     cmd_deliver,
@@ -87,6 +89,11 @@ def build_parser() -> _ArgParser:
                          help="评测工作区（默认找并列的 <技能名>-workspace/）")
     p_evals.add_argument("--iteration", type=int, metavar="N",
                          help="只校验 iteration-N（默认校验全部）")
+    p_evals.add_argument("--run-with", metavar="命令", default=None,
+                         help="委托执行评测：在技能目录里跑这条命令（例如官方评测器的入口），"
+                              "跑完再校验产物。命令由你给出——本工具不猜官方评测器的参数")
+    p_evals.add_argument("--run-timeout", type=float, default=1800.0, metavar="秒",
+                         help="委托执行的超时下限（默认 1800 秒）")
     _add_common(p_evals)
     p_evals.set_defaults(func=cmd_evals)
 
@@ -103,7 +110,45 @@ def build_parser() -> _ArgParser:
     p_disc.add_argument("--show-config", action="store_true",
                         help="只打印合并后的有效配置（含来源顺序），不做发现")
     _add_common(p_disc)
+    p_disc.add_argument("--metadata-budget", type=int, default=DEFAULT_METADATA_BUDGET,
+                         metavar="字符数",
+                         help=f"库内所有技能 name+description 的总量预算（默认 "
+                              f"{DEFAULT_METADATA_BUDGET}，本项目约定、非官方硬线；"
+                              f"按你宿主实测的上限改）")
+    p_disc.add_argument("--desc-overlap", type=float, default=DEFAULT_OVERLAP, metavar="比例",
+                         help=f"描述词面重叠的告警阈值（默认 {DEFAULT_OVERLAP}；"
+                              f"只提示、不阻断）")
     p_disc.set_defaults(func=cmd_discover)
+
+    p_audit = sub.add_parser(
+        "audit",
+        help="外来技能审计：组合各阶段结论成一张单子，并留下内容指纹供下次比对",
+        description=(
+            "给**外来技能**（网上/别人给的）出一张「要不要用它」的单子：来源、能力清单"
+            "（脚本/网络端点/破坏性操作/疑似密钥/依赖）、判定明细、内容指纹，"
+            "以及与你库内其它技能的名字近似提示。再审计时会比对指纹，提示内容是否被换过。"
+            "\n\n"
+            "**明确不做**：不跑技能脚本（除 `--scripts`）、不模拟触发、不做信任分级"
+            "（那需要人判断——审计单里留了一栏给人填）。"
+        ),
+    )
+    p_audit.add_argument("target", metavar="技能目录或技能名",
+                         help="要审计的技能目录；也可以是 `discover` 能发现的技能名")
+    p_audit.add_argument("--project", default=".", metavar="目录", help="项目根（默认当前目录）")
+    p_audit.add_argument("--user-home", metavar="目录", help="解析 ~ 的基准目录")
+    p_audit.add_argument("--config", action="append", metavar="文件", help="额外的 hosts.toml")
+    p_audit.add_argument("--no-config", action="store_true", help="只用内置配置")
+    p_audit.add_argument("--root", action="append", metavar="目录",
+                         help="技能根（可重复；用于找库内其它技能比对名字）")
+    p_audit.add_argument("--host", metavar="档名", help="使用的宿主档")
+    p_audit.add_argument("--scripts", action="store_true",
+                         help="以 `--help` 调用技能自带脚本（默认不执行——审计外来技能尤其慎用）")
+    p_audit.add_argument("--record", action="store_true",
+                         help="把审计单落盘到 <trace_dir>/audit/（供下次比对指纹）")
+    p_audit.add_argument("--out", metavar="文件", help="把报告写到文件")
+    p_audit.add_argument("--json", action="store_true", help="输出机读 JSON")
+    p_audit.add_argument("--quiet", action="store_true", help="不打印审计单正文")
+    p_audit.set_defaults(func=cmd_audit)
 
     p_mount = sub.add_parser(
         "mount",
@@ -152,6 +197,14 @@ def build_parser() -> _ArgParser:
                          help="评测工作区（默认找并列的 <技能名>-workspace/）")
     p_check.add_argument("--iteration", type=int, metavar="N",
                          help="只校验 iteration-N（默认全部）")
+    p_check.add_argument("--metadata-budget", type=int, default=DEFAULT_METADATA_BUDGET,
+                         metavar="字符数",
+                         help=f"库内所有技能 name+description 的总量预算（默认 "
+                              f"{DEFAULT_METADATA_BUDGET}，本项目约定、非官方硬线；"
+                              f"按你宿主实测的上限改）")
+    p_check.add_argument("--desc-overlap", type=float, default=DEFAULT_OVERLAP, metavar="比例",
+                         help=f"描述词面重叠的告警阈值（默认 {DEFAULT_OVERLAP}；"
+                              f"只提示、不阻断）")
     p_check.add_argument("--scripts", action="store_true",
                          help="执行技能自带脚本以实测脚本契约（默认关闭，存在副作用风险）")
     p_check.add_argument("--script-timeout", type=float, default=10.0, metavar="秒",
