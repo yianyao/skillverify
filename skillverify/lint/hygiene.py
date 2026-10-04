@@ -273,12 +273,14 @@ def _check_hygiene(ctx: LintContext) -> list[Result]:
                        f"无单文件超过 {BIG_FILE_BYTES // 1024 // 1024}MB"))
 
     # ---- HYG-005 素材归置 ----
+    # evals/ 是官方约定的评测输入文件落点（`evals/files/...`），不是"没归置的素材"；
+    # 把它算进 assets/ 检查会产生假阳性（M6 文档演练实测命中过）。
     misplaced = sorted(rec.rp for rec in inv.files
-                       if rec.suffix in ASSET_EXTS and not rec.under("assets"))
+                       if rec.suffix in ASSET_EXTS and not rec.under("assets", "evals"))
     if misplaced:
         out.append(res(RULES["HYG-005"], WARN, f"素材类文件不在 assets/: {summarize(misplaced)}"))
     else:
-        out.append(res(RULES["HYG-005"], PASS, "素材类文件均在 assets/ 内或不存在"))
+        out.append(res(RULES["HYG-005"], PASS, "素材类文件均在 assets/（或 evals/）内或不存在"))
 
     return out
 

@@ -191,6 +191,10 @@ CASES: list[Case] = [
     Case("hyg_asset_in_assets", "demo-skill",
          _clean(**{"assets/logo.png": b"\x89PNG\x00\x00"}),
          {"HYG-005": PASS}),
+    Case("hyg_eval_input_file_ok", "demo-skill",
+         _clean(**{"evals/files/input.csv": "month,revenue\n"},
+                **{"evals/evals.json": '{"skill_name": "demo-skill", "evals": []}\n'}),
+         {"HYG-005": PASS}),
 
     # ---------------- ENC ----------------
     Case("enc_shell_crlf", "demo-skill",
