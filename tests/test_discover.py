@@ -464,6 +464,92 @@ def run_library_report(tmp: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
+
+# --------------------------------------------------------------------------- #
+# 挂载前置检查（mount）
+# --------------------------------------------------------------------------- #
+
+
+def _mount_cfg(tmp: Path) -> Path:
+    """一份把两个根算进同一档的配置（用于「同名/空描述」用例）。"""
+    cfg = tmp / "mount-cfg.toml"
+    cfg.write_text(
+        "[hosts.two-roots]\n"
+        'description = "两个根"\n'
+        'project_roots = [".agents/skills", "another-root"]\n'
+        "user_roots = []\n"
+        'trace_dir = ".agents/skillverify"\n'
+        "max_depth = 1\n",
+        encoding="utf-8", newline="")
+    return cfg
+
+
+def run_mount_check(tmp: Path) -> None:
+    """`mount` 是旧方案挂载期（V3/V23）在**仓库侧**能确定的那一半。
+
+    注意它**不**验证宿主注册表——这一点写在命令说明与报告 meta 里，
+    这里要断言那两句提示确实在，避免将来有人把它当成「宿主侧也验过了」。
+    """
+    print("[test_mount]")
+    from skillverify import mount
+
+    proj = tmp / "mount-proj"
+    write_skill(proj / ".agents" / "skills", "demo-skill")
+    home = tmp / "mount-home"
+    home.mkdir(parents=True, exist_ok=True)
+    common = ["--project", str(proj), "--user-home", str(home)]
+
+    # ① 正常：默认只查当前生效档，四条全 PASS，退出 0
+    code, out, _err = run_cli(["mount", *common, "--skill", "demo-skill", "--json"])
+    payload = json.loads(out)
+    statuses = {r["rid"]: r["status"] for r in payload["results"]}
+    check(code == 0 and all(v == PASS for v in statuses.values()),
+          f"正常挂载：四项全 PASS（实得 {statuses}）")
+    rids = [r["rid"] for r in payload["results"]]
+    check(sorted(rids) == ["MOUNT-001", "MOUNT-002", "MOUNT-003", "MOUNT-004"],
+          f"默认只查当前生效档，且 fail-loud 只做一次（rids={rids}）")
+    check("宿主注册表" in payload["meta"].get("不检查", ""),
+          "报告 meta 明确写出「不检查宿主注册表」——不许让人以为宿主侧也验过了")
+
+    # ② 技能不在声明的宿主目录里 → MOUNT-001 FAIL，后续记 SKIP（不是假 PASS）
+    code2, out2, _e2 = run_cli(["mount", *common, "--skill", "nope-skill", "--json"])
+    st2 = {r["rid"]: r["status"] for r in json.loads(out2)["results"]}
+    check(code2 == 1 and st2["MOUNT-001"] == FAIL and st2["MOUNT-002"] == SKIP,
+          f"技能没放进声明目录 → MOUNT-001 FAIL 且后续 SKIP（实得 {st2}）")
+
+    # ③ description 为空 → 宿主会跳过该技能 → MOUNT-002 FAIL
+    empty = write_skill(proj / "another-root", "empty-desc")
+    (empty / "SKILL.md").write_text(
+        "---\nname: empty-desc\ndescription: \n---\n\n# D\n", encoding="utf-8", newline="")
+    cfg = _mount_cfg(tmp)
+    _code3, out3, _e3 = run_cli(["mount", *common, "--host", "two-roots", "--config", str(cfg),
+                                 "--skill", "empty-desc", "--json"])
+    st3 = {r["rid"]: r["status"] for r in json.loads(out3)["results"]}
+    check(st3["MOUNT-002"] == FAIL, f"description 为空 → MOUNT-002 FAIL（实得 {st3}）")
+
+    # ④ 同名技能出现在**同一宿主档的两个根**里 → MOUNT-003 WARN
+    #    （同一目录里再写一遍不算冲突：那还是同一个技能）
+    shutil.rmtree(empty)          # 先移走空描述那份，免得它的 FAIL 影响本用例的退出码
+    write_skill(proj / "another-root", "demo-skill", body="# 第二份同名\n")
+    code4, out4, _e4 = run_cli(["mount", *common, "--host", "two-roots",
+                                "--config", str(cfg), "--json"])
+    st4 = {r["rid"]: r["status"] for r in json.loads(out4)["results"]}
+    check(code4 == 2 and st4["MOUNT-003"] == WARN,
+          f"同名技能 → MOUNT-003 WARN 且退出码 2（实得 {st4}）")
+
+    # ⑤ fail-loud 探针**能失败**：把它换成一段合法 frontmatter，它理应被接受 →
+    #    探针必须报 FAIL，否则这套检查恒真（与"不能失败的断言等于没断言"同理）
+    saved = mount.PROBES
+    try:
+        mount.PROBES = (("合法内容（不该被拦）", "SKILL.md",
+                         "---\nname: probe-skill\ndescription: 合法。\n---\n\n# D\n"),)
+        result = mount.check_fail_loud("probe-skill")
+        check(result.status == FAIL,
+              f"探针本身能失败（合法内容被接受时就该报 FAIL，实得 {result.status}）")
+    finally:
+        mount.PROBES = saved
+    check(len(mount.PROBES) == 3, "探针覆盖 3 种结构破坏")
+
 def run_dogfood(repo: Path) -> None:
     print("[test_dogfood]")
     legacy = repo / "legacy"
@@ -503,6 +589,7 @@ def main() -> int:
         run_new_host_zero_code_change(tmp)
         run_check_command(tmp)
         run_library_report(tmp)
+        run_mount_check(tmp)
         if args.dogfood:
             run_dogfood(Path(__file__).resolve().parent.parent)
     finally:

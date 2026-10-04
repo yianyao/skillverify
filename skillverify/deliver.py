@@ -262,6 +262,68 @@ def build_record(
     }
 
 
+def compare_with_previous(latest_json: Path, record: dict) -> dict:
+    """与上一轮交付记录比对，返回 {"found": bool, ...} 的对比结果。
+
+    比的是**结论是否退步**，而不是"文件有没有变"：
+    上一轮 pass → 本轮 fail、或阻断项/未覆盖项变多，都是值得当场说出来的信号。
+    """
+    from .encoding import read_json
+
+    if not latest_json.is_file():
+        return {"found": False, "note": "这是第一条交付记录，没有可比的上一轮"}
+    previous, error = read_json(latest_json)
+    if error or not isinstance(previous, dict):
+        return {"found": False, "note": f"上一轮记录不可读（{error or '形状不符'}）"}
+    old_gate = previous.get("gate") or {}
+    new_gate = record.get("gate") or {}
+    old = {"result": old_gate.get("result"), "blockers": len(old_gate.get("blockers") or []),
+           "uncovered": len(old_gate.get("uncovered") or []),
+           "warnings": len(old_gate.get("warnings") or [])}
+    new = {"result": new_gate.get("result"), "blockers": len(new_gate.get("blockers") or []),
+           "uncovered": len(new_gate.get("uncovered") or []),
+           "warnings": len(new_gate.get("warnings") or [])}
+    rank = {"pass": 0, "warn": 1, "fail": 2}
+    worse_by_result = rank.get(str(new["result"]), 0) > rank.get(str(old["result"]), 0)
+    worse = worse_by_result or new["blockers"] > old["blockers"]
+    better = (rank.get(str(new["result"]), 0) < rank.get(str(old["result"]), 0)
+              and new["blockers"] <= old["blockers"])
+    changed_skills: list[str] = []
+    old_skills = {s.get("skill"): s.get("verdict") for s in (previous.get("skills") or [])
+                  if isinstance(s, dict)}
+    for item in record.get("skills") or []:
+        if not isinstance(item, dict):
+            continue
+        name, verdict = item.get("skill"), item.get("verdict")
+        if name in old_skills and old_skills[name] != verdict:
+            changed_skills.append(f"{name}: {old_skills[name]} → {verdict}")
+    return {
+        "found": True,
+        "at": previous.get("generated_at"),
+        "before": old,
+        "after": new,
+        "worse": worse,
+        "better": better,
+        "changed_skills": changed_skills,
+        "note": ("与上一轮相比**退步**：" if worse else
+                 ("与上一轮相比有改善：" if better else "与上一轮相比无实质变化："))
+                + f"{old['result']} → {new['result']}（阻断项 {old['blockers']} → {new['blockers']}，"
+                  f"未覆盖 {old['uncovered']} → {new['uncovered']}）",
+    }
+
+
+def attach_previous(trace_dir: Path, record: dict) -> dict:
+    """在**输出/落盘之前**把与上一轮的比对附到记录上，并返回比对结果。
+
+    必须早于 `--json` 的输出：否则机器消费方（CI）读到的记录里没有对比，
+    "这次改动把它改坏了"这个信号就只有人肉看 latest.md 才能发现。
+    """
+    # 只读比对：**不建目录**（"没东西可查就不留痕"是既有约定，比对不该有副作用）
+    latest_json = trace_dir / "deliver" / "latest.json"
+    record["previous"] = compare_with_previous(latest_json, record)
+    return record["previous"]
+
+
 def write_record(trace_dir: Path, record: dict, markdown: str) -> list[Path]:
     """写交付记录：latest.json / latest.md + 追加一行到 history.jsonl。
 
@@ -271,6 +333,13 @@ def write_record(trace_dir: Path, record: dict, markdown: str) -> list[Path]:
     deliver_dir = trace_dir / "deliver"
     deliver_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+
+    # V29 的仓库侧：**写入前**先与上一轮比对，把"变好还是变坏"写进记录。
+    # 历史不丢（history.jsonl 追加），但 latest.json 会被覆盖——覆盖前留下对比，
+    # 才能看出"这次改动把它改坏了"，否则旧结论一被覆盖就再也无从比较。
+    latest_json = deliver_dir / "latest.json"
+    if "previous" not in record:          # 调用方已算过就不重复算
+        record["previous"] = compare_with_previous(latest_json, record)
 
     latest_json = deliver_dir / "latest.json"
     latest_json.write_text(

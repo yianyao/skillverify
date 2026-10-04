@@ -475,6 +475,51 @@ def run_staged_filter(tmp: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
+
+def run_deliver_previous(tmp: Path) -> None:
+    """V29 的仓库侧：**写入前**与上一轮比对，退步要当场说出来。
+
+    旧体系用 `.iteration-baseline` 快照防覆盖（含绝对路径、换机即误报，已舍弃）；
+    这里改用「覆盖前对比 + 追加式 history」：既不丢历史，又能看出「这次改动把它改坏了」。
+    """
+    print("[test_deliver_previous]")
+    repo = make_repo(tmp)
+    skill = write_skill(repo / ".agents" / "skills", "demo-skill")
+    (skill / "references").mkdir(exist_ok=True)
+    (skill / "references" / "guide.md").write_text("# 指南\n", encoding="utf-8", newline="")
+    home = tmp / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    # 不要加 --quiet：它会把 --json 的报告一起静音（本项目已知的坑）
+    common = ["--project", str(repo), "--user-home", str(home), "--stages", "both", "--json"]
+
+    code1, out1, _err1 = run_cli(["deliver", *common])
+    rec1 = json.loads(out1)
+    check(code1 == 0 and rec1["previous"]["found"] is False,
+          f"第一次交付：没有可比的上一轮（实得 {rec1['previous']['note'][:40]}）")
+
+    _code2, out2, _e2 = run_cli(["deliver", *common])
+    rec2 = json.loads(out2)
+    check(rec2["previous"]["found"] is True and rec2["previous"]["worse"] is False,
+          "第二次交付（内容未变）：有上一轮可比，且未退步")
+    check("无实质变化" in rec2["previous"]["note"], "note 写清了对比结论")
+
+    # 把技能改坏 → 下一次交付必须标记退步，并列出变化的技能
+    (skill / "SKILL.md").write_text(
+        (skill / "SKILL.md").read_text(encoding="utf-8")
+        + "\n引用不存在的文件：`references/missing.md`\n", encoding="utf-8", newline="")
+    code3, out3, _e3 = run_cli(["deliver", *common])
+    rec3 = json.loads(out3)
+    check(code3 == 1 and rec3["previous"]["worse"] is True,
+          "改坏之后：标记为退步（这是「这次的改动让它变差了」的唯一自动信号）")
+    check("退步" in rec3["previous"]["note"] and "→" in rec3["previous"]["note"],
+          f"note 给出前后对比（{rec3['previous']['note'][:80]}）")
+    check(any("demo-skill" in item for item in rec3["previous"]["changed_skills"]),
+          f"列出发生变化的技能（实得 {rec3['previous']['changed_skills']}）")
+
+    history = repo / ".agents" / "skillverify" / "deliver" / "history.jsonl"
+    lines = [ln for ln in history.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    check(len(lines) == 3, f"history.jsonl 是追加式的（三轮各一行，实得 {len(lines)}）")
+
 def run_dogfood(repo: Path) -> None:
     print("[test_dogfood]")
     legacy = repo / "legacy"
@@ -512,6 +557,7 @@ def main() -> int:
         run_watch_loop(tmp)
         run_gate(tmp)
         run_deliver_command(tmp)
+        run_deliver_previous(tmp)
         if shutil.which("git"):
             run_hook(tmp)
             run_staged_filter(tmp)

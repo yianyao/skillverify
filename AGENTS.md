@@ -10,7 +10,7 @@
 ## 一、这是什么
 
 `skillverify`：宿主无关的 Agent Skill 全生命周期验证套件（纯标准库、强制 UTF-8）。
-九个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `watch` / `deliver` / `hook`。
+十个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `mount` / `watch` / `deliver` / `hook`。
 `legacy/` 是**旧体系归档，已冻结**（见 `legacy/归档冻结说明.md`）：不修、不迁、不跟进，
 它只作为 `--dogfood` 的回归语料。
 
@@ -89,5 +89,8 @@ python -m tests.test_lint            # 也可以单跑某一套
 - `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
 - 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
 - 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（10 个套件 + 打包真装；具体断言数看输出，本文件不写死数字）。
+- CI 样例在 `.github/workflows/skillverify.yml`：改门禁口径时同步它。
+- `mount` 只做**仓库侧**挂载前置检查（可发现性 / name·description 可读 / 同名冲突 / fail-loud）；
+  「不验证宿主注册表」这句写在命令说明与报告 meta 里，**不要删**——它防的是过度承诺。
 - 新增规则/命令时的固定动作：① 规则要写 level 与出处（官方条款或"本项目收紧"）；
   ② 文档里补上并放进演练块（带期望退出码）；③ 补回归断言；④ 跑一遍死代码与过期措辞扫描。

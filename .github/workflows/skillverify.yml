@@ -1,0 +1,63 @@
+# skillverify —— CI 样例（GitHub Actions）
+#
+# 为什么需要它：本地 pre-commit hook 只能拦住"你记得装 hook 且没加 --no-verify"的提交；
+# 一旦换机器、换人、或有人绕过 hook，门禁就形同虚设。CI 是那条不依赖记性的底线。
+#
+# 用法：把本文件放到你的技能仓库的 `.github/workflows/` 下（这个仓库自己也可以直接用）。
+# 需要改的地方只有两处：`SKILLS_ROOT`（技能放在哪）与是否开启 `--scripts`。
+name: skillverify
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # 技能根（本工具默认按官方跨宿主约定找 <项目>/.agents/skills/；这里显式写出来更清楚）
+      SKILLS_ROOT: .agents/skills
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # deliver 记录里要写 git 锚点，浅克隆会拿不到 commit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # 3.11+ 才有 discover/check/watch/deliver/hook（tomllib）
+
+      - name: 安装
+        run: python -m pip install -e .
+
+      - name: 机械层 + 评测资产 + 语义评审记录
+        # --scripts 会**真的执行**技能自带脚本（以 --help 与一个非法参数调用）。
+        # 技能仓库里开启是合适的；若你的脚本有副作用，去掉这个开关即可（相关规则会记"未覆盖"）。
+        run: |
+          skillverify check --stages all --scripts \
+            --root "$SKILLS_ROOT" --out check.json --json > /dev/null || true
+          skillverify check --stages all --scripts --root "$SKILLS_ROOT"
+
+      - name: 交付门禁（--strict：连"未执行/未覆盖"也阻断）
+        run: skillverify deliver --root "$SKILLS_ROOT" --strict
+
+      - name: 上传报告（无论成败都留痕）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skillverify-report
+          path: |
+            check.json
+            .agents/skillverify/deliver/latest.json
+            .agents/skillverify/deliver/latest.md
+
+  # 只在开发**这个工具本身**时需要：跑 10 个回归套件
+  self-test:
+    if: ${{ hashFiles('tests/run_all.py') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m tests.run_all

@@ -17,6 +17,7 @@ from .. import __version__
 from ..encoding import force_utf8_stdio
 from .commands import (
     cmd_check,
+    cmd_mount,
     cmd_deliver,
     cmd_discover,
     cmd_evals,
@@ -103,6 +104,36 @@ def build_parser() -> _ArgParser:
                         help="只打印合并后的有效配置（含来源顺序），不做发现")
     _add_common(p_disc)
     p_disc.set_defaults(func=cmd_discover)
+
+    p_mount = sub.add_parser(
+        "mount",
+        help="挂载前置检查（仓库侧）：可发现性 / name·description 可读 / 同名冲突 / fail-loud",
+        description=(
+            "上宿主**之前**在仓库侧能确定的那几件事：技能是否真的落在该宿主档声明的目录里、"
+            "SKILL.md 是否可解析且 name/description 都读得出来、同一宿主档内有没有同名冲突，"
+            "以及把三种结构损坏的 frontmatter 注入**临时副本**后解析器是否 fail-loud（不触碰原目录）。"
+            "\n\n"
+            "**不验证**宿主注册表与真实触发匹配：本工具没有宿主 API，也没有宿主运行时。"
+            "宿主侧那部分请在目标宿主里人工确认（见《操作手册.md》）。"
+        ),
+    )
+    p_mount.add_argument("--host", metavar="档名",
+                         help="只检查该宿主档（默认逐个检查配置里的全部宿主档）")
+    p_mount.add_argument("--all-hosts", action="store_true",
+                         help="逐个检查配置里的**全部**宿主档（新接宿主时用它验收；"
+                              "默认只查当前生效的那个档）")
+    p_mount.add_argument("--skill", metavar="技能名",
+                         help="只检查这个技能（默认检查每个宿主档里发现的全部技能）")
+    p_mount.add_argument("--project", default=".", metavar="目录", help="项目根（默认当前目录）")
+    p_mount.add_argument("--user-home", metavar="目录", help="解析 ~ 的基准目录（默认当前用户主目录）")
+    p_mount.add_argument("--config", action="append", metavar="文件",
+                         help="额外的 hosts.toml（可重复，按给定顺序覆盖）")
+    p_mount.add_argument("--no-config", action="store_true",
+                         help="忽略用户级/项目级配置，只用内置配置")
+    p_mount.add_argument("--out", metavar="文件", help="把报告写到文件")
+    p_mount.add_argument("--json", action="store_true", help="输出机读 JSON")
+    p_mount.add_argument("--quiet", action="store_true", help="不打印报告正文")
+    p_mount.set_defaults(func=cmd_mount)
 
     p_check = sub.add_parser(
         "check",

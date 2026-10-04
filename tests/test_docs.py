@@ -619,6 +619,20 @@ def run_new_docs() -> None:
         drives = re.findall(r"(?<![\w.])[A-Za-z]:[\\/]\w", text)
         check(not drives, f"{doc.name} 不含机器专属盘符路径（命中: {drives}）")
 
+    # CI 样例也在"文档"之列：它引用的命令必须真实存在，否则流水线会在别人机器上红
+    workflow = REPO / ".github" / "workflows" / "skillverify.yml"
+    check(workflow.is_file(), "CI 样例存在（.github/workflows/skillverify.yml）")
+    if workflow.is_file():
+        wf = workflow.read_text(encoding="utf-8")
+        used = set(SUBCOMMAND_RE.findall(wf))
+        unknown = sorted(used - subs)
+        check(not unknown, f"CI 样例提到的子命令都真实存在（凭空出现的: {unknown}）")
+        wf_flags = {f for ln in wf.splitlines() if "skillverify" in ln for f in FLAG_RE.findall(ln)}
+        unknown_wf = sorted(f for f in wf_flags if f not in flags | external_flags)
+        check(not unknown_wf, f"CI 样例提到的旗标都真实存在（凭空出现的: {unknown_wf}）")
+        check("deliver" in used and "--strict" in wf, "CI 样例跑交付门禁且用 --strict")
+        check("tests.run_all" in wf, "CI 样例包含工具自身的回归套件 job")
+
     for doc in (DOC_MANUAL, DOC_MIGRATION):
         text = doc.read_text(encoding="utf-8")
         used = set(SUBCOMMAND_RE.findall(text))

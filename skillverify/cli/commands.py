@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .. import __version__
 from ..deliver import (
+    attach_previous,
     build_record,
     evaluate,
     filter_staged_skills,
@@ -27,6 +28,8 @@ from ..encoding import write_text
 from ..evalx import check_evals
 from ..lint import lint_skill
 from ..material import build_materials
+from ..mount import load as load_mount_config
+from ..mount import run_mount
 from ..runner import run_runner
 from ..runner import validate as runner_validate
 from ..report import FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report
@@ -163,6 +166,29 @@ def _render_discovery(discovery: Discovery, project: Path, config: Config) -> st
         "",
     ]
     return "\n".join(lines)
+
+
+def cmd_mount(args: argparse.Namespace) -> int:
+    """挂载前置检查（**仓库侧**）：可发现性 / name·description 可读 / 同名冲突 / fail-loud。
+
+    明确**不**验证宿主注册表与真实触发匹配——本工具没有宿主 API，命令说明里写清楚了。
+    """
+    project = Path(args.project).expanduser()
+    user_home = Path(args.user_home).expanduser() if args.user_home else Path.home()
+    try:
+        config = load_mount_config(
+            project, user_home,
+            extra_configs=[Path(c) for c in (args.config or [])],
+            no_config=args.no_config,
+        )
+    except ConfigError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    report = run_mount(project, user_home, config, host=args.host, skill=args.skill,
+                       all_hosts=args.all_hosts)
+    report.meta["工具版本"] = f"{PROG} {__version__}"
+    _emit(report, args)
+    return report.exit_code()
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
@@ -348,11 +374,17 @@ def cmd_deliver(args: argparse.Namespace) -> int:
         library, gate, project=project, scope=scope, command=command.strip(),
         discovery=discovery, unrelated=unrelated,
     )
+    # V29：与上一轮比对必须在**输出之前**完成，否则 CI 读到的记录里没有对比
+    previous = attach_previous(discovery.trace_dir, record) if discovery.trace_dir else {}
+
     # `--json` 输出的是**交付记录本身**（含门禁结论）：门禁命令的机读输出必须带结论，
     # 否则 CI 只能靠退出码猜。markdown 与人读报告仍是分开的两种渲染。
     text = json.dumps(record, ensure_ascii=False, indent=2) if args.json else markdown
 
     print(f"{'PASS' if gate.passed else 'FAIL'}: {gate.summary()}", file=sys.stderr)
+    if previous.get("found"):
+        marks = "⚠ 退步" if previous.get("worse") else ("改善" if previous.get("better") else "持平")
+        print(f"  与上一轮相比：{marks} —— {previous.get('note', '')}", file=sys.stderr)
     for item in gate.blockers:
         print(f"  阻断 {item}", file=sys.stderr)
     if args.verbose:
