@@ -661,6 +661,12 @@ def run_structure_doc() -> None:
     check(not not_listed, f"所有代码与数据文件都在结构说明里列出（漏: {not_listed}）")
     check(len(on_disk) >= 30, f"结构说明覆盖 {len(on_disk)} 个代码/数据文件")
 
+    # 套件表里不许再写死断言数：它必然漂移（实测漂过 54→130、98→97）。
+    counted = [ln for ln in text.splitlines()
+               if re.match(r"^\| `tests/\S+` \|.*\|\s*\d+\s*\|$", ln)]
+    check(not counted, f"结构说明不写死断言数（命中 {len(counted)} 行）")
+    check("tests.run_all" in text, "结构说明指向 run_all 作为断言数的来源")
+
     for name in ("pyproject.toml", ".gitattributes", ".gitignore", "AGENTS.md",
                  "AGENTS.local.md"):
         check(f"`{name}`" in text, f"结构说明提到根文件 {name}")

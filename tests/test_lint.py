@@ -16,6 +16,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+
+
 import argparse
 import os
 import shutil
@@ -653,6 +658,63 @@ def run_script_contracts(tmp: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
+def run_optional_marking(tmp: Path) -> None:
+    """「未开启的可选批次」必须靠 Result.optional 表达，而不是匹配证据文本。
+
+    两条断言一起看才有意义：有脚本且没开 `--scripts` → 有 optional 的 SKIP + 提示；
+    没有脚本 → 没有 optional 的 SKIP，也就**不该**出现那句提示
+    （否则说明判定又回到了文本匹配）。
+    """
+    print("[test_optional_marking]")
+    from skillverify import cli
+
+    def run_cli(argv: list[str]) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = cli.main(argv)
+            except SystemExit as exc:
+                code = exc.code if isinstance(exc.code, int) else 1
+        return code, out.getvalue(), err.getvalue()
+
+    with_script = _bare_skill(tmp / "opt-a", "good", {"scripts/tool.py": GOOD_SCRIPT})
+    code, _out, err = run_cli(["lint", str(with_script)])
+    check(code == 2, f"未开 --scripts → 退出码 2（实得 {code}）")
+    check("脚本契约实测未执行" in err, "有脚本时提示「脚本契约实测未执行」")
+
+    _code2, out2, _err2 = run_cli(["lint", str(with_script), "--scripts", "--json"])
+    skipped = [r for r in json.loads(out2)["results"]
+               if r["status"] == "SKIP" and r.get("optional")]
+    check(not skipped,
+          f"开了 --scripts 就没有 optional 的 SKIP（实得 {[r['rid'] for r in skipped]}）")
+
+    # 对照：一个**没有脚本**的技能（手工建，不要 scripts/ 目录）
+    plain = tmp / "opt-b" / "plain-skill"
+    plain.mkdir(parents=True)
+    (plain / "SKILL.md").write_text(
+        "---\nname: plain-skill\ndescription: A demo skill without any scripts.\n"
+        "---\n\n# Plain\n\n没有脚本。\n", encoding="utf-8", newline="")
+    _code3, _out3, err3 = run_cli(["lint", str(plain)])
+    check("脚本契约实测未执行" not in err3,
+          "没有脚本时不该出现「未执行」提示（说明判定不是按证据文本）")
+    check(_code3 == 0, f"无脚本的技能 lint 通过（实得 {_code3}）")
+
+
+def run_ts_script(tmp: Path) -> None:
+    """TypeScript 不能交给 node 实测：那是拿工具的能力边界当技能的问题（假阳性）。"""
+    print("[test_ts_script]")
+    skill = _bare_skill(tmp / "ts-skill", "ts-skill", {
+        "scripts/tool.ts": "export function main(): void {\n  console.log('hi');\n}\n",
+    })
+    report = lint_skill(skill, run_scripts=True)
+    st = status_of(report, "SCRIPT-004")
+    check(st == SKIP, f".ts 不做实测探测 → SCRIPT-004 记 SKIP（实得 {st}）")
+    optional = next((r.optional for r in report.results if r.rid == "SCRIPT-004"), None)
+    check(optional is True, "该 SKIP 标 optional（属「环境能力不足」，不计技能缺陷）")
+    check(status_of(report, "SCRIPT-002") in (PASS, WARN),
+          ".ts 的静态检查照做（交互式输入仍会被检）")
+
+
 def run_exit_codes(tmp: Path) -> None:
     print("[test_exit_codes]")
     clean = tmp / "exit_clean" / "demo-skill"
@@ -745,6 +807,8 @@ def main() -> int:
         run_script_contracts(tmp)
         run_relative_path(tmp)
         run_exit_codes(tmp)
+        run_optional_marking(tmp)
+        run_ts_script(tmp)
         if args.dogfood:
             run_dogfood(Path(__file__).resolve().parent.parent)
     finally:

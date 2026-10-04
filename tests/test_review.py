@@ -29,7 +29,7 @@ if __package__ in (None, ""):
 from skillverify import cli, review  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
 from skillverify.lint import lint_skill  # noqa: E402
-from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
+from skillverify.report import FAIL, PASS, SKIP, WARN  # noqa: E402
 from skillverify.spec import check_spec  # noqa: E402
 from skillverify.watch import fingerprint  # noqa: E402
 
@@ -363,8 +363,8 @@ def run_collect(tmp: Path) -> None:
     # 阻断项缺修复建议 → INFO（不阻断）
     _r, record_b = review.collect([bad], catalog, skill_dir=skill, expected_ids=[blocking_id])
     check(statuses(review.collect([bad], catalog, skill_dir=skill,
-                                  expected_ids=[blocking_id])[0])["REV-011"] == INFO,
-          "阻断项缺修复建议 → INFO 提示")
+                                  expected_ids=[blocking_id])[0])["REV-011"] == WARN,
+          "阻断项缺修复建议 → WARN（是缺口，但不必阻断交付）")
 
     # 落盘 + history 追加
     store = root / "store"

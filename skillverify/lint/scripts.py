@@ -155,7 +155,11 @@ def _language(rec: FileRec) -> str | None:
     """
     by_suffix = {
         ".py": "python", ".sh": "sh", ".bash": "sh", ".zsh": "sh", ".fish": "sh",
-        ".js": "js", ".mjs": "js", ".cjs": "js", ".ts": "js",
+        ".js": "js", ".mjs": "js", ".cjs": "js",
+        # TypeScript 单独算一族：静态检查（交互/破坏性/语法）照做，
+        # 但**不能**交给 node 跑——node 原生跑不了 TS，实测必然失败，
+        # 那是把工具的能力边界写成技能的问题（假阳性）。
+        ".ts": "ts", ".tsx": "ts", ".mts": "ts", ".cts": "ts",
         ".ps1": "ps", ".psm1": "ps",
     }.get(rec.suffix)
     if by_suffix:
@@ -176,6 +180,8 @@ def _interpreter_for(rec: FileRec, language: str) -> list[str] | None:
     """返回启动命令前缀（不含脚本路径）；解释器不可用返回 None。"""
     if language == "python":
         return [sys.executable]
+    # ts：没有可靠的通用运行器（ts-node/tsx/deno 都不保证存在）→ 不做实测探测，
+    # 由调用方记 SKIP（本项未执行），而不是拿 node 跑出一次假失败。
     exe_name = {"sh": "bash", "js": "node", "ps": "pwsh"}.get(language)
     if exe_name is None:
         return None

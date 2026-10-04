@@ -57,6 +57,37 @@ class Frontmatter:
         return key in self.data
 
 
+#: 双引号标量里支持的转义（YAML 的子集）
+_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", '"': '"', "\\": "\\",
+            "/": "/", "b": "\b", "f": "\f"}
+
+
+def _unescape_double(inner: str) -> str:
+    """**单遍**从左到右解转义。
+
+    早先实现是链式 `replace("\\n") .replace("\\t") … .replace("\\\\")`——
+    顺序错了：`a\\\\nb` 里的第 3、4 个字符正好是 `\\n`，会被先换成换行，
+    于是"字面反斜杠 + n"变成了换行。单遍扫描天然没有这个歧义。
+    未知转义（YAML 里其实是错误）保守保留原样，不擅自吞掉反斜杠。
+    """
+    out: list[str] = []
+    idx = 0
+    while idx < len(inner):
+        ch = inner[idx]
+        if ch == "\\" and idx + 1 < len(inner):
+            nxt = inner[idx + 1]
+            if nxt in _ESCAPES:
+                out.append(_ESCAPES[nxt])
+                idx += 2
+                continue
+            out.append(ch)
+            idx += 1
+            continue
+        out.append(ch)
+        idx += 1
+    return "".join(out)
+
+
 def _coerce_scalar(value: str) -> str:
     """把标量值转成字符串，处理引号与转义。
 
@@ -67,13 +98,7 @@ def _coerce_scalar(value: str) -> str:
     if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
         inner = text[1:-1]
         if text[0] == '"':
-            # 双引号内的反斜杠转义
-            return (
-                inner.replace("\\n", "\n")
-                .replace("\\t", "\t")
-                .replace('\\"', '"')
-                .replace("\\\\", "\\")
-            )
+            return _unescape_double(inner)
         # 单引号内 '' 表示一个 '
         return inner.replace("''", "'")
     return text
@@ -206,20 +231,28 @@ def _parse_block(fm_lines: list[str]) -> dict[str, Any]:
         if raw_value in ("|", ">", "|-", ">-", "|+", ">+"):
             literal = raw_value.startswith("|")
             kept_bare = raw_value.endswith("-")
+            kept_all = raw_value.endswith("+")
             block: list[str] = []
             idx += 1
             while idx < total:
                 nxt = fm_lines[idx]
                 if nxt.strip() and nxt[:1] not in (" ", "\t"):
                     break
-                block.append(nxt.strip() if literal else nxt.strip())
+                block.append(nxt)
                 idx += 1
+            # 逐行 strip() 会吃掉**相对**缩进（块里的二级缩进是有意义的内容）；
+            # 正确做法是去掉块内公共缩进，行内相对缩进原样保留。
+            indents = [len(line) - len(line.lstrip(" ")) for line in block if line.strip()]
+            common = min(indents) if indents else 0
+            dedented = [line[common:] if line.strip() else "" for line in block]
             if literal:
-                value = "\n".join(block)
+                value = "\n".join(dedented)
             else:
-                value = " ".join(part for part in block if part)
-            if not kept_bare:
-                value = value.rstrip("\n")
+                value = " ".join(part.strip() for part in dedented if part.strip())
+            if kept_all:
+                value += "\n"
+            elif not kept_bare:
+                value = value.rstrip("\n") + "\n"
             data[key] = value
             continue
 

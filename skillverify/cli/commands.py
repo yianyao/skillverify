@@ -109,7 +109,9 @@ def cmd_lint(args: argparse.Namespace) -> int:
     _emit(report, args)
 
     if not args.scripts:
-        skipped = [r for r in report.results if r.status == SKIP and "--scripts" in r.evidence]
+        # 用 Result.optional 判断"未开启的可选批次"，**不要**匹配证据文本：
+        # deliver 侧本来就只按 status/optional 判定，文本匹配是另一种耦合。
+        skipped = [r for r in report.results if r.status == SKIP and r.optional]
         if skipped:
             print(
                 f"提示：{len(skipped)} 项脚本契约实测未执行（因此退出码为 2 而非 0）；"
@@ -271,7 +273,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     if _wants(args.stages, "lint") and not args.scripts:
         skipped = sum(
             1 for entry in library.entries for r in entry.report.results
-            if r.status == SKIP and "--scripts" in r.evidence
+            if r.status == SKIP and r.optional
         )
         if skipped:
             print(

@@ -36,7 +36,7 @@ from pathlib import Path
 
 from . import __version__
 from .encoding import read_json, write_text
-from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
+from .report import FAIL, PASS, SKIP, WARN, Report, Result, Rule
 
 #: 提示词目录（随包分发的数据文件；提示词是数据，不是代码）
 CATALOG_PATH = Path(__file__).resolve().parent / "data" / "review-prompts.json"
@@ -671,7 +671,9 @@ def collect(
     need_suggestion = [f["prompt_id"] for f in blocking_fails
                        if not any(x["prompt_id"] == f["prompt_id"] and x.get("suggestion")
                                   for x in all_results)]
-    report.add(_res(RULES["REV-011"], INFO if need_suggestion else PASS,
+    # 这里**不能**记 INFO：INFO 的语义是"不适用"，而"阻断项缺修复建议"是确实存在
+    # 的缺口（只是不该阻断交付）→ 记 WARN（需人工判断），与规则标题/整改文案一致。
+    report.add(_res(RULES["REV-011"], WARN if need_suggestion else PASS,
                     f"阻断项缺修复建议: {', '.join(need_suggestion)}" if need_suggestion
                     else "阻断项均有修复建议（或无阻断项）"))
 

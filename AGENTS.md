@@ -17,7 +17,7 @@
 ## 二、跑起来
 
 ```powershell
-python -m tests.run_all              # 9 个套件，约 1 分钟（离线）
+python -m tests.run_all              # 10 个套件，约 1.5 分钟（离线）
 python -m tests.run_all --dogfood    # 另把 legacy/ 下的旧技能拉进来跑
 python -m tests.run_all --install    # 再跑打包真装检查（需要网络，约 1 分钟）
 python -m tests.test_lint            # 也可以单跑某一套
@@ -88,6 +88,6 @@ python -m tests.test_lint            # 也可以单跑某一套
   另有开发者向的《覆盖对照-生命周期验证方案.md》与本文件。
 - `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
 - 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
-- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（9 个套件 + 打包真装；具体断言数看输出，本文件不写死数字）。
+- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（10 个套件 + 打包真装；具体断言数看输出，本文件不写死数字）。
 - 新增规则/命令时的固定动作：① 规则要写 level 与出处（官方条款或"本项目收紧"）；
   ② 文档里补上并放进演练块（带期望退出码）；③ 补回归断言；④ 跑一遍死代码与过期措辞扫描。

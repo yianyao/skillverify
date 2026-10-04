@@ -294,6 +294,11 @@ def check_spec(path: Path) -> tuple[SkillDocument, Report]:
     未产生记录时直接省略；其余规则若未被执行（前置短路），按前置错误的
     性质记为 SKIP 或 PASS，绝不出现"没报就是过"的错觉。
     """
+    # `spec .` 这类相对路径必须先解析：`Path(".").name` 是空串，会让
+    # SKILL-012（name 与父目录名一致）无条件误报。lint 侧一直是这样做的，spec 侧漏了。
+    path = Path(path)
+    if not path.is_absolute():
+        path = path.resolve()
     doc = load_skill(path)
     report = Report(target=str(path), stage="spec")
 

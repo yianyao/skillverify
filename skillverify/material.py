@@ -28,7 +28,6 @@ import random
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 
 from . import __version__
@@ -298,15 +297,6 @@ def build_blind(
 # --------------------------------------------------------------------------- #
 # 主入口
 # --------------------------------------------------------------------------- #
-
-
-@dataclass
-class MaterialBundle:
-    """材料产出结果。"""
-
-    out_dir: Path
-    written: list[Path]
-    report: "object"  # Report（避免与 report 模块循环导入，仅作类型提示）
 
 
 def build_materials(

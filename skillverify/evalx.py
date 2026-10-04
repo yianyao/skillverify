@@ -953,8 +953,16 @@ def _check_workspace(skill_dir: Path, workspace: Path, doc: EvalsDoc,
     if iteration is not None:
         iterations = [item for item in iterations if item[0] == iteration]
         if not iterations:
-            return [_res(rule, INFO, f"不适用：工作区里没有 iteration-{iteration}")
-                    for rule in RULES.values()]
+            # 只回**本函数负责的**规则族：早先这里遍历了全部 RULES，于是 EVAL 族
+            # 被回了第二遍（同 rid 两行）。另外"指定的 iteration 不存在"是实打实的
+            # 问题（打错了？产物没落盘？）→ 记 WARN，而不是 INFO（INFO 是"不适用"）。
+            reason = f"指定的 iteration-{iteration} 在工作区里不存在"
+            out.append(_res(RULES["WS-001"], WARN, reason))
+            for rule in RULES.values():
+                if rule.rid != "WS-001" and rule.rid.startswith(
+                        ("WS-", "GRAD-", "BENCH-", "TIME-")):
+                    out.append(_res(rule, SKIP, f"未执行：{reason}"))
+            return out
 
     if not iterations:
         reason = (f"工作区 {workspace} 里没有 iteration-N 目录"

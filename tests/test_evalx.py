@@ -628,8 +628,15 @@ def run_workspace(tmp: Path) -> None:
     check("iteration-2" in evidence_of(report, "WS-001") or statuses(report)["WS-001"] == PASS,
           "--iteration 过滤生效")
     report = evalx.check_evals(skill, iteration=9)
-    check(statuses(report)["WS-001"] == INFO and "没有 iteration-9" in evidence_of(report, "WS-001"),
-          "指定的 iteration 不存在 → 全部记 INFO（不适用）")
+    # 指定的 iteration 不存在是**实打实的问题**（打错了？产物没落盘？）：
+    # 记 WARN，且只回工作区族——早先这里遍历全部 RULES，导致 EVAL 族被回第二遍。
+    check(statuses(report)["WS-001"] == WARN and "不存在" in evidence_of(report, "WS-001"),
+          "指定的 iteration 不存在 → WS-001 WARN（不是 INFO「不适用」）")
+    rids = [r.rid for r in report.results]
+    dupes = sorted({rid for rid in rids if rids.count(rid) > 1})
+    check(not dupes, f"指定不存在的 iteration 时不产生重复 rid（重复: {dupes}）")
+    check(statuses(report)["GRAD-001"] == SKIP,
+          "工作区族记 SKIP（本项未执行），不冒充通过")
 
     # 显式 --workspace
     other = root / "elsewhere"

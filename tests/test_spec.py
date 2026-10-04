@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import os
+
 import argparse
 import shutil
 import sys
@@ -21,6 +23,7 @@ if __package__ in (None, ""):  # 允许 `python tests/test_spec.py` 直接运行
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.report import PASS  # noqa: E402
 from skillverify.spec import check_spec, find_official_cli, run_official  # noqa: E402
 
 _VALID = (
@@ -81,6 +84,10 @@ def ok(msg: str) -> None:
 def fail(msg: str) -> None:
     _failed.append(msg)
     print(f"  FAIL {msg}")
+
+
+def check(cond: bool, msg: str) -> None:
+    ok(msg) if cond else fail(msg)
 
 
 def run_case_matrix(tmp: Path, official: str | None) -> None:
@@ -183,6 +190,50 @@ def run_path_errors(tmp: Path) -> None:
         fail("传入文件未报错")
 
 
+def run_regressions(tmp: Path) -> None:
+    """外部评审确认并修掉的两类缺陷的回归断言。"""
+    print("[test_regressions]")
+    from skillverify.frontmatter import parse_frontmatter
+    from skillverify.spec import check_spec
+
+    # ① 相对路径：`spec .` 曾因 Path(".").name 是空串而误报 SKILL-012
+    skill = tmp / "rel-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: rel-skill\ndescription: A demo skill for the relative path probe.\n"
+        "---\n\n# D\n", encoding="utf-8", newline="")
+    cwd = Path.cwd()
+    try:
+        os.chdir(skill)
+        _doc, report = check_spec(Path("."))
+        row = next(r for r in report.results if r.rid == "SKILL-012")
+        check(row.status == PASS,
+              f"`spec .` 不再误报 SKILL-012（实得 {row.status}：{row.evidence[:60]}）")
+    finally:
+        os.chdir(cwd)
+    _doc2, report2 = check_spec(skill)
+    check(next(r for r in report2.results if r.rid == "SKILL-012").status == PASS,
+          "绝对路径仍然 PASS（对照组）")
+
+    # ② 双引号转义必须单遍处理：链式 replace 会把 `a\\nb` 里的 `\\n` 先换成换行
+    doc = parse_frontmatter('---\nkey: "a\\\\nb"\n---\n\n# b\n')
+    check(doc.get("key") == "a\\nb",
+          f"`a\\\\nb` 解析为字面反斜杠+n（实得 {doc.get('key')!r}）")
+    doc2 = parse_frontmatter('---\nkey: "a\\nb"\n---\n\n# b\n')
+    check(doc2.get("key") == "a\nb",
+          f"`a\\nb` 解析为换行（实得 {doc2.get('key')!r}）")
+    doc3 = parse_frontmatter('---\nkey: "say \\"hi\\""\n---\n\n# b\n')
+    check(doc3.get("key") == 'say "hi"', f"转义引号（实得 {doc3.get('key')!r}）")
+
+    # ③ 块标量必须保留**相对**缩进（逐行 strip 会吃掉它）
+    doc4 = parse_frontmatter(
+        "---\nkey: |\n  第一行\n    缩进两格的第二行\n  第三行\n---\n\n# b\n")
+    check(doc4.get("key") == "第一行\n  缩进两格的第二行\n第三行\n",
+          f"块标量 | 保留相对缩进（实得 {doc4.get('key')!r}）")
+    doc5 = parse_frontmatter("---\nkey: |-\n  第一行\n  第二行\n---\n\n# b\n")
+    check(doc5.get("key") == "第一行\n第二行", f"`|-` 去掉末尾换行（实得 {doc5.get('key')!r}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     parser = argparse.ArgumentParser(description="skillverify spec 模块回归测试")
@@ -201,6 +252,7 @@ def main() -> int:
         run_case_matrix(tmp, official)
         run_semantics(tmp)
         run_path_errors(tmp)
+        run_regressions(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

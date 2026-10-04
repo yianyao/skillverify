@@ -202,8 +202,6 @@ def _check_queryset(doc: Queryset) -> list[Result]:
         for rid in ("TRIG-002", "TRIG-003", "TRIG-004", "TRIG-005", "TRIG-006"):
             out.append(_res(RULES[rid], SKIP, "未执行：查询集无法解析，先修 TRIG-001"))
         return out
-    out.append(_res(RULES["TRIG-001"], PASS, f"evals/{QUERYSET_NAME} 可解析"))
-
     problems: list[str] = []
     name = doc.data.get("skill_name")
     if not isinstance(name, str) or not name.strip():
@@ -213,9 +211,11 @@ def _check_queryset(doc: Queryset) -> list[Result]:
         problems.append(f"queries 缺失或不是数组（实为 {type(raw).__name__}）")
     elif not raw:
         problems.append("queries 是空数组")
+    # 一条规则只出一行：可解析性与必需键合并成同一判定，避免同 rid 出现
+    # PASS/FAIL 两行（外观混乱，也会让"按 rid 取状态"的消费方拿到不确定结果）。
     out.append(_res(RULES["TRIG-001"], FAIL if problems else PASS,
                     "；".join(problems) if problems
-                    else f"skill_name={name!r}，{len(raw)} 条查询"))
+                    else f"可解析，skill_name={name!r}，{len(raw)} 条查询"))
 
     field_bad: list[str] = []
     ids: list[str] = []

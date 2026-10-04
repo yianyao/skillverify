@@ -523,8 +523,10 @@ MUTATIONS: list[Mutation] = [
              note="素材类文件应在 assets/"),
     Mutation("enc:文本文件 CRLF", m_enc_crlf, ("ENC-002",), note="强制 LF"),
     Mutation("enc:shell 脚本 CRLF", m_enc_crlf_shell, ("ENC-001",),
-             tolerate=("ENC-002", "REF-007", "SCRIPT-003"),
-             note="新加的 .sh 同时踩通用换行、未列出、且没有 --help 三条规则"),
+             tolerate=("ENC-002", "REF-007", "SCRIPT-003", "SCRIPT-004", "SCRIPT-008"),
+             note="新加的 .sh 同时踩通用换行、未列出、没有 --help 三条规则；"
+                  "**且本机若有 bash，实测 --help 必然失败**（CRLF 让 shebang 解析不了）——"
+                  "这是合理级联，不是规则误报，所以实测类规则一并容忍"),
     Mutation("enc:BOM", m_enc_bom, ("ENC-003",),
              tolerate=("SKILL-003",), note="BOM 在前会连带 frontmatter 解析"),
     Mutation("enc:非 UTF-8 文件", m_enc_not_utf8, ("ENC-004",),

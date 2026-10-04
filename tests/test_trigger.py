@@ -156,6 +156,9 @@ def run_presence(tmp: Path) -> None:
     bad = [r.rid for r in report.results if r.status in (FAIL, WARN)]
     check(report.exit_code() == 0 and not bad,
           f"口径内的资产全绿（异常: {bad}）")
+    rids = [r.rid for r in report.results]
+    dupes = sorted({rid for rid in rids if rids.count(rid) > 1})
+    check(not dupes, f"报告里每条规则只出一行（重复: {dupes}）")
     check(statuses(report)["TRIG-000"] == PASS, "有资产 → TRIG-000 PASS")
 
 

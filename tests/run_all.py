@@ -33,6 +33,7 @@ SUITES: list[tuple[str, str]] = [
     ("test_review", "语义评审（提示词目录 / 任务包 / 回写 / 汇总）"),
     ("test_docs", "文档与结构说明（演练块真跑 + 文件树一致）"),
     ("test_injection", "注入自测（变异 38 处，必须逐处报错且不牵连）"),
+    ("test_selfcheck", "自检（死代码 / 过期措辞）"),
     ("test_packaging", "打包（pyproject 静态检查；--install 时真装一遍）"),
 ]
 
