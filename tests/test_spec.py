@@ -23,7 +23,7 @@ if __package__ in (None, ""):  # 允许 `python tests/test_spec.py` 直接运行
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
-from skillverify.report import PASS  # noqa: E402
+from skillverify.report import FAIL, PASS  # noqa: E402
 from skillverify.spec import check_spec, find_official_cli, run_official  # noqa: E402
 
 _VALID = (
@@ -230,6 +230,28 @@ def run_regressions(tmp: Path) -> None:
         "---\nkey: |\n  第一行\n    缩进两格的第二行\n  第三行\n---\n\n# b\n")
     check(doc4.get("key") == "第一行\n  缩进两格的第二行\n第三行\n",
           f"块标量 | 保留相对缩进（实得 {doc4.get('key')!r}）")
+    # ④ 主文件名大小写：在大小写不敏感的系统上，`(dir / "SKILL.md").is_file()` 对
+    #    `Skill.md` 也返回 True —— 于是本机 PASS、Linux 宿主加载失败。必须拦住。
+    wrong = tmp / "wrong-case"
+    wrong.mkdir(parents=True)
+    (wrong / "Skill.md").write_text(
+        "---\nname: wrong-case\ndescription: A wrong case filename probe here.\n---\n\n# D\n",
+        encoding="utf-8", newline="")
+    _doc_w, report_w = check_spec(wrong)
+    row = next(r for r in report_w.results if r.rid == "SKILL-002")
+    check(row.status == FAIL and "大小写" in row.evidence,
+          f"`Skill.md`（错大小写）→ SKILL-002 FAIL 且点名大小写（实得 {row.status}："
+          f"{row.evidence[:70]}）")
+    check(report_w.exit_code() == 1, "该情况阻断")
+    right = tmp / "right-case"
+    right.mkdir(parents=True)
+    (right / "SKILL.md").write_text(
+        "---\nname: right-case\ndescription: A correct case filename probe here.\n---\n\n# D\n",
+        encoding="utf-8", newline="")
+    _doc_r, report_r = check_spec(right)
+    check(next(r for r in report_r.results if r.rid == "SKILL-002").status == PASS,
+          "正确大小写仍然 PASS（对照组）")
+
     doc5 = parse_frontmatter("---\nkey: |-\n  第一行\n  第二行\n---\n\n# b\n")
     check(doc5.get("key") == "第一行\n第二行", f"`|-` 去掉末尾换行（实得 {doc5.get('key')!r}）")
 

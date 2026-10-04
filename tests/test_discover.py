@@ -537,6 +537,25 @@ def run_mount_check(tmp: Path) -> None:
     check(code4 == 2 and st4["MOUNT-003"] == WARN,
           f"同名技能 → MOUNT-003 WARN 且退出码 2（实得 {st4}）")
 
+    # ④b 主文件名大小写不符：技能确实不该被发现（跨平台一致），但**必须点名报出**，
+    #     否则现象是"我明明放进去了，工具说没有"——最难查的一种"不加载"。
+    bad = proj / ".agents" / "skills" / "wrong-case"
+    bad.mkdir(parents=True, exist_ok=True)
+    (bad / "Skill.md").write_text(
+        "---\nname: wrong-case\ndescription: A wrong case filename probe here.\n---\n\n# D\n",
+        encoding="utf-8", newline="")
+    code5, out5, _e5 = run_cli(["discover", *common, "--json"])
+    payload5 = json.loads(out5)
+    names = [s["name"] for s in payload5["skills"]]
+    check("wrong-case" not in names, f"大小写不符的技能不被发现（实得 {names}）")
+    d4 = [r for r in payload5["results"] if r["rid"] == "DISC-004"]
+    check(code5 == 1 and d4 and d4[0]["status"] == FAIL and "Skill.md" in d4[0]["evidence"],
+          f"但 DISC-004 点名报出（实得 {[r['status'] for r in d4]}）")
+    # 单技能检查也给出同一句话（spec 与 mount 的判定必须一致）
+    from skillverify.mount import _readable as mount_readable
+    _n, _d, err = mount_readable(bad)
+    check("大小写" in err, f"mount 的读取检查给出同一条大小写结论（实得 {err[:60]!r}）")
+
     # ⑤ fail-loud 探针**能失败**：把它换成一段合法 frontmatter，它理应被接受 →
     #    探针必须报 FAIL，否则这套检查恒真（与"不能失败的断言等于没断言"同理）
     saved = mount.PROBES

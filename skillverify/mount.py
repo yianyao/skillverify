@@ -28,6 +28,7 @@ from pathlib import Path
 from .discover import Config, Discovery, discover_skills, load_config
 from .encoding import read_text
 from .frontmatter import FrontmatterError, parse_frontmatter
+from .spec import find_skill_md, skill_md_case_mismatch
 from .report import FAIL, PASS, SKIP, WARN, Report, Result, Rule
 
 #: 旧方案的出处（本项目承接其**仓库侧**部分）
@@ -90,14 +91,17 @@ class MountTarget:
 
 
 def _readable(skill: Path) -> tuple[str, str, str]:
-    """返回 (name, description, 错误说明)。"""
-    skill_md = None
-    for candidate in ("SKILL.md", "skill.md"):
-        path = skill / candidate
-        if path.is_file():
-            skill_md = path
-            break
+    """返回 (name, description, 错误说明)。
+
+    主文件的定位与大小写判定都走 spec 的同一处实现：否则 spec 说 FAIL、mount 说 PASS，
+    使用者不知道信哪个。
+    """
+    skill_md = find_skill_md(skill)
     if skill_md is None:
+        wrong = skill_md_case_mismatch(skill)
+        if wrong:
+            return "", "", (f"技能主文件名是 {wrong}：必须是 SKILL.md 或 skill.md"
+                            f"（大小写敏感——多数 Linux 宿主会因此加载失败）")
         return "", "", "目录里没有 SKILL.md"
     try:
         doc = parse_frontmatter(read_text(skill_md))

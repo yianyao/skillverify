@@ -27,8 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .report import INFO, WARN, Result, Rule
-from .spec import find_skill_md
+from .report import FAIL, INFO, WARN, Result, Rule
+from .spec import find_skill_md, skill_md_case_mismatch
 
 #: 没有 --host 时使用的档（= 官方跨宿主约定）
 DEFAULT_PROFILE = "default"
@@ -65,6 +65,14 @@ RULES: dict[str, Rule] = {
         "HOUSE",
         "本项目收紧：空库通常是配置写错或布局变了",
         "确认该目录下确实有 <技能名>/SKILL.md；必要时调整 max_depth 或 project_roots",
+    ),
+    "DISC-004": Rule(
+        "DISC-004",
+        "技能主文件名大小写不符（SKILL.md / skill.md）",
+        "HOUSE",
+        "官方条款：技能主文件名为 SKILL.md；本项目收紧为「必须精确匹配」",
+        "把文件重命名为 SKILL.md（或 skill.md）。大小写敏感的系统上，"
+        "大小写不符的文件等于不存在——宿主不会加载，报错也很难懂",
     ),
 }
 
@@ -336,8 +344,14 @@ def _resolve(spec: str, base: Path, *, is_user_root: bool) -> Path:
     return base / path
 
 
-def _iter_skill_dirs(root: Path, max_depth: int) -> list[Path]:
-    """在 root 下按深度上限找含 SKILL.md 的目录；找到即不再向下钻。"""
+def _iter_skill_dirs(root: Path, max_depth: int,
+                     wrong_case: list[tuple[Path, str]] | None = None) -> list[Path]:
+    """在 root 下按深度上限找含 SKILL.md 的目录；找到即不再向下钻。
+
+    `wrong_case` 会被填入「看起来是技能目录、但主文件名大小写不对」的目录与真实文件名。
+    这类目录如果不单独收集，就会**静默隐身**（"我明明放进去了，工具说没有"）——
+    这是"不加载"类故障里最难查的一种。
+    """
     found: list[Path] = []
     stack: list[tuple[Path, int]] = [(root, 1)]
     while stack:
@@ -357,6 +371,9 @@ def _iter_skill_dirs(root: Path, max_depth: int) -> list[Path]:
             if find_skill_md(child) is not None:
                 found.append(child)
                 continue
+            wrong = skill_md_case_mismatch(child)
+            if wrong and wrong_case is not None:
+                wrong_case.append((child, wrong))
             if depth < max_depth:
                 stack.append((child, depth + 1))
     return sorted(found)
@@ -403,7 +420,8 @@ def discover_skills(
                 )
             discovery.roots.append(info)
             continue
-        for skill_dir in _iter_skill_dirs(path, profile.max_depth):
+        wrong_case: list[tuple[Path, str]] = []
+        for skill_dir in _iter_skill_dirs(path, profile.max_depth, wrong_case):
             resolved = skill_dir.resolve()
             if resolved in seen_paths:
                 continue
@@ -414,6 +432,20 @@ def discover_skills(
             info.found += 1
         if info.found == 0:
             info.note = f"未发现 <技能名>/SKILL.md（max_depth={profile.max_depth}）"
+        # 大小写不符的目录单独报：否则它在**任何**平台上都静默隐身，
+        # 使用者只看到「没发现技能」，查不出是文件名大小写的问题。
+        seen_wrong: set[str] = set()
+        for wrong_dir, wrong_name in wrong_case:
+            key = str(wrong_dir.resolve())
+            if key in seen_wrong:
+                continue
+            seen_wrong.add(key)
+            discovery.results.append(Result(
+                rid="DISC-004", title=RULES["DISC-004"].title, status=FAIL,
+                level=RULES["DISC-004"].level,
+                evidence=f"发现 {wrong_name}（应为 SKILL.md）：{wrong_dir}",
+                remediation=RULES["DISC-004"].remediation,
+            ))
         discovery.roots.append(info)
 
     # 歧义：同名技能出现在多个根（绝不静默覆盖）

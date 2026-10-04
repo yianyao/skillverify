@@ -126,12 +126,41 @@ class SkillDocument:
         return not any(e.status == FAIL for e in self.errors)
 
 
+#: 技能主文件的合法名字（官方优先大写，缺失时接受全小写）
+SKILL_MD_NAMES = ("SKILL.md", "skill.md")
+
+
 def find_skill_md(directory: Path) -> Path | None:
-    """查找 SKILL.md；官方实现优先大写，缺失时接受小写 skill.md。"""
-    for candidate in ("SKILL.md", "skill.md"):
-        path = directory / candidate
-        if path.is_file():
-            return path
+    """查找 SKILL.md；官方实现优先大写，缺失时接受小写 skill.md。
+
+    **必须按目录条目的真实名字精确匹配**，不能用 `(directory / "SKILL.md").is_file()`：
+    在大小写不敏感的文件系统（Windows / macOS 默认）上，后者对名为 `Skill.md` 的文件
+    同样返回 True——于是本机判 PASS，而技能放到大小写敏感的宿主（多数 Linux）上直接**加载不了**。
+    这类「本机能跑、宿主不加载」的结论跨平台不成立，必须在这里拦住。
+    """
+    try:
+        entries = {entry.name: entry for entry in directory.iterdir()}
+    except OSError:
+        return None
+    for candidate in SKILL_MD_NAMES:
+        entry = entries.get(candidate)
+        if entry is not None and entry.is_file():
+            return entry
+    return None
+
+
+def skill_md_case_mismatch(directory: Path) -> str | None:
+    """返回「名字大小写不对的 SKILL.md」的真实文件名（没有则 None）。
+
+    单独一个函数：spec 与 mount 都要用同一处判定，否则两个阶段会对同一个技能给出不同结论。
+    """
+    try:
+        names = [entry.name for entry in directory.iterdir() if entry.is_file()]
+    except OSError:
+        return None
+    for name in sorted(names):
+        if name.lower() == "skill.md" and name not in SKILL_MD_NAMES:
+            return name
     return None
 
 
@@ -168,7 +197,14 @@ def load_skill(path: Path) -> SkillDocument:
 
     skill_md = find_skill_md(path)
     if skill_md is None:
-        doc.errors.append(_fail("SKILL-002", "技能目录内缺少 SKILL.md"))
+        wrong = skill_md_case_mismatch(path)
+        if wrong:
+            doc.errors.append(_fail(
+                "SKILL-002",
+                f"技能主文件名是 {wrong}：必须是 SKILL.md 或 skill.md（大小写敏感——"
+                f"本机可能读得到，多数 Linux 宿主会因此加载失败）"))
+        else:
+            doc.errors.append(_fail("SKILL-002", "技能目录内缺少 SKILL.md"))
         return doc
     doc.skill_md = skill_md
 
