@@ -1,7 +1,6 @@
 ---
 name: evals-skill
 description: 为新建或已有的 Agent Skill 生成评测资产——官方格式的 evals.json（输出质量用例与可判定断言）和 trigger-queryset.json（触发查询集，约20条、正负各8到10条、near-miss 负例为主、train 占55%-65%），内置口径硬约束、空洞断言拦截、防自我应验查重与 skillverify 校验闭环；绝不生成 trigger-runs.json（那是执行层的产物，凭空伪造即假证据）。当用户要为某个技能补评测、写 evals、建触发查询集时使用。
-version: 1.0.0
 license: MIT
 ---
 
@@ -9,8 +8,8 @@ license: MIT
 
 ## 职责边界（先读，不可协商）
 
-1. **只生成两份文件**：`evals/evals.json` 与 `evals/trigger-queryset.json`，落在目标技能目录的 `evals/` 下。
-2. **绝不生成 `evals/trigger-runs.json`**。它是执行层（真跑查询的模型、官方 skill-creator、宿主）留下的运行记录。没有运行记录就明确告知用户「尚未跑过，工具的 TRIG-* 会提示」——**任何情况下不得凭空编写运行记录**：伪造的记录能通过全部机械校验（次数、阈值全对），比缺失危险得多。
+1. **只生成两份文件**：`evals.json` 与 `trigger-queryset.json`，落在目标技能目录的 evals 目录下。
+2. **绝不生成运行记录 `trigger-runs.json`**。它是执行层（真跑查询的模型、官方 skill-creator、宿主）留下的运行记录。没有运行记录就明确告知用户「尚未跑过，工具的 TRIG-* 会提示」——**任何情况下不得凭空编写运行记录**：伪造的记录能通过全部机械校验（次数、阈值全对），比缺失危险得多。
 3. **不自研执行器**：with/without 对比、benchmark、A/B、按结果调优描述，用官方 skill-creator 或宿主；也可以把执行入口交给 `skillverify evals --run-with <命令>`（执行 + 限时 + 跑完重新校验产物）。
 4. 目标技能已存在 evals 资产时：先读旧文件，默认**增量补充**并向用户确认，不得静默覆盖。
 
@@ -33,7 +32,7 @@ license: MIT
 骨架见 `references/eval-asset-spec.md` 第 1 节；`skill_name` 必须与目标技能的 name 一致。规则：
 
 - `prompt` 像真人说的话；
-- `files` 里的文件必须真实存在（写前逐一核对；素材不存在的先创建到 `evals/files/` 或删除引用）；
+- `files` 里的文件必须真实存在（写前逐一核对；素材不存在的先创建到目标技能 evals 目录下的 files 子目录，或删除引用）；
 - `assertions` 必须是**可判定的条件**——"输出列出了 3 个月份" ✔；"输出是好的" ✘（空洞断言会被工具直接判错）；
 - 至少 3 个用例：覆盖主干场景 + 至少 1 个易错点。
 
@@ -50,21 +49,20 @@ license: MIT
 
 ### 第 4 步：防自我应验查重（必做）
 
-同一个模型既写描述又写查询集时，查询容易不自觉复用描述词句 → 触发率被测得虚高、评测集失去代表性。跑：
+同一个模型既写描述又写查询集时，查询容易不自觉复用描述词句 → 触发率被测得虚高、评测集失去代表性。跑（`<skill-dir>` 换成目标技能目录的路径）：
 
 ```
-python scripts/check_overlap.py <技能目录>
+python scripts/check_overlap.py <skill-dir>
 ```
 
 对每条 WARN：改写到"用户会怎么说"的口吻，禁止照抄描述。负例允许与领域共享表面词（这正是 near-miss 的本义），但不得整句改写自描述。
 
 ### 第 5 步：校验闭环（必做）
 
-环境里有 skillverify 时（pip 已安装，或 PYTHONPATH 指向其仓库）：
+环境里有 skillverify 时（pip 已安装，或 PYTHONPATH 指向其仓库）。注意：触发评测检查（TRIG-*）与官方评测资产检查同属 `evals` 一个命令，没有独立的 `trigger` 子命令：
 
 ```
-python -m skillverify evals <技能目录>
-python -m skillverify trigger <技能目录>
+python -m skillverify evals <skill-dir>
 ```
 
 按报错逐条修复并重跑，直到无 FAIL。不可用时做形状自查（JSON 可解析 / 布尔严格小写 / id 唯一 / files 存在 / 口径数值逐项核对），并在交付说明中写明「未过 skillverify」。

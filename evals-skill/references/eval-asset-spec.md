@@ -1,9 +1,10 @@
 # 评测资产规格：evals.json 与 trigger-queryset.json
 
-本文件是 `evals-skill` 的字段级规格参考。两份文件都由**人/模型**编写，`skillverify evals`
-与 `skillverify trigger` 只读它们并校验形状与口径；工具从不生成这两份 JSON。
+本文件是 `evals-skill` 的字段级规格参考。两份文件（`evals.json` 与 `trigger-queryset.json`，
+都放在**目标技能**目录的 evals 目录下）由**人/模型**编写，`skillverify evals`
+与触发评测检查只读它们并校验形状与口径；工具从不生成这两份 JSON。
 
-## 1. evals/evals.json（输出质量评测，官方格式）
+## 1. evals.json（输出质量评测，官方格式）
 
 ```json
 {
@@ -32,10 +33,10 @@
 质量要求：
 
 - 至少 3 个用例；覆盖主干场景 + 至少 1 个易错点；
-- `files` 引用的素材放进 `evals/files/`；写文件前逐一核对存在性；
+- `files` 引用的素材放进 evals 目录下的 files 子目录；写文件前逐一核对存在性；
 - 断言要能被第三方照着判对错，不含"尽量""合理"这类不可判定词。
 
-## 2. evals/trigger-queryset.json（触发评测查询集）
+## 2. trigger-queryset.json（触发评测查询集）
 
 ```json
 {

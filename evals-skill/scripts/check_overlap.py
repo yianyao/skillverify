@@ -7,7 +7,7 @@ description 做词面重叠检查（ASCII 词 + CJK 字符 bigram，纯标准库
 - 共享领域词是正常的（查询本来就该命中技能领域）；
 - 重叠系数过高 = 整句几乎是描述的改写，需要改写成"用户会怎么说"的口吻。
 
-用法：python check_overlap.py <技能目录>
+用法：python check_overlap.py <skill-dir>
 退出码：0 正常（含有 WARN 的情况）；2 输入问题（找不到文件等）。
 """
 
@@ -58,9 +58,18 @@ def read_description(skill_md: Path) -> str:
     return ""
 
 
+USAGE = "用法: python check_overlap.py <skill-dir>"
+
+
 def main() -> int:
+    if "-h" in sys.argv or "--help" in sys.argv:
+        print("check_overlap.py —— 防自我应验查重（建议性 WARN，不阻断）")
+        print(USAGE)
+        print("参数: <skill-dir>  目标技能目录（内含 SKILL.md 与 evals/trigger-queryset.json）")
+        print("退出码: 0 正常（含有 WARN 的情况）; 2 输入问题（找不到文件等）")
+        return 0
     if len(sys.argv) != 2:
-        print("用法: python check_overlap.py <技能目录>")
+        print(USAGE)
         return 2
     root = Path(sys.argv[1])
     skill_md = next((root / name for name in ("SKILL.md", "skill.md")
