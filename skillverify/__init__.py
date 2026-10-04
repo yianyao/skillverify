@@ -7,9 +7,12 @@
   spec      官方规范校验（对齐 skills-ref 0.1.1 行为）
   lint      官方留白的补检（引用/预算/卫生/脚本契约/安全/依赖）
   evalx     评测资产校验（官方 evals.json schema 与 workspace 结构）
-  discover  技能发现（声明式宿主适配，不含宿主名硬编码）
-  report    统一结果模型与人读/机读输出
-  cli       命令行入口
+  discover  技能发现 + 声明式宿主适配（读 data/hosts.toml，代码内无宿主名）
+  report    统一结果模型与人读/机读输出（含整库汇总）
+  cli       命令行入口（spec / lint / discover / check）
+
+版本前提：`discover` / `check` 需要 Python ≥3.11（标准库 tomllib 解析 hosts.toml）；
+`spec` / `lint` 不依赖它，在更早版本仍可用（tomllib 为延迟导入）。
 """
 
 __version__ = "0.1.0"

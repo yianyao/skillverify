@@ -23,8 +23,10 @@ frontmatter 解析失败 → 只报解析错误（后续字段检查全不执行
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import sys
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -325,22 +327,31 @@ def check_spec(path: Path) -> tuple[SkillDocument, Report]:
 
 
 def find_official_cli() -> str | None:
-    """探测官方校验器。命令名以 0.1.1 发布物为准（agentskills），兼容旧名。"""
+    """探测官方校验器。命令名以 0.1.1 发布物为准（agentskills），兼容旧名。
+
+    **刻意不写任何宿主专属路径**：旧体系在代码里硬编码了若干宿主目录（71 处），
+    一旦换机或换宿主就失效。这里的探测顺序全部与宿主无关：
+    1. `SKILLVERIFY_OFFICIAL_CLI` 环境变量（显式指定，最优先）；
+    2. PATH 上的命令；
+    3. 与本解释器同环境的 Scripts/bin 目录（官方校验器常与该 Python 同装却不在 PATH）。
+    """
+    override = os.environ.get("SKILLVERIFY_OFFICIAL_CLI", "").strip()
+    if override and Path(override).exists():
+        return override
     for name in ("agentskills", "skills-ref"):
         found = shutil.which(name)
         if found:
             return found
-    # 托管 venv 兜底（不进 PATH 的常见场景）
-    home = Path.home()
-    for base in (home / ".workbuddy/binaries/python/versions",
-                 home / ".workbuddy/binaries/python/envs"):
-        if not base.is_dir():
-            continue
-        for scripts in sorted(base.glob("*/Scripts")):
-            for name in ("agentskills.exe", "agentskills"):
-                cand = scripts / name
-                if cand.is_file():
-                    return str(cand)
+    exe_dir = Path(sys.executable).resolve().parent
+    candidates = [
+        exe_dir / "agentskills", exe_dir / "skills-ref",
+        exe_dir / "Scripts" / "agentskills.exe", exe_dir / "Scripts" / "skills-ref.exe",
+        exe_dir / "Scripts" / "agentskills", exe_dir / "Scripts" / "skills-ref",
+        exe_dir.parent / "bin" / "agentskills", exe_dir.parent / "bin" / "skills-ref",
+    ]
+    for cand in candidates:
+        if cand.is_file():
+            return str(cand)
     return None
 
 

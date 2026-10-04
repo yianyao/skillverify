@@ -1,0 +1,70 @@
+# skillverify 内置宿主适配声明（声明式：接入新宿主只改本文件，不改代码）
+#
+# 为什么是 TOML 而不是代码里的映射表：
+# 旧体系 `tools/host_compat.py` 用 71 处硬编码猜测宿主身份，实测把本机的
+# DeepSeek Harness 误判成已知宿主（test_regression.py::test_b_path_ambiguity FAIL）。
+# 宿主布局是**数据**，不是逻辑；把它做成数据，接入新宿主才可能是"0 行代码改动"。
+#
+# 覆盖顺序（后者覆盖前者同名键，列表整体替换而非拼接）：
+#   本文件（内置） < ~/.agents/skillverify/hosts.toml < <project>/.agents/skillverify/hosts.toml < --config 指定的文件
+#
+# 字段说明（`defaults` 与 `hosts.<名>` 同构，后者缺省项继承 defaults）：
+#   project_roots  项目级技能根（相对项目目录；以 / 或盘符开头则视为绝对路径）
+#   user_roots     用户级技能根（以 ~ 开头，可用 --user-home 改写 ~ 的指向）
+#   trace_dir      中央留痕目录（相对项目目录），供 `check --trace` 落盘
+#   max_depth      技能根之下最多下钻几层找 SKILL.md（默认 1：根的直接子目录）
+#   description    人读说明（`--show-config` 会显示）
+
+version = 1
+
+# --------------------------------------------------------------------------- #
+# 默认布局：官方跨宿主约定
+# 官方 specification 只规定技能**内部**结构，不规定技能存放位置；`.agents/skills/`
+# 是官方文档承认的 "widely-adopted convention for cross-client skill sharing"。
+# 因此这里是唯一"与具体宿主无关"的基准，也是没有 --host 时的默认档。
+# --------------------------------------------------------------------------- #
+[defaults]
+description = "官方跨宿主约定（.agents/skills）；不绑定任何具体宿主"
+project_roots = [".agents/skills"]
+user_roots = ["~/.agents/skills"]
+trace_dir = ".agents/skillverify"
+max_depth = 1
+
+[hosts.default]
+description = "同 defaults：官方跨宿主约定"
+
+# --------------------------------------------------------------------------- #
+# 兼容适配样例
+# 这些条目**只在目录真实存在时**才生效，不存在不算错误、不产生告警。
+# 顺序即优先级（靠前者先被发现；同名技能出现多处时记 DISC-001 歧义，不做静默覆盖）。
+# --------------------------------------------------------------------------- #
+
+[hosts.workbuddy]
+description = "WorkBuddy 兼容布局（本项目历史环境；非必需）"
+project_roots = [".workbuddy/skills", ".agents/skills"]
+user_roots = ["~/.workbuddy/skills", "~/.agents/skills"]
+trace_dir = ".agents/skillverify"
+
+[hosts.project-local]
+description = "技能直接放在项目根的 skills/ 下（小型仓库常见）"
+project_roots = ["skills", ".agents/skills"]
+user_roots = []
+trace_dir = ".agents/skillverify"
+
+[hosts.nested-by-category]
+description = "按分类分组的库：skills/<分类>/<技能>/SKILL.md"
+project_roots = ["skills"]
+user_roots = ["~/.agents/skills"]
+max_depth = 2
+trace_dir = ".agents/skillverify"
+
+# --------------------------------------------------------------------------- #
+# 接入一个新宿主的完整做法（无需改任何 Python 代码）：
+#
+#   [hosts.<你的宿主名>]
+#   description = "…"
+#   project_roots = [".your-host/skills", ".agents/skills"]
+#   user_roots = ["~/.your-host/skills", "~/.agents/skills"]
+#
+# 然后：skillverify discover --host <你的宿主名> --show-config
+# --------------------------------------------------------------------------- #

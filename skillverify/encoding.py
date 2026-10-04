@@ -44,24 +44,7 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding=ENCODING, newline="")
 
 
-def read_lines(path: Path) -> list[str]:
-    """按 UTF-8 读取文本并返回行列表（保留行尾符由 splitlines 处理）。"""
-    return read_text(path).splitlines()
-
-
 def write_text(path: Path, text: str) -> None:
     """以 UTF-8 + LF 写入文本，必要时创建父目录。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding=ENCODING, newline="\n")
-
-
-def has_bom(path: Path) -> bool:
-    """检测 UTF-8 BOM。"""
-    with path.open("rb") as fh:
-        return fh.read(3) == b"\xef\xbb\xbf"
-
-
-def has_crlf(path: Path) -> bool:
-    """检测 CRLF 或孤立 CR（任一命中即返回 True）。"""
-    with path.open("rb") as fh:
-        return b"\r" in fh.read()
