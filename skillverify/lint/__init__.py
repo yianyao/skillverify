@@ -24,7 +24,7 @@ from pathlib import Path
 
 from ..encoding import read_text
 from ..report import SKIP, Report, Result, Rule
-from ..spec import load_skill
+from ..spec import SkillDocument, load_skill
 from . import budget, deps, hygiene, refs, scripts, security
 from .inventory import build_inventory
 from .shared import LintContext, res
@@ -43,6 +43,58 @@ for _module in _FAMILIES:
             raise RuntimeError(f"lint 规则 id 冲突: {_rid}")
         RULES[_rid] = _rule
 del _module, _rid, _rule
+
+
+def _context_from(
+    doc: SkillDocument,
+    path: Path,
+    *,
+    run_scripts: bool,
+    script_timeout_s: float,
+    script_budget_s: float,
+) -> LintContext:
+    """从已解析的技能文档构造 lint 上下文（前置检查已通过）。"""
+    assert doc.skill_md is not None  # 前置通过则必然有 SKILL.md
+    text = read_text(doc.skill_md)
+    # 内部一律用**绝对路径**：脚本实测的 cwd 是技能根目录，若这里存相对路径，
+    # 子进程会把"相对技能根目录的脚本路径"再拼一次 cwd，导致 --help 报"找不到文件"。
+    # 报告里的 target 仍保留调用方传入的原样写法（人读友好）。
+    root = path.resolve()
+    inventory = build_inventory(root)
+    return LintContext(
+        root=root,
+        doc=doc,
+        skill_md_rel=doc.skill_md.relative_to(path).as_posix(),
+        text=text,
+        body=doc.body or "",
+        inventory=inventory,
+        run_scripts=run_scripts,
+        script_timeout_s=script_timeout_s,
+        script_budget_s=script_budget_s,
+    )
+
+
+def load_context(
+    path: Path,
+    *,
+    run_scripts: bool = False,
+    script_timeout_s: float = 10.0,
+    script_budget_s: float = 120.0,
+) -> tuple[LintContext | None, SkillDocument]:
+    """构造 lint 上下文，返回 `(ctx, doc)`；前置检查失败时 `ctx is None`。
+
+    **为什么暴露它**：`audit` 要的是"事实"（有哪些端点/依赖/破坏性操作），不是"报告"。
+    早先它从**证据文本**里抠（`evidence.split("：")`）——正是本项目在 deliver 里批评并改掉的
+    反模式：措辞一改就静默解析出垃圾。现在事实由各族的 `facts(ctx)` 提供，两边共用同一处扫描。
+
+    `ctx is None` 时调用方必须记 SKIP（未执行），不许假装拿到了事实。
+    """
+    doc = load_skill(path)
+    if any(e.status == "FAIL" and e.rid in PRECONDITION_RULES for e in doc.errors):
+        return None, doc
+    return _context_from(doc, path, run_scripts=run_scripts,
+                         script_timeout_s=script_timeout_s,
+                         script_budget_s=script_budget_s), doc
 
 
 def lint_skill(
@@ -65,24 +117,8 @@ def lint_skill(
         report.meta["前置检查"] = "失败"
         return report
 
-    assert doc.skill_md is not None  # 前置通过则必然有 SKILL.md
-    text = read_text(doc.skill_md)
-    # 内部一律用**绝对路径**：脚本实测的 cwd 是技能根目录，若这里存相对路径，
-    # 子进程会把"相对技能根目录的脚本路径"再拼一次 cwd，导致 --help 报"找不到文件"。
-    # 报告里的 target 仍保留调用方传入的原样写法（人读友好）。
-    root = path.resolve()
-    inventory = build_inventory(root)
-    ctx = LintContext(
-        root=root,
-        doc=doc,
-        skill_md_rel=doc.skill_md.relative_to(path).as_posix(),
-        text=text,
-        body=doc.body or "",
-        inventory=inventory,
-        run_scripts=run_scripts,
-        script_timeout_s=script_timeout_s,
-        script_budget_s=script_budget_s,
-    )
+    ctx = _context_from(doc, path, run_scripts=run_scripts,
+                        script_timeout_s=script_timeout_s, script_budget_s=script_budget_s)
 
     produced: dict[str, Result] = {}
     for module in _FAMILIES:
@@ -100,11 +136,12 @@ def lint_skill(
     report.meta["工具版本"] = "skillverify"
     report.meta["规则数"] = str(len(RULES))
     report.meta["扫描文件"] = (
-        f"{len(inventory.files)} 个（二进制 {len(inventory.binaries)}，"
-        f"符号链接未跟随 {len(inventory.symlinks)}，读取失败 {len(inventory.read_errors)}）"
+        f"{len(ctx.inventory.files)} 个（二进制 {len(ctx.inventory.binaries)}，"
+        f"符号链接未跟随 {len(ctx.inventory.symlinks)}，"
+        f"读取失败 {len(ctx.inventory.read_errors)}）"
     )
     report.meta["脚本契约实测"] = (
-        f"已执行（{len([r for r in inventory.files if r.under('scripts')])} 个脚本）"
+        f"已执行（{len([r for r in ctx.inventory.files if r.under('scripts')])} 个脚本）"
         if run_scripts
         else "未执行（默认不执行脚本；加 --scripts 开启）"
     )

@@ -22,6 +22,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 import ast
 import re
 import sys
@@ -322,6 +324,67 @@ def _declared_in_docs(ctx: LintContext, names: list[str]) -> list[str]:
 # --------------------------------------------------------------------------- #
 
 
+@dataclass
+class DepFacts:
+    """依赖层的**结构化事实**（规则与 audit 共用）。"""
+
+    third_party: list[str]     # 出现过的第三方 import 名
+    undeclared: list[str]      # 未内联声明、也未在文档说明
+    mismatched: list[str]      # import 与 PEP 723 声明不一致
+
+
+@dataclass
+class ThirdPartyScan:
+    """DEP-002/DEP-004 需要的全部中间结果（规则内部用）。"""
+
+    imports: list[str] = field(default_factory=list)
+    undeclared: list[str] = field(default_factory=list)
+    mismatched: list[str] = field(default_factory=list)
+    declared: list[str] = field(default_factory=list)
+    missing_python: list[str] = field(default_factory=list)
+    dep_recs: int = 0
+    blocks: int = 0
+
+
+def scan_third_party(ctx: LintContext) -> ThirdPartyScan:
+    """扫一遍 Python 脚本的第三方依赖与内联声明。
+
+    **唯一实现处**：DEP-002/DEP-004 与 audit 的能力清单都调它——早先 audit 从
+    DEP-002 的**证据文本**里抠依赖名，措辞一改就静默解析出垃圾。
+    """
+    scan = ThirdPartyScan()
+    for rec in (r for r in ctx.inventory.texts if r.suffix == ".py"):
+        imports = third_party_imports(rec)
+        if not imports:
+            continue
+        scan.dep_recs += 1
+        scan.imports.extend(imports)
+        block = pep723_block(rec.text or "")
+        if block is None:
+            documented = _declared_in_docs(ctx, imports)
+            if len(documented) < len(imports):
+                rest = [n for n in imports if n not in documented]
+                scan.undeclared.append(f"{rec.rp}: {', '.join(rest)}")
+            continue
+        scan.blocks += 1
+        declared = _toml_array(block, "dependencies") or []
+        normalized = {dep_name(d) for d in declared if dep_name(d)}
+        scan.declared.extend(declared)
+        for name in imports:
+            alias = IMPORT_ALIASES.get(name.lower(), name)
+            if normalize_name(name) not in normalized and normalize_name(alias) not in normalized:
+                scan.mismatched.append(f"{rec.rp}: import {name} 未出现在 dependencies")
+        if declared and _toml_scalar(block, "requires-python") is None:
+            scan.missing_python.append(rec.rp)
+    return scan
+
+
+def facts(ctx: LintContext) -> DepFacts:
+    scan = scan_third_party(ctx)
+    return DepFacts(third_party=sorted(set(scan.imports)),
+                    undeclared=list(scan.undeclared), mismatched=list(scan.mismatched))
+
+
 def check(ctx: LintContext) -> list[Result]:
     out: list[Result] = []
     code_recs = [r for r in ctx.inventory.texts if r.is_code]
@@ -349,35 +412,13 @@ def check(ctx: LintContext) -> list[Result]:
         out.append(res(RULES["DEP-001"], WARN if warns else PASS, detail))
 
     # ---- DEP-002 / DEP-004：内联声明 ----
-    undeclared: list[str] = []
-    mismatched: list[str] = []
-    blocks = 0
-    dep_recs = 0
-    dep_specifiers: list[str] = []
-    missing_python: list[str] = []
-    for rec in py_recs:
-        imports = third_party_imports(rec)
-        if not imports:
-            continue
-        dep_recs += 1
-        block = pep723_block(rec.text or "")
-        if block is None:
-            documented = _declared_in_docs(ctx, imports)
-            if len(documented) < len(imports):
-                rest = [n for n in imports if n not in documented]
-                undeclared.append(f"{rec.rp}: {', '.join(rest)}")
-            continue
-        blocks += 1
-        declared = _toml_array(block, "dependencies") or []
-        normalized = {dep_name(d) for d in declared if dep_name(d)}
-        for spec in declared:
-            dep_specifiers.append(spec)
-        for name in imports:
-            alias = IMPORT_ALIASES.get(name.lower(), name)
-            if normalize_name(name) not in normalized and normalize_name(alias) not in normalized:
-                mismatched.append(f"{rec.rp}: import {name} 未出现在 dependencies")
-        if declared and _toml_scalar(block, "requires-python") is None:
-            missing_python.append(rec.rp)
+    scan = scan_third_party(ctx)
+    undeclared = scan.undeclared
+    mismatched = scan.mismatched
+    blocks = scan.blocks
+    dep_recs = scan.dep_recs
+    dep_specifiers = scan.declared
+    missing_python = scan.missing_python
 
     if dep_recs == 0:
         out.append(res(RULES["DEP-002"], INFO, "不适用：无 Python 脚本导入第三方模块"))

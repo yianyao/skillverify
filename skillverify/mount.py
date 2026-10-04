@@ -22,7 +22,6 @@
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 from .discover import Config, Discovery, discover_skills, load_config
@@ -80,14 +79,6 @@ def _res(rule: Rule, status: str, evidence: str = "") -> Result:
     return Result(rid=rule.rid, title=rule.title, status=status, level=rule.level,
                   evidence=evidence,
                   remediation=rule.remediation if status in (FAIL, WARN) else "")
-
-
-@dataclass
-class MountTarget:
-    """一次挂载前置检查的对象。"""
-
-    skill: Path
-    profile: str
 
 
 def _readable(skill: Path) -> tuple[str, str, str]:
@@ -238,5 +229,5 @@ def load(project: Path, user_home: Path, *, extra_configs: list[Path] | None = N
                        use_discovered_files=not no_config)
 
 
-__all__ = ["RULES", "PROBES", "MountTarget", "check_fail_loud", "check_profile", "load",
+__all__ = ["RULES", "PROBES", "check_fail_loud", "check_profile", "load",
            "run_mount"]

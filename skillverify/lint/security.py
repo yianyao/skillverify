@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import re
 
 from ..report import FAIL, INFO, PASS, WARN, Result, Rule
@@ -238,6 +240,25 @@ def _scan_endpoints(ctx: LintContext) -> list[str]:
                 continue
             found.setdefault(host, f"{rec.rp}: {host}")
     return sorted(found.values())
+
+
+@dataclass
+class SecurityFacts:
+    """安全扫描的**结构化事实**（供规则与 audit 共用，不是从证据文本里抠的）。"""
+
+    strong_secrets: list[str]      # 高置信度密钥/私钥命中
+    credential_urls: list[str]     # URL 里携带凭据参数（SEC-006）
+    endpoints: list[str]           # 包内出现的网络端点（SEC-007 的扫描结果）
+
+
+def facts(ctx: LintContext) -> SecurityFacts:
+    """把安全扫描的事实暴露成结构：规则用它拼证据，audit 直接消费它。"""
+    strong, _generic, _entropy = _scan_secrets(ctx)
+    return SecurityFacts(
+        strong_secrets=strong,
+        credential_urls=_scan_patterns(ctx)["exfil"],
+        endpoints=_scan_endpoints(ctx),
+    )
 
 
 def check(ctx: LintContext) -> list[Result]:

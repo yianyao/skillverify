@@ -22,6 +22,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import ast
 import re
 import shutil
@@ -339,12 +341,21 @@ def _probe(cmd: list[str], ctx: LintContext, timeout: float) -> tuple[int | None
 # --------------------------------------------------------------------------- #
 
 
-def check(ctx: LintContext) -> list[Result]:
-    out: list[Result] = []
+@dataclass
+class ScriptFacts:
+    """脚本层的**结构化事实**（规则与 audit 共用）。"""
+
+    scripts: list[str]                          # scripts/ 下的脚本（相对路径）
+    destructive: list[tuple[str, list[str]]]    # (脚本, 命中的破坏性/有状态操作类别)
+    unguarded: list[str]                        # 有破坏性操作但未见防护旗标
+
+
+def _targets(ctx: LintContext) -> tuple[
+        list[FileRec], list[tuple[FileRec, str]], list[tuple[FileRec, list[str]]],
+        list[str], list[str]]:
+    """把 scripts/ 下的文件分成：全部 / 静态可分析 / 可执行探测 / 无法判定语言 / 无解释器。"""
     scripts = [rec for rec in ctx.inventory.files if rec.under("scripts")]
-    #: 静态可分析（语言可判定，与解释器是否存在无关）
     static_targets: list[tuple[FileRec, str]] = []
-    #: 可执行探测（语言可判定且解释器可用）
     analyzable: list[tuple[FileRec, list[str]]] = []
     unanalyzed: list[str] = []
     unavailable: list[str] = []
@@ -364,6 +375,40 @@ def check(ctx: LintContext) -> list[Result]:
             # 存**完整命令**（解释器 + 脚本路径）：少了脚本路径会变成跑解释器自己的
             # `--help`，整套实测会安静地测错对象。这类错误不会抛异常，只会骗人。
             analyzable.append((rec, [*cmd, str(rec.path)]))
+    return scripts, static_targets, analyzable, unanalyzed, unavailable
+
+
+def scan_destructive(
+        static_targets: list[tuple[FileRec, str]],
+) -> tuple[list[tuple[str, list[str]]], list[str]]:
+    """破坏性/有状态操作扫描：返回 (命中清单, 缺防护旗标的脚本)。
+
+    **唯一实现处**：规则 SCRIPT-005 与 audit 的能力清单都调它——早先 audit 是从
+    SCRIPT-005 的**证据文本**里抠的，措辞一改就静默解析出垃圾。
+    """
+    destructive: list[tuple[str, list[str]]] = []
+    unguarded: list[str] = []
+    for rec, _lang in static_targets:
+        text = rec.text or ""
+        kinds = [label for pattern, label in DESTRUCTIVE_RES if pattern.search(text)]
+        if not kinds:
+            continue
+        destructive.append((rec.rp, sorted(set(kinds))))
+        if not _has_guard(rec):
+            unguarded.append(rec.rp)
+    return destructive, unguarded
+
+
+def facts(ctx: LintContext) -> ScriptFacts:
+    scripts, static_targets, _analyzable, _unanalyzed, _unavailable = _targets(ctx)
+    destructive, unguarded = scan_destructive(static_targets)
+    return ScriptFacts(scripts=[rec.rp for rec in scripts],
+                       destructive=destructive, unguarded=unguarded)
+
+
+def check(ctx: LintContext) -> list[Result]:
+    out: list[Result] = []
+    scripts, static_targets, analyzable, unanalyzed, unavailable = _targets(ctx)
 
     # ---- SCRIPT-001：Python 语法 ----
     py_recs = [rec for rec, lang in static_targets if lang == "python"]
@@ -418,19 +463,8 @@ def check(ctx: LintContext) -> list[Result]:
                        f"{len(static_targets)} 个脚本均可见 --help/参数解析线索"))
 
     # ---- SCRIPT-005：破坏性操作与防护旗标 ----
-    destructive: list[str] = []
-    unguarded: list[str] = []
-    for rec, _lang in static_targets:
-        text = rec.text or ""
-        kinds: list[str] = []
-        for pattern, label in DESTRUCTIVE_RES:
-            if pattern.search(text):
-                kinds.append(label)
-        if not kinds:
-            continue
-        destructive.append(f"{rec.rp}: {'、'.join(sorted(set(kinds)))}")
-        if not _has_guard(rec):
-            unguarded.append(rec.rp)
+    scanned, unguarded = scan_destructive(static_targets)
+    destructive = [f"{rp}: {'、'.join(kinds)}" for rp, kinds in scanned]
     if not scripts:
         out.append(res(RULES["SCRIPT-005"], INFO, "不适用：包内无 scripts/ 目录"))
     elif not destructive:

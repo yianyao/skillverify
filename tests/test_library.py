@@ -25,7 +25,7 @@ from skillverify.encoding import force_utf8_stdio  # noqa: E402
 from skillverify.library import (  # noqa: E402
     DEFAULT_METADATA_BUDGET, check_description_overlap, check_metadata_budget, overlap, tokens,
 )
-from skillverify.report import FAIL, INFO, PASS, WARN  # noqa: E402
+from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 
 _passed: list[str] = []
 _failed: list[str] = []
@@ -279,6 +279,64 @@ def run_evals_delegation(tmp: Path) -> None:
     check("退出码 3" in row["evidence"], "证据里写明退出码，便于排查")
 
 
+
+def run_capability_facts(tmp: Path) -> None:
+    """能力清单必须来自**结构化扫描**，不是从证据文本里抠。
+
+    这两条断言在旧实现下会红：旧代码 `evidence.split("：")` 只认
+    `SEC-006`（URL 携带凭据参数）与 `DEP-002` 的 FAIL——于是
+    「普通网络端点」与「已声明/仅 WARN 的第三方依赖」都列不出来。
+    """
+    print("[test_capability_facts]")
+    skill = write_skill(
+        tmp / "facts-proj" / ".agents" / "skills", "facts-skill",
+        "Summarize the sales pipeline and push numbers to the report service.",
+        body="# Demo\n\n## 步骤\n\n1. 拉取数据并汇总。\n",
+        # 端点扫描只看**代码文件**（且排除已在 frontmatter 声明的主机）：URL 要放在脚本里
+        extra={"scripts/tool.py": "import requests\n\n"
+                                  "ENDPOINT = \"https://report.internal.corp/v1/report\"\n\n\n"
+                                  "def main():\n    return 0\n",
+               "scripts/cleanup.py": "import shutil\n\nshutil.rmtree('/tmp/x')\n"})
+    home = tmp / "facts-home"
+    home.mkdir(parents=True, exist_ok=True)
+    code, out, _err = run_cli(["audit", str(skill), "--project", str(skill.parents[2]),
+                               "--user-home", str(home), "--json"])
+    payload = json.loads(out)
+    caps = payload["meta"].get("能力清单") if isinstance(payload.get("meta"), dict) else None
+
+    # 能力清单在审计单里（report.meta 没有的话就从 md 里取；这里直接断言报告内容）
+    audit005 = next(r for r in payload["results"] if r["rid"] == "AUDIT-005")
+    check(code in (1, 2), f"审计有 FAIL/WARN（断链等）→ 非 0（实得 {code}）")
+    check("网络端点 1 项" in audit005["evidence"],
+          f"普通网络端点（不带凭据参数）也要列出来（实得 {audit005['evidence'][:70]}）")
+    check("report.internal.corp" in audit005["evidence"],
+          f"端点内容来自扫代码的结果，而不是「凭据 URL」的证据文本"
+          f"（完整证据：{audit005['evidence']}）")
+    check("外部依赖 1 项" in audit005["evidence"],
+          f"第三方依赖要列出来（旧实现只认 DEP-002 的 FAIL，这里只到 WARN）"
+          f"（实得 {audit005['evidence'][:70]}）")
+    check("破坏性/有状态操作 1 项" in audit005["evidence"],
+          f"破坏性操作来自脚本扫描（实得 {audit005['evidence'][:70]}）")
+
+    # 纯文档技能：能力清单全空 → INFO（不是 PASS："清单已生成"是恒真的）
+    doc_only = write_skill(tmp / "doc-proj" / ".agents" / "skills", "doc-skill",
+                           "Explain the sales terminology used by the team.")
+    _c2, out2, _e2 = run_cli(["audit", str(doc_only), "--project", str(doc_only.parents[2]),
+                              "--user-home", str(home), "--json"])
+    row = next(r for r in json.loads(out2)["results"] if r["rid"] == "AUDIT-005")
+    check(row["status"] == INFO and "纯文档技能" in row["evidence"],
+          f"纯文档技能 → AUDIT-005 记 INFO 并说明（实得 {row['status']}）")
+
+    # 前置失败（没有 SKILL.md）→ 能力清单**没生成** → SKIP，不许假装拿到了事实
+    broken = tmp / "broken-proj" / ".agents" / "skills" / "broken-skill"
+    broken.mkdir(parents=True, exist_ok=True)
+    (broken / "SKILL.md").write_text("# 没有 frontmatter\n", encoding="utf-8", newline="")
+    _c3, out3, _e3 = run_cli(["audit", str(broken), "--project", str(broken.parents[2]),
+                              "--user-home", str(home), "--json"])
+    row3 = next(r for r in json.loads(out3)["results"] if r["rid"] == "AUDIT-005")
+    check(row3["status"] == SKIP and "未执行" in row3["evidence"],
+          f"前置失败 → AUDIT-005 记 SKIP（实得 {row3['status']}）")
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="skillverify 库级检查 / 审计 / 委托执行").parse_args()
@@ -287,6 +345,7 @@ def main() -> int:
         run_metadata_budget(tmp)
         run_description_overlap(tmp)
         run_audit(tmp)
+        run_capability_facts(tmp)
         run_evals_delegation(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

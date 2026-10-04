@@ -78,19 +78,48 @@ def imported_names(tree: ast.AST) -> dict[str, int]:
     return found
 
 
-def used_names(tree: ast.AST) -> set[str]:
+def _exported_only_ids(tree: ast.AST) -> set[int]:
+    """`__all__ = [...]` 列表里那些字符串常量的 id。
+
+    **它们不算「被使用」**：`__all__` 声明的是「我导出这个」，不是「有人用了它」。
+    早先没排除，于是**死类**只要写进 `__all__` 就永远抓不到——而这套自检本来就是
+    「因为手工扫描漏了类」才诞生的（外部评审正是这样发现了它）。
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+            for element in getattr(node.value, "elts", []):
+                ids.add(id(element))
+    return ids
+
+
+def used_names(tree: ast.AST, *, include_imports: bool = False,
+               include_strings: bool = True) -> set[str]:
     """所有"被提到"的名字。
 
     字符串常量整个加入（不做分词）：这样 `__all__ = ["Foo"]`、`getattr(m, "Foo")`、
     f-string 片段都能算用到——宁可漏报死代码，也不要误报活代码。
     """
+    exported = _exported_only_ids(tree)
     used: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
+        # import 语句算不算「用到」——两个用途口径相反：
+        # 查死**导入**时不算（否则 `from m import INFO` 自己这行就把 INFO 标记成已使用）；
+        # 查死**定义**时算（别处 `from ..mount import load as x` 就是有人用了它）。
+        if include_imports and isinstance(node, ast.Import):
+            for alias in node.names:
+                used.add(alias.name.split(".")[0])
+        elif include_imports and isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    used.add(alias.name)
+        elif isinstance(node, ast.Name):
             used.add(node.id)
         elif isinstance(node, ast.Attribute):
             used.add(node.attr)
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+        elif include_strings and isinstance(node, ast.Constant) \
+                and isinstance(node.value, str) and id(node) not in exported:
             used.add(node.value)
             for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", node.value):
                 used.add(word)
@@ -105,7 +134,13 @@ def collect(all_trees: dict[Path, ast.AST]) -> tuple[list[str], list[str], list[
       `__all__`/字符串里的名字算用到（re-export 场景不会被误报）。
     - **模块级函数/类/常量**：在全仓语料里搜名字，出现次数 ≤1（只有定义那一处）才算死。
     """
-    corpus = "\n".join(p.read_text(encoding="utf-8") for p in all_trees)
+    referenced: set[str] = set()
+    for path, tree in all_trees.items():
+        # 扫描器**自己的文字**不算引用（代码引用照算）：否则只要在说明里写一句
+        # 「某某类已经没人用了」，那个类就会被自己的说明文字"证明"成在用
+        # ——真实案例：一个死 dataclass 就这样躲过了一轮扫描。
+        referenced |= used_names(tree, include_imports=True,
+                                 include_strings=path.name != "test_selfcheck.py")
 
     dead_imports: list[str] = []
     dead_defs: list[str] = []
@@ -123,14 +158,15 @@ def collect(all_trees: dict[Path, ast.AST]) -> tuple[list[str], list[str], list[
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 if node.name.startswith("__") or node.name in own_used:
                     continue
-                if len(re.findall(rf"\b{re.escape(node.name)}\b", corpus)) <= 1:
-                    kind = "类" if isinstance(node, ast.ClassDef) else "函数"
-                    dead_defs.append(f"{rel}:{node.lineno} 未被引用的{kind} {node.name}")
+                if node.name.startswith("__") or node.name in referenced:
+                    continue
+                kind = "类" if isinstance(node, ast.ClassDef) else "函数"
+                dead_defs.append(f"{rel}:{node.lineno} 未被引用的{kind} {node.name}")
             elif isinstance(node, ast.Assign):
                 for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id.isupper():
-                        if len(re.findall(rf"\b{re.escape(target.id)}\b", corpus)) <= 1:
-                            dead_defs.append(f"{rel}:{node.lineno} 未使用的常量 {target.id}")
+                    if isinstance(target, ast.Name) and target.id.isupper() \
+                            and target.id not in referenced:
+                        dead_defs.append(f"{rel}:{node.lineno} 未使用的常量 {target.id}")
         # 本文件自己必然包含这些关键词（模式定义与说明），跳过它，否则自检永远红
         if path.name == "test_selfcheck.py":
             continue
@@ -174,13 +210,18 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="sv_selfcheck_") as probe_dir:
         probe_path = Path(probe_dir) / "_probe.py"
-        probe_path.write_text("import os\n\n\nclass UnusedProbe:\n    pass\n\n\nX = 1\n",
-                              encoding="utf-8", newline="")
+        probe_path.write_text(
+            "import os\n\n\nclass UnusedProbe:\n    pass\n\n\nX = 1\n"
+            "__all__ = [\"ExportedButUnused\"]\n\n\nclass ExportedButUnused:\n"
+            "    pass\n",
+            encoding="utf-8", newline="")
         di, dd, _s = collect({probe_path: ast.parse(probe_path.read_text(encoding="utf-8"))})
         check(any("未使用的导入 os" in item for item in di),
               "能抓到未使用的导入（证明这套检查不是恒真）")
         check(any("UnusedProbe" in item for item in dd),
               "能抓到未被引用的类（就是评审发现的那类死代码）")
+        check(any("ExportedButUnused" in item for item in dd),
+              "**列进 __all__ 也不豁免**：只声明导出、没人用的类同样要被抓出来")
 
     total = len(_passed) + len(_failed)
     print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")

@@ -22,8 +22,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .encoding import read_json, write_text
-from .lint import lint_skill
-from .report import FAIL, INFO, PASS, WARN, Report, Result, Rule
+from .lint import lint_skill, load_context
+from .lint import deps, scripts, security
+from .lint.shared import LintContext
+from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
 from .spec import check_spec
 from .watch import fingerprint
 
@@ -63,10 +65,11 @@ RULES: dict[str, Rule] = {
     ),
     "AUDIT-005": Rule(
         "AUDIT-005",
-        "能力清单已生成（脚本/网络/破坏性/密钥/依赖）",
+        "能力清单：脚本 / 网络端点 / 破坏性操作 / 密钥 / 依赖",
         "HOUSE",
         _LEGACY,
-        "审计单里的能力清单来自各阶段结论；看到不认识的网络端点或破坏性操作就要人工确认",
+        "清单来自各族的**结构化扫描**；看到不认识的网络端点或破坏性操作就要人工确认。"
+        "清单为空说明这是纯文档技能（记 INFO），而不是「已审过」",
     ),
 }
 
@@ -177,25 +180,26 @@ def write_record(trace_dir: Path, record: AuditRecord, markdown: str) -> list[Pa
 # --------------------------------------------------------------------------- #
 
 
-def capabilities(skill_dir: Path, report: Report) -> dict:
-    """从已有阶段结论里汇总"这个技能能干什么"。"""
-    scripts = sorted(p.name for p in (skill_dir / "scripts").rglob("*")
-                     if p.is_file()) if (skill_dir / "scripts").is_dir() else []
-    network = sorted({r.evidence.split("：", 1)[-1].split()[0]
-                      for r in report.results if r.rid == "SEC-006" and r.status == FAIL})
-    destructive = sorted({r.evidence.split("：", 1)[-1].strip()[:60]
-                          for r in report.results
-                          if r.rid == "SCRIPT-005" and r.status == WARN})
-    secrets = sorted({r.evidence.split("：", 1)[-1].strip()[:60]
-                      for r in report.results if r.rid == "SEC-001" and r.status == FAIL})
-    deps = sorted({r.evidence.split("：", 1)[-1].strip()[:60]
-                   for r in report.results if r.rid == "DEP-002" and r.status == FAIL})
+def capabilities(ctx: LintContext | None) -> dict:
+    """从各族的**结构化事实**汇总「这个技能能干什么」；`ctx is None` → 空字典。
+
+    早先这里是 `r.evidence.split("：", 1)[-1]`——从**证据文本**里抠数据。那正是本项目在
+    deliver 里批评并改掉的反模式：措辞一改就静默解析出垃圾。而且映射还错了一层：
+    「网络端点」取自 `SEC-006`（URL 携带凭据参数），真正的端点扫描是 `SEC-007`。
+    现在事实由各族的 `facts(ctx)` 提供，两边共用同一处扫描实现。
+    """
+    if ctx is None:
+        return {}
+    security_facts = security.facts(ctx)
+    script_facts = scripts.facts(ctx)
+    dep_facts = deps.facts(ctx)
     return {
-        "脚本": scripts,
-        "网络端点": network,
-        "破坏性/有状态操作": destructive,
-        "疑似硬编码密钥": secrets,
-        "外部依赖": deps,
+        "脚本": list(script_facts.scripts),
+        "网络端点": list(security_facts.endpoints),
+        "破坏性/有状态操作": [f"{rp}: {'、'.join(kinds)}"
+                              for rp, kinds in script_facts.destructive],
+        "疑似硬编码密钥": list(security_facts.strong_secrets),
+        "外部依赖": list(dep_facts.third_party),
     }
 
 
@@ -233,6 +237,7 @@ def audit_skill(skill_dir: Path, *, trace_dir: Path, others: list[str] | None = 
     skill_dir = skill_dir.resolve()
     report = Report(target=str(skill_dir), stage="audit")
     doc, spec_report = check_spec(skill_dir)
+    ctx, _lint_doc = load_context(skill_dir, run_scripts=run_scripts)
     lint_report = lint_skill(skill_dir, run_scripts=run_scripts)
     for res in spec_report.results:
         report.add(res)
@@ -272,10 +277,20 @@ def audit_skill(skill_dir: Path, *, trace_dir: Path, others: list[str] | None = 
         report.add(_res(RULES["AUDIT-004"], INFO,
                         "未找到 git 来源信息（外来技能常见）；请在审计单里人工写明来源"))
 
-    caps = capabilities(skill_dir, report)
+    caps = capabilities(ctx)
     summary = "；".join(f"{key} {len(value)} 项" + (f"（{', '.join(value[:3])}）" if value else "")
                         for key, value in caps.items())
-    report.add(_res(RULES["AUDIT-005"], PASS if name else INFO, summary))
+    if ctx is None:
+        # 前置检查失败 → 能力清单**没生成**：记 SKIP（覆盖有洞），不许假装拿到了事实
+        report.add(_res(RULES["AUDIT-005"], SKIP,
+                        "未执行：lint 前置检查失败（先修好 spec 阶段的问题）"))
+    elif any(caps.values()):
+        report.add(_res(RULES["AUDIT-005"], PASS, summary))
+    else:
+        # 全空是**有意义**的结论（纯文档技能），但不该记 PASS——"清单已生成"是恒真的，
+        # 恒真的判定等于没判定（本项目的老教训）。
+        report.add(_res(RULES["AUDIT-005"], INFO,
+                        "不适用：纯文档技能，没有脚本/网络端点/破坏性操作/依赖可列"))
 
     stamp = now or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     record = AuditRecord(skill=name, path=str(skill_dir), fingerprint=digest,
@@ -310,6 +325,13 @@ def audit_markdown(record: AuditRecord, report: Report, lookalikes_note: str = "
     for key, value in record.capabilities.items():
         lines.append(f"- **{key}**（{len(value)}）：" + ("、".join(f"`{v}`" for v in value[:8])
                                                        if value else "无"))
+    lines += [
+        "",
+        "> 各类的**口径**（避免误读）：网络端点 = **代码文件**里出现、且未在 frontmatter 声明的主机；",
+        "> 破坏性/有状态操作 = 脚本里的删除/覆盖/移动等形态（含是否声明防护旗标）；",
+        "> 疑似密钥 = 高置信度特征命中（如私钥头、云厂商密钥前缀）；",
+        "> 外部依赖 = Python 脚本导入的第三方模块。它们都来自**结构化扫描**，不是从报告文字里猜的。",
+    ]
     lines += ["", "## 判定明细", "", "| 规则 | 判级 | 证据 |", "|---|---|---|"]
     for res in report.sorted_results():
         if res.status == INFO:
