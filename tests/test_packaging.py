@@ -168,6 +168,20 @@ def venv_bin(venv: Path, name: str) -> Path:
     return candidates[0]
 
 
+def _source_copy(tmp: Path) -> Path:
+    """把仓库源码复制到临时目录，**让 pip 在那儿构建**。
+
+    **为什么必须复制**（实测过）：`pip install -e .` 与 `pip wheel .` 都会在**源码根**留下
+    setuptools 的中间产物（`build/` 与 `<包名>.egg-info/`）——本机实测：删掉之后只跑一次
+    `run_all --install`，两者立刻重现。让测试往仓库根里拉垃圾，等于把"清掉残留"变成一次性的。
+    复制的那份同时也更接近真实场景：从**干净源码**构建，而不是从带着上一次残留的目录构建。
+    """
+    src = tmp / "src"
+    shutil.copytree(REPO, src, ignore=shutil.ignore_patterns(
+        ".git", "build", "dist", "*.egg-info", "__pycache__", "handoff", ".agents"))
+    return src
+
+
 def run_install(tmp: Path) -> None:
     print("[test_install]")
     python = Path(sys.executable)
@@ -180,12 +194,20 @@ def run_install(tmp: Path) -> None:
     vpy = venv_bin(venv_dir, "python")
     check(vpy.is_file(), f"venv 解释器就绪（{vpy.name}）")
 
+    src = _source_copy(tmp)
+    check(src.is_dir() and (src / "pyproject.toml").is_file(),
+          "源码已复制到临时目录（构建不污染仓库根）")
+
     print("  · pip install -e .（需要网络下载构建依赖）")
-    install = _run([str(vpy), "-m", "pip", "install", "-e", str(REPO), "--quiet"], timeout=900)
+    install = _run([str(vpy), "-m", "pip", "install", "-e", str(src), "--quiet"], timeout=900)
     if install.returncode != 0:
         fail(f"`pip install -e .` 失败: {(install.stderr or install.stdout).strip()[-400:]}")
         return
     ok("`pip install -e .` 成功")
+    # 这条断言就是上面那段注释的守卫：构建过后，**仓库根不许出现 build/ 或 *.egg-info/
+    leftovers = [name for name in ("build", "skillverify.egg-info") if (REPO / name).exists()]
+    check(not leftovers,
+          f"构建不往仓库根拉残留（发现 {leftovers}）——若有，说明 pip 用了源码根而不是副本")
 
     # 关键：在**仓库之外**的任意目录执行
     elsewhere = tmp / "elsewhere"
@@ -224,7 +246,7 @@ def run_install(tmp: Path) -> None:
     # wheel 里的数据文件（editable 安装看不出这件事）
     print("  · 构建 wheel 并检查包内数据")
     wheel_dir = tmp / "wheel"
-    built = _run([str(vpy), "-m", "pip", "wheel", str(REPO), "--no-deps",
+    built = _run([str(vpy), "-m", "pip", "wheel", str(src), "--no-deps",
                   "-w", str(wheel_dir), "--quiet"], timeout=900)
     wheels = sorted(wheel_dir.glob("skillverify-*.whl")) if wheel_dir.is_dir() else []
     if built.returncode != 0 or not wheels:
