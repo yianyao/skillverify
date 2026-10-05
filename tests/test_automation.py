@@ -597,7 +597,7 @@ def run_dogfood(repo: Path) -> None:
     print("[test_dogfood]")
     legacy = repo / "legacy"
     if not legacy.is_dir():
-        ok("无 legacy/ 目录，跳过")
+        skip("无 legacy/ 目录：dogfood 未执行")
         return
     with temp_dir(prefix="sv_auto_home_") as home:
         code, out, err = run_cli([

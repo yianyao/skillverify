@@ -1,6 +1,6 @@
 {
   "skill_name": "evals-skill",
-  "notes": "正例 10 / 负例 10；train 12 / validation 8。**每个子集里正负例都有**（train 6 正 6 负、validation 4 正 4 负）：validation 只有负例时，修订后测不出「该触发却不触发」。正例刻意不照抄 description 词句。",
+  "notes": "正例 10 / 负例 10，**负例全部是 near-miss**（共享表面词、意图不同：「测试用例」「技能的代码结构」「pytest 断言」…）；train 12 / validation 8。**每个子集里正负例都有**（train 6 正 6 负、validation 4 正 4 负）：validation 只有负例时，修订后测不出「该触发却不触发」。正例刻意不照抄 description 词句。",
   "queries": [
     {
       "id": "q01",
@@ -74,73 +74,83 @@
     },
     {
       "id": "q11",
-      "query": "帮我写一个读写 CSV 的 Python 脚本",
+      "query": "帮我写一份软件测试用例，覆盖登录和支付两条链路",
       "should_trigger": false,
       "subset": "train",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「用例」，但对象是软件测试，不是技能评测资产"
     },
     {
       "id": "q12",
-      "query": "今天杭州天气怎么样",
+      "query": "这个技能的脚本代码结构怎么样，要不要拆成几个文件",
       "should_trigger": false,
       "subset": "train",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「技能」，但问的是代码结构，不是评测资产"
     },
     {
       "id": "q13",
-      "query": "把这段话翻译成英文",
+      "query": "解释一下 description 字段在 A2A 协议里是干什么的",
       "should_trigger": false,
       "subset": "validation",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「description」，但问的是另一个协议规范"
     },
     {
       "id": "q14",
-      "query": "给我讲讲 Kubernetes 的调度原理",
+      "query": "帮我给这个技能写一份 README，介绍它怎么用",
       "should_trigger": false,
       "subset": "validation",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「技能」，但要的是说明文档，不是评测资产"
     },
     {
       "id": "q15",
-      "query": "怎么用 Excel 做透视表",
+      "query": "pytest 的断言超时怎么配置",
       "should_trigger": false,
       "subset": "validation",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「断言」，但问的是 pytest 用法，与评测断言无关"
     },
     {
       "id": "q16",
-      "query": "帮我把这张图裁剪成正方形",
+      "query": "帮我把这句 prompt 写得礼貌一点",
       "should_trigger": false,
       "subset": "validation",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「prompt」，但只是润色措辞，不是生成评测用例"
     },
     {
       "id": "q17",
-      "query": "推荐几本讲分布式系统的书",
+      "query": "技能列表里哪些技能的版本号该升了",
       "should_trigger": false,
       "subset": "train",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「技能」，但问的是版本号治理，不是评测资产"
     },
     {
       "id": "q18",
-      "query": "帮我算一下这个月的房贷",
+      "query": "怎么评估这个模型在中文上的准确率",
       "should_trigger": false,
       "subset": "train",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「评估」，但评的是模型能力，不是技能的评测资产"
     },
     {
       "id": "q19",
-      "query": "写一首关于秋天的五言诗",
+      "query": "帮我统计一下这个技能上周的调用日志",
       "should_trigger": false,
       "subset": "train",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「技能」，但要的是运行日志统计，不是评测资产"
     },
     {
       "id": "q20",
-      "query": "这段报错是什么意思",
+      "query": "数据库里的 trigger 和存储过程有什么区别",
       "should_trigger": false,
       "subset": "train",
-      "rationale": "负例：与评测资产生成无关的常见请求"
+      "category": "negative-near-miss",
+      "rationale": "near-miss：也说「trigger」，但问的是数据库概念，不是触发评测"
     }
   ]
 }

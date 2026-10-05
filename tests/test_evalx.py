@@ -37,6 +37,7 @@ from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 
 _passed: list[str] = []
 _failed: list[str] = []
+_skipped: list[str] = []
 
 
 def ok(msg: str) -> None:
@@ -47,6 +48,12 @@ def ok(msg: str) -> None:
 def fail(msg: str) -> None:
     _failed.append(msg)
     print(f"  FAIL {msg}")
+
+
+def skip(msg: str) -> None:
+    """本项**未执行**（环境或前置条件缺失）：既不算通过、也不算失败。"""
+    _skipped.append(msg)
+    print(f"  SKIP {msg}")
 
 
 def check(cond: bool, msg: str) -> None:
@@ -794,7 +801,7 @@ def run_dogfood(repo: Path) -> None:
     print("[test_dogfood]")
     legacy = repo / "legacy"
     if not legacy.is_dir():
-        ok("无 legacy/ 目录，跳过")
+        skip("无 legacy/ 目录：dogfood 未执行")
         return
     dialect = 0
     for target in sorted(p for p in legacy.iterdir()
@@ -831,7 +838,7 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     total = len(_passed) + len(_failed)
-    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")
+    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
 
 

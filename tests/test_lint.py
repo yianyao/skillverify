@@ -39,6 +39,7 @@ from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 
 _passed: list[str] = []
 _failed: list[str] = []
+_skipped: list[str] = []
 
 
 def ok(msg: str) -> None:
@@ -49,6 +50,16 @@ def ok(msg: str) -> None:
 def fail(msg: str) -> None:
     _failed.append(msg)
     print(f"  FAIL {msg}")
+
+
+def skip(msg: str) -> None:
+    """本项**未执行**（环境或前置条件缺失）：既不算通过、也不算失败。
+
+    与 skillverify 自己的 SKIP 语义一致——把"跳过"记成 PASS 会让覆盖有洞看不出来，
+    记成 FAIL 又会长出一条假缺陷。
+    """
+    _skipped.append(msg)
+    print(f"  SKIP {msg}")
 
 
 def check(cond: bool, msg: str) -> None:
@@ -567,7 +578,7 @@ def run_regressions(tmp: Path) -> None:
         check(status_of(report6, "REF-003") == PASS,
               "符号链接不被跟随（包外宿主路径未被扫描）")
     except (OSError, NotImplementedError):
-        ok("符号链接用例跳过（当前环境不允许创建链接）")
+        skip("符号链接用例未执行（当前环境不允许创建链接）")
 
     # 7. git 跟踪状态决定 HYG-002 级别（避免"本地缓存"常态化误报）
     if shutil.which("git"):
@@ -587,7 +598,7 @@ def run_regressions(tmp: Path) -> None:
         check(status_of(report7b, "HYG-002") == FAIL,
               "被 git 跟踪的缓存文件记 FAIL（会随包交付）")
     else:
-        ok("git 相关用例跳过（未找到 git）")
+        skip("git 相关用例未执行（未找到 git）")
 
     # 8. 依赖清单落在 references/ 下只记 WARN（样例/夹具）
     d8 = tmp / "reg_manifest_fixture" / "demo-skill"
@@ -803,7 +814,7 @@ def run_dogfood(repo: Path) -> None:
     print("[test_dogfood]")
     legacy = repo / "legacy"
     if not legacy.is_dir():
-        ok("无 legacy/ 目录，跳过")
+        skip("无 legacy/ 目录：dogfood 未执行")
         return
     targets = sorted(p for p in legacy.iterdir()
                      if p.is_dir() and (p / "SKILL.md").is_file())
@@ -845,7 +856,7 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     total = len(_passed) + len(_failed)
-    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")
+    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
 
 

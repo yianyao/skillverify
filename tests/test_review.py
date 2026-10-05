@@ -29,12 +29,13 @@ from skillverify import cli, review  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
 from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.lint import lint_skill  # noqa: E402
-from skillverify.report import FAIL, PASS, SKIP, WARN  # noqa: E402
+from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 from skillverify.spec import check_spec  # noqa: E402
 from skillverify.watch import fingerprint  # noqa: E402
 
 _passed: list[str] = []
 _failed: list[str] = []
+_skipped: list[str] = []
 
 
 def ok(msg: str) -> None:
@@ -45,6 +46,12 @@ def ok(msg: str) -> None:
 def fail(msg: str) -> None:
     _failed.append(msg)
     print(f"  FAIL {msg}")
+
+
+def skip(msg: str) -> None:
+    """本项**未执行**（环境或前置条件缺失）：既不算通过、也不算失败。"""
+    _skipped.append(msg)
+    print(f"  SKIP {msg}")
 
 
 def check(cond: bool, msg: str) -> None:
@@ -722,7 +729,41 @@ def run_material(tmp: Path) -> None:
               and "没有改动" in evidence_of(report, "MAT-001"),
               "与基线无差异 → SKIP 并说明「没有改动」")
     else:
-        ok("git 不可用：E-02 相关用例跳过")
+        skip("git 不可用：E-02 相关用例未执行")
+
+    # 相邻技能边界清单（W-11 的材料）
+    adj_root = root / "adj"
+    adj_root.mkdir(parents=True, exist_ok=True)
+    long_desc = ("Summarize monthly sales CSV files and report the top months with charts, "
+                 "handling missing values and timezone normalization for the analytics team.")
+    this = adj_root / "adj-skill"
+    this.mkdir(parents=True, exist_ok=True)
+    (this / "SKILL.md").write_text(
+        f"---\nname: adj-skill\ndescription: {long_desc}\n---\n\n# A\n",
+        encoding="utf-8", newline="")
+    report, _w = material.build_materials(this, out_dir=adj_root / "_out")
+    check(statuses(report)["MAT-005"] == INFO
+          and "没有别的技能" in evidence_of(report, "MAT-005"),
+          "同级没有别的技能 → MAT-005 记 INFO（不适用，不是覆盖洞）")
+
+    for name, desc in (("adj-neighbor", long_desc), ("adj-tiny", "很短")):
+        target = adj_root / name
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {desc}\n---\n\n# N\n",
+            encoding="utf-8", newline="")
+    report, written = material.build_materials(this, out_dir=adj_root / "_out2")
+    st = statuses(report)
+    names = sorted(p.name for p in written)
+    text = (adj_root / "_out2" / "adjacency.md").read_text(encoding="utf-8")
+    check(st["MAT-005"] == PASS and "adjacency.md" in names,
+          f"有同级邻居 → 产出 adjacency.md（{names}）")
+    check("W-11" in text and "adj-neighbor" in text and "1.00" in text,
+          "清单写明服务的提示词、邻居名与词面重叠系数（描述逐字相同 → 1.00）")
+    check("词元不足" in text,
+          "词元太少的邻居标「不参与计分」，而不是显示 0.00 冒充「没有重叠」")
+    check("边界裁决" in text and "同级目录" in text,
+          "留了给人填的边界裁决栏，并写明「只在同级找邻居」这一局限")
 
     # CLI
     code, out, err = run_cli(["review", "material", str(skill), "--out", str(root / "cli"),
@@ -857,7 +898,7 @@ def run_dogfood(repo: Path) -> None:
     print("[test_dogfood]")
     legacy = repo / "legacy"
     if not legacy.is_dir():
-        ok("无 legacy/ 目录，跳过")
+        skip("无 legacy/ 目录：dogfood 未执行")
         return
     root = new_temp_dir(prefix="sv_review_dog_")
     try:
@@ -897,7 +938,7 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     total = len(_passed) + len(_failed)
-    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")
+    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
 
 

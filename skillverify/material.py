@@ -1,11 +1,12 @@
 """material —— 为"评的不是技能文件本身"的提示词产出材料。
 
-**为什么需要它**：29 条提示词里有几条评的是**流程产物**而不是技能文件——
+**为什么需要它**：30 条提示词里有几条评的是**流程产物或技能集合**而不是单个技能文件——
 `E-02`（description 修订前后 diff）、`E-03`（本轮修订方向与依据）、
-`E-06`（盲评两版产物）、`E-07`/`E-08`（工作区里的 grading/timing/benchmark 数字）。
-这些材料不产出，那几条会永远停在 NA，而 NA 与"材料没准备"在报告里长得一样。
+`E-06`（盲评两版产物）、`E-07`/`E-08`（工作区里的 grading/timing/benchmark 数字）、
+`W-11`（相邻技能边界）。这些材料不产出，那几条会永远停在 NA，
+而 NA 与"材料没准备"在报告里长得一样。
 
-于是这里做四件事（能算的算、能摘的摘、算不出来的**明说缺什么**）：
+于是这里做五件事（能算的算、能摘的摘、算不出来的**明说缺什么**）：
 
 | 材料 | 服务的提示词 | 来源 |
 |---|---|---|
@@ -13,10 +14,12 @@
 | `revision-signals.md` | E-03 | 工作区的失败断言 + 人工反馈 + benchmark delta |
 | `blind/` | E-06 | 你给的两版产物，随机落到 A/B，映射封存在 `blind/mapping.json` |
 | `workspace-digest.md` | E-07、E-08 | 工作区各 iteration 的逐次产物与聚合值 |
+| `adjacency.md` | W-11 | 同级技能目录的描述词面重叠（`library` 的同一套词元/重叠口径） |
 
 **判定纪律**：
-- 材料生成失败**不是**"不适用"：该记 SKIP 并说明原因（缺 workspace、非 git 仓库、没给两版产物），
-  这样"没准备"与"准备好了"在报告里能区分开。
+- 材料生成失败**不是**"不适用"：该记 SKIP 并说明原因（缺 workspace、非 git 仓库、没给两版产物、
+  同级目录列不出来），这样"没准备"与"准备好了"在报告里能区分开；
+- 但"**同级根本没有别的技能**"是真的不适用 → 记 INFO（没有可比的邻居，不是覆盖洞）；
 - 盲评的 A/B 分配**默认随机**（`--blind-seed` 可复现），映射写进单独文件——
   评审者不看映射就能给出结论，这是盲评成立的前提。
 """
@@ -32,7 +35,9 @@ from pathlib import Path
 
 from . import __version__
 from .encoding import read_json, write_text
-from .report import FAIL, PASS, SKIP, WARN, Result, Rule
+from .library import MIN_TOKENS, overlap as token_overlap, tokens as lib_tokens
+from .report import FAIL, INFO, PASS, SKIP, WARN, Result, Rule
+from .spec import find_skill_md, load_skill
 
 #: 材料清单的格式版本
 MATERIAL_SCHEMA = "skillverify.review-material/1"
@@ -66,6 +71,15 @@ RULES: dict[str, Rule] = {
         "模式归因与 delta 解读要看的是一屏数字，不是满目录 JSON",
         "先跑官方评测流程产生 `<技能名>-workspace/iteration-N/`，再用 `--workspace` 指定",
     ),
+    "MAT-005": Rule(
+        "MAT-005",
+        "相邻技能边界清单（W-11 的材料）",
+        "HOUSE",
+        "旧体系《人工评审检查清单》D-3「相邻技能边界清单已列」（〔纯 H〕）——"
+        "本项目把能机械算的那一半（描述词面重叠）产出成材料，裁决仍归人",
+        "把同类技能放在**同一层**目录下（`<root>/<技能名>/`），或手工附一份相邻技能清单"
+        "（分类嵌套布局只在同级找会漏）",
+    ),
 }
 
 #: 提示词 id → 它需要的材料文件（供 `review pack` 与文档引用）
@@ -75,6 +89,7 @@ MATERIAL_FOR_PROMPT: dict[str, str] = {
     "E-06": "blind/",
     "E-07": "workspace-digest.md",
     "E-08": "workspace-digest.md",
+    "W-11": "adjacency.md",
 }
 
 
@@ -294,6 +309,83 @@ def build_blind(
                 f"已生成 {out_dir.name}/（blind-A 与 blind-B 已随机分配，映射封存在 mapping.json）")
 
 
+def _skill_card(path: Path) -> tuple[str, str]:
+    """读一个技能的 name 与 description（`load_skill` 不抛异常，读不出就是空串）。"""
+    doc = load_skill(path)
+    return doc.name.strip(), doc.description.strip()
+
+
+def sibling_skills(skill_dir: Path) -> list[Path]:
+    """**同级**目录里的其它技能（`<root>/<技能名>/SKILL.md` 布局）。
+
+    局限（会写进材料，不藏着）：只在同级找。分类嵌套（`<root>/<类别>/<技能>/`）或库横跨
+    多个根时会漏——那种布局请手工补一份清单；全库预算与重叠提示另有 `LIB-001`/`LIB-002` 管。
+    """
+    out: list[Path] = []
+    for path in sorted(skill_dir.parent.iterdir()):
+        if not path.is_dir() or path.resolve() == skill_dir.resolve():
+            continue
+        if find_skill_md(path) is not None:
+            out.append(path)
+    return out
+
+
+def build_adjacency(skill_dir: Path, out: Path) -> Result:
+    """W-11 的材料：相邻技能边界清单（词面重叠排序 + 留给人填的「边界裁决」栏）。
+
+    只提供事实：重叠系数是**词面**重叠（与 `LIB-002` 同一套词元与系数），不是语义相似度；
+    「这个场景该归谁」由 W-11 判。**不判缺陷**（重叠高≠有错，可能是该合并，也可能是分工清晰）。
+    """
+    try:
+        neighbors = sibling_skills(skill_dir)
+    except OSError as exc:
+        return _res(RULES["MAT-005"], SKIP,
+                    f"未生成：无法列出同级目录 {skill_dir.parent}（{exc}）")
+    if not neighbors:
+        return _res(RULES["MAT-005"], INFO,
+                    f"不适用：{skill_dir.parent} 下没有别的技能目录"
+                    f"（本材料只在同级找邻居；分类嵌套或多根布局请手工提供清单）")
+
+    this_name, this_desc = _skill_card(skill_dir)
+    this_tokens = lib_tokens(this_desc)
+    rows: list[tuple[float, str, str, list[str], str]] = []
+    for path in neighbors:
+        name, desc = _skill_card(path)
+        if len(this_tokens) < MIN_TOKENS or len(lib_tokens(desc)) < MIN_TOKENS:
+            rows.append((0.0, name or path.name, path.name, [], f"—（词元不足 {MIN_TOKENS}）"))
+            continue
+        score, shared = token_overlap(this_tokens, lib_tokens(desc))
+        rows.append((score, name or path.name, path.name, shared, f"{score:.2f}"))
+    rows.sort(key=lambda row: (-row[0], row[1]))
+
+    lines = [
+        _header("W-11（触发撰写原则）", f"同级技能目录 {skill_dir.parent}"),
+        "## 本技能\n\n",
+        f"- 名称：`{this_name or skill_dir.name}`\n",
+        f"- description：{this_desc or '（读不出 description）'}\n\n",
+        f"## 相邻技能（{len(rows)} 个，按描述词面重叠从高到低）\n\n",
+        "| 邻居 | 词面重叠 | 共同词元 | 边界裁决（请填写：该场景归谁 / 无串扰） |\n",
+        "|---|---|---|---|\n",
+    ]
+    for _score, name, dirname, shared, score_txt in rows:
+        common = "、".join(f"`{t}`" for t in shared[:8]) or "（无共同词元）"
+        lines.append(f"| `{name}`（`{dirname}/`） | {score_txt} | {common} |  |\n")
+    lines.append(
+        "\n## 怎么用这份清单\n\n"
+        "- 词面重叠 = 交集 / 较小集合（ASCII 词 + CJK 字符 bigram），**不是语义相似度**：\n"
+        "  高重叠只说明「值得逐个比对」，串扰与否归 W-11 判；\n"
+        "- 「边界裁决」栏请逐行填：要么写明该场景由哪个技能承接，要么写「无串扰」——\n"
+        "  空着就说明这一行没人评估过；\n"
+        f"- 局限：只在**同级目录**里找邻居（分类嵌套或多根布局会漏）；"
+        f"词元少于 {MIN_TOKENS} 的描述不参与计分（列出来只为让你知道它存在）；"
+        f"全库预算与全库重叠提示由 `LIB-001`/`LIB-002` 负责。\n")
+    write_text(out, "".join(lines))
+    top = rows[0]
+    return _res(RULES["MAT-005"], PASS,
+                f"已生成 {out.name}（{len(rows)} 个邻居；最像的是 `{top[1]}`，"
+                f"词面重叠 {top[4]}）")
+
+
 # --------------------------------------------------------------------------- #
 # 主入口
 # --------------------------------------------------------------------------- #
@@ -321,6 +413,7 @@ def build_materials(
         build_description_diff(skill_dir, out / "description-diff.md", diff_base),
         build_revision_signals(skill_dir, out / "revision-signals.md", workspace),
         build_workspace_digest(skill_dir, out / "workspace-digest.md", workspace),
+        build_adjacency(skill_dir, out / "adjacency.md"),
         build_blind(skill_dir, out / "blind", blind[0], blind[1], blind_seed),
     ]
     for res in results:

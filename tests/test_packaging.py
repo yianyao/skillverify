@@ -40,6 +40,7 @@ DATA_DIR = REPO / "skillverify" / "data"
 
 _passed: list[str] = []
 _failed: list[str] = []
+_skipped: list[str] = []
 
 
 def ok(msg: str) -> None:
@@ -50,6 +51,12 @@ def ok(msg: str) -> None:
 def fail(msg: str) -> None:
     _failed.append(msg)
     print(f"  FAIL {msg}")
+
+
+def skip(msg: str) -> None:
+    """本项**未执行**（环境或前置条件缺失）：既不算通过、也不算失败。"""
+    _skipped.append(msg)
+    print(f"  SKIP {msg}")
 
 
 def check(cond: bool, msg: str) -> None:
@@ -256,7 +263,10 @@ def main() -> int:
     try:
         import tomllib  # noqa: F401
     except ModuleNotFoundError:
-        print("跳过：解析 pyproject.toml 需要 Python ≥3.11")
+        # 本项**未执行**（解释器版本不足），不是通过：把 SKIP 明确记下来再退出。
+        skip("整个套件未执行：解析 pyproject.toml 需要 Python ≥3.11")
+        total = len(_passed) + len(_failed)
+        print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
         return 0
 
     tmp = new_temp_dir(prefix="sv_test_packaging_")
@@ -268,7 +278,7 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     total = len(_passed) + len(_failed)
-    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")
+    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
 
 
