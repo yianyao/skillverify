@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import ExitStack
 
 from ..report import FAIL, INFO, PASS, SKIP, WARN, Result, Rule
 from .inventory import FileRec
@@ -466,8 +467,9 @@ def _check_dry_run(ctx: LintContext, analyzable, scripts) -> Result:
     在**临时副本**里跑：万一脚本无视 dry-run 真的写了文件，被改的是副本，不是你的技能目录。
     局限（写在证据里）：只能看到技能目录自身的变化——脚本写到 /tmp、家目录或远端看不见。
     """
-    import tempfile
     from pathlib import Path
+
+    from ..tmpdir import temp_dir
 
     if not scripts:
         # 与 SCRIPT-002/003/005 同口径：没有 scripts/ 目录 = 不适用（别让纯文档技能恒返回 2）
@@ -491,7 +493,13 @@ def _check_dry_run(ctx: LintContext, analyzable, scripts) -> Result:
     changed: list[str] = []
     unrun: list[str] = []
     passed: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="skillverify-dryrun-") as tmp:
+    with ExitStack() as stack:
+        try:
+            tmp = stack.enter_context(temp_dir(prefix="skillverify-dryrun-"))
+        except OSError as exc:
+            # 临时目录不可用 = 本项**未执行**（环境事实），不是"通过"，也不该崩掉整份报告。
+            return res(RULES["SCRIPT-009"], SKIP,
+                       f"未执行：临时目录不可用（{exc}）——无法建立副本试跑", optional=True)
         copy = Path(tmp) / ctx.root.name
         shutil.copytree(ctx.root, copy, symlinks=True)
         for rec, cmd, flag in targets:

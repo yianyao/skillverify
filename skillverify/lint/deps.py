@@ -68,6 +68,16 @@ RULES: dict[str, Rule] = {
         _USING_SCRIPTS + "#self-contained-scripts",
         "把 `\"pkg\"` 改为 `\"pkg>=1.2,<2\"`，并补 `requires-python = \">=3.10\"`",
     ),
+    "DEP-005": Rule(
+        "DEP-005",
+        "非 Python 脚本的内联依赖（只认明确形态）也要钉版本",
+        "HOUSE",
+        "官方未规定非 Python 生态的内联依赖口径（本项目收紧）："
+        "「自包含脚本」的要求跨语言成立，但各生态机制不同，故只认明确形态、只记 WARN",
+        "Deno：写 `npm:pkg@1.2.3` / `jsr:@scope/pkg@1.2.3`，别只写 `npm:pkg`；"
+        "Bun 等把版本写进 import 说明符的写法：`\"pkg@1.2.3\"`；"
+        "Ruby 的 `bundler/inline`：`gem \"名字\", \"1.2.3\"`，别只写 `gem \"名字\"`",
+    ),
 }
 
 #: 会消费下一个 token 的取值旗标（否则旗标值会被当成包名）
@@ -99,6 +109,23 @@ MANIFEST_FAIL = frozenset(
 )
 #: WARN 集（可能只是工具配置）
 MANIFEST_WARN = frozenset({"pyproject.toml", "setup.py", "setup.cfg", "tox.ini"})
+
+#: 非 Python 脚本里**写在代码中**的依赖声明形态（生态名, 说明, 正则）。
+#:
+#: 为什么只认这几种：各生态的内联声明机制差别很大，穷举等于编造；
+#: 认不出来的形态一律**不报**（宁缺勿滥），认出来的形态只给一条可机械判定的事实：
+#: 版本钉没钉住。裸包名（`import x from "lodash"`）**不算**内联声明——那由 package.json
+#: 之类的清单管理，把它报成"未钉版本"会给每个 Node 脚本刷一行噪音。
+INLINE_DEP_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # Deno：`import ... from "npm:pkg@1"` / `jsr:@scope/pkg@1`（动态 import 也算）
+    ("deno", re.compile(r"""(?:from|import)\s*\(?\s*["']((?:npm|jsr):[^"']+)["']""")),
+    # Bun 等把版本写进 import 说明符的写法：`from "pkg@1.2.3"` / `require("pkg@1.2.3")`
+    ("bun", re.compile(r"""(?:from|require\s*\()\s*["']([^"']+@[^"']+)["']""")),
+)
+#: Ruby 的 `bundler/inline`（脚本自带一份内联 Gemfile）
+RUBY_INLINE_RE = re.compile(r"""require\s+["']bundler/inline["']""")
+#: `gem "名字"` 或 `gem "名字", "约束"`
+RUBY_GEM_RE = re.compile(r"""^\s*gem\s+["']([^"']+)["']\s*(?:,\s*(.+?))?\s*$""")
 
 #: import 名 → 发行包名（只收常见且无歧义的；其余靠 WARN + 人工确认）
 IMPORT_ALIASES: dict[str, str] = {
@@ -331,6 +358,79 @@ class DepFacts:
     third_party: list[str]     # 出现过的第三方 import 名
     undeclared: list[str]      # 未内联声明、也未在文档说明
     mismatched: list[str]      # import 与 PEP 723 声明不一致
+    inline: list[str]          # 非 Python 脚本里写死的内联依赖（`生态 包@版本`）
+
+
+@dataclass
+class InlineDep:
+    """一处非 Python 内联依赖。"""
+
+    ecosystem: str             # deno / bun / ruby
+    spec: str                  # 原始写法（如 `npm:chalk@5.3.0`）
+    kind: str                  # pinned / ranged / unpinned
+    where: str                 # `<相对路径>:<行号>`
+
+
+def _ruby_inline_deps(rec: FileRec) -> list[InlineDep]:
+    """`bundler/inline` 文件里的 `gem "x"` 行。
+
+    限制（写清楚，不假装更聪明）：只按**文件粒度**识别——文件里出现 `require "bundler/inline"`
+    就把全文的 `gem` 行都算进来，不解析 `gemfile do … end` 的块边界。
+    这类脚本通常整个文件就是一份内联 Gemfile，粒度足够；真出现例外也只是多报一行 WARN。
+    """
+    out: list[InlineDep] = []
+    text = rec.text or ""
+    if not RUBY_INLINE_RE.search(text):
+        return out
+    for lineno, line in enumerate(text.split("\n"), 1):
+        match = RUBY_GEM_RE.match(strip_inline_comment(line))
+        if not match:
+            continue
+        name, constraint = match.group(1), (match.group(2) or "").strip().strip("'\"")
+        if not constraint:
+            out.append(InlineDep("ruby", f'gem "{name}"', "unpinned", f"{rec.rp}:{lineno}"))
+        elif re.match(r"^=\s*\d", constraint):
+            out.append(InlineDep("ruby", f'gem "{name}", {constraint}', "pinned",
+                                 f"{rec.rp}:{lineno}"))
+        elif re.match(r"^\d", constraint):
+            # `gem "x", "1.2.3"` = 精确版本
+            out.append(InlineDep("ruby", f'gem "{name}", {constraint}', "pinned",
+                                 f"{rec.rp}:{lineno}"))
+        else:
+            out.append(InlineDep("ruby", f'gem "{name}", {constraint}', "ranged",
+                                 f"{rec.rp}:{lineno}"))
+    return out
+
+
+def scan_inline_deps(ctx: LintContext) -> list[InlineDep]:
+    """扫非 Python 脚本里**写在代码中**的依赖声明（只认明确形态）。
+
+    **唯一实现处**：`DEP-005` 与 `audit` 的能力清单都调它。
+    """
+    found: list[InlineDep] = []
+    for rec in ctx.inventory.texts:
+        if rec.suffix == ".py":
+            continue
+        for lineno, line in enumerate((rec.text or "").split("\n"), 1):
+            code = strip_inline_comment(line)
+            if not code.strip():
+                continue
+            for ecosystem, pattern in INLINE_DEP_RES:
+                for match in pattern.finditer(code):
+                    spec = match.group(1)
+                    if ecosystem == "bun":
+                        # Deno 的形态（含 `npm:` 前缀）已由上面那条处理；
+                        # 相对路径 / 绝对路径 / URL / Node 内置模块都不是依赖声明。
+                        if spec.startswith(("npm:", "jsr:", "./", "../", "/", "node:")) \
+                                or "://" in spec:
+                            continue
+                    kind, _name = classify_spec(spec, ecosystem)
+                    if kind == "local":
+                        continue
+                    found.append(InlineDep(ecosystem, spec, kind, f"{rec.rp}:{lineno}"))
+        if rec.suffix == ".rb":
+            found.extend(_ruby_inline_deps(rec))
+    return found
 
 
 @dataclass
@@ -382,7 +482,8 @@ def scan_third_party(ctx: LintContext) -> ThirdPartyScan:
 def facts(ctx: LintContext) -> DepFacts:
     scan = scan_third_party(ctx)
     return DepFacts(third_party=sorted(set(scan.imports)),
-                    undeclared=list(scan.undeclared), mismatched=list(scan.mismatched))
+                    undeclared=list(scan.undeclared), mismatched=list(scan.mismatched),
+                    inline=sorted({f"{d.ecosystem} {d.spec}" for d in scan_inline_deps(ctx)}))
 
 
 def check(ctx: LintContext) -> list[Result]:
@@ -469,5 +570,22 @@ def check(ctx: LintContext) -> list[Result]:
         out.append(res(RULES["DEP-003"], WARN, f"疑似依赖清单（人工确认）: {summarize(soft)}"))
     else:
         out.append(res(RULES["DEP-003"], PASS, "无独立依赖清单"))
+
+    # ---- DEP-005：非 Python 的内联依赖（只认明确形态） ----
+    inline = scan_inline_deps(ctx)
+    if not inline:
+        out.append(res(RULES["DEP-005"], INFO,
+                       "不适用：未发现非 Python 的内联依赖形态"
+                       "（Deno 的 npm:/jsr: 说明符、import 说明符里带版本、Ruby bundler/inline）"))
+    else:
+        loose = [d for d in inline if d.kind != "pinned"]
+        if loose:
+            out.append(res(RULES["DEP-005"], WARN,
+                           "非 Python 内联依赖未精确钉版本: "
+                           + summarize([f"{d.where} {d.ecosystem} {d.spec}"
+                                        f"（{d.kind}）" for d in loose])))
+        else:
+            out.append(res(RULES["DEP-005"], PASS,
+                           f"{len(inline)} 处非 Python 内联依赖均已精确钉版本"))
 
     return out

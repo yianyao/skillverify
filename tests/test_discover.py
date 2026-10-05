@@ -18,7 +18,6 @@ import io
 import json
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -33,6 +32,7 @@ from skillverify.discover import (  # noqa: E402
     render_config,
 )
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir, temp_dir  # noqa: E402
 from skillverify.report import FAIL, PASS, SKIP, WARN, LibraryReport, Report, Result  # noqa: E402
 
 _passed: list[str] = []
@@ -575,9 +575,9 @@ def run_dogfood(repo: Path) -> None:
     if not legacy.is_dir():
         ok("无 legacy/ 目录，跳过")
         return
-    with tempfile.TemporaryDirectory(prefix="sv_disc_home_") as home:
+    with temp_dir(prefix="sv_disc_home_") as home:
         code, out, _err = run_cli([
-            "check", "--project", str(repo), "--user-home", home,
+            "check", "--project", str(repo), "--user-home", str(home),
             "--root", str(legacy), "--scripts", "--json",
         ])
     payload = json.loads(out)
@@ -601,7 +601,7 @@ def main() -> int:
                         help="额外对 legacy/ 跑一遍整库 check 并打印摘要")
     args = parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_discover_"))
+    tmp = new_temp_dir(prefix="sv_test_discover_")
     try:
         run_config(tmp)
         run_discovery(tmp)

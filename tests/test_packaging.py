@@ -24,7 +24,6 @@ import fnmatch
 import shutil
 import subprocess
 import sys
-import tempfile
 import zipfile
 from pathlib import Path
 
@@ -33,6 +32,7 @@ if __package__ in (None, ""):
 
 from skillverify import cli  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO / "pyproject.toml"
@@ -131,7 +131,7 @@ def run_static() -> None:
     from skillverify.review import load_catalog
 
     check(len(load_catalog()) >= 29, "提示词目录可加载（≥ 旧体系 29 条）")
-    tmp_home = Path(tempfile.mkdtemp(prefix="sv_pkg_home_"))
+    tmp_home = new_temp_dir(prefix="sv_pkg_home_")
     try:
         cfg = load_config(REPO, tmp_home, use_discovered_files=False)
         check("default" in cfg.hosts, "内置宿主配置可加载")
@@ -259,7 +259,7 @@ def main() -> int:
         print("跳过：解析 pyproject.toml 需要 Python ≥3.11")
         return 0
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_packaging_"))
+    tmp = new_temp_dir(prefix="sv_test_packaging_")
     try:
         run_static()
         if args.install:

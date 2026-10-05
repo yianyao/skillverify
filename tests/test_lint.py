@@ -6,7 +6,7 @@
    比漏报更致命。每条都在注释里写明来源。
 
 **全局不变量**（比逐条断言更强的性质）：
-- `run_rule_coverage`：42 条规则在任何一次运行中都必须产生记录；缺失即"实现遗漏"。
+- `run_rule_coverage`：47 条规则在任何一次运行中都必须产生记录；缺失即"实现遗漏"。
 - 每个用例额外断言"**没有预期之外的 FAIL**"——防止改动一处、别处悄悄开始误报。
 
 用法：
@@ -26,7 +26,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,6 +33,7 @@ if __package__ in (None, ""):  # 允许 `python tests/test_lint.py` 直接运行
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.lint import RULES, lint_skill  # noqa: E402
 from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 
@@ -331,6 +331,36 @@ CASES: list[Case] = [
     Case("dep_manifest_in_fixture", "demo-skill",
          _clean(**{"references/package.json": "{}\n"}),
          {"DEP-003": WARN}),
+
+    # DEP-005：非 Python 的内联依赖（只认明确形态；只记 WARN）
+    Case("dep_deno_unpinned", "demo-skill",
+         _clean(**{"scripts/fetch.ts":
+                   'import chalk from "npm:chalk";\n\nconsole.log(chalk);\n'}),
+         {"DEP-005": WARN}),
+    Case("dep_deno_pinned_ok", "demo-skill",
+         _clean(**{"scripts/fetch.ts":
+                   'import chalk from "npm:chalk@5.3.0";\n\nconsole.log(chalk);\n'}),
+         {"DEP-005": PASS}),
+    Case("dep_deno_dist_tag_is_loose", "demo-skill",
+         _clean(**{"scripts/fetch.ts":
+                   'import chalk from "npm:chalk@latest";\n\nconsole.log(chalk);\n'}),
+         {"DEP-005": WARN}),
+    Case("dep_bun_versioned_specifier_ok", "demo-skill",
+         _clean(**{"scripts/tool.js": 'import z from "zod@3.22.1";\n\nconsole.log(z);\n'}),
+         {"DEP-005": PASS}),
+    Case("dep_bare_specifier_not_inline", "demo-skill",
+         _clean(**{"scripts/tool.js": 'import z from "zod";\n\nconsole.log(z);\n'}),
+         {"DEP-005": INFO}),
+    Case("dep_ruby_bundler_inline_unpinned", "demo-skill",
+         _clean(**{"scripts/report.rb":
+                   'require "bundler/inline"\n\ngemfile do\n'
+                   '  gem "nokogiri"\nend\n\nputs Nokogiri::VERSION\n'}),
+         {"DEP-005": WARN}),
+    Case("dep_ruby_bundler_inline_pinned_ok", "demo-skill",
+         _clean(**{"scripts/report.rb":
+                   'require "bundler/inline"\n\ngemfile do\n'
+                   '  gem "nokogiri", "1.16.0"\nend\n\nputs Nokogiri::VERSION\n'}),
+         {"DEP-005": PASS}),
 
     # ---------------- SEC ----------------
     Case("sec_aws_key", "demo-skill",
@@ -799,7 +829,7 @@ def main() -> int:
                         help="额外对本仓库 legacy/ 下的技能跑一遍并打印摘要")
     args = parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_lint_"))
+    tmp = new_temp_dir(prefix="sv_test_lint_")
     try:
         run_case_matrix(tmp)
         run_rule_coverage(tmp)

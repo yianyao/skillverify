@@ -27,6 +27,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import temp_dir  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -35,6 +36,13 @@ TREES = ("skillverify", "tests")
 
 #: 过期措辞：功能早已实现、话术却还停在"以后会做"的状态
 STALE_RE = re.compile(r"TODO|FIXME|后续版本|待实现|暂未实现|尚未实现")
+
+#: 明令禁止的 API：临时目录必须走 `tmpdir.py`。
+#: 理由见 `skillverify/tmpdir.py` 的模块说明——`tempfile.mkdtemp`/`TemporaryDirectory`
+#: 按 `mode=0o700` 建目录，Windows 沙箱（AppContainer）的访问检查要求 DACL 同时授予
+#: 用户 SID 与容器 SID，于是**创建者自己也进不去**（WinError 5）；而在普通终端里跑
+#: 永远复现不了，正是本项目最忌讳的"本机通过、换个环境就崩"。
+FORBIDDEN_ATTRS = {"mkdtemp", "TemporaryDirectory"}
 
 _passed: list[str] = []
 _failed: list[str] = []
@@ -179,6 +187,26 @@ def collect(all_trees: dict[Path, ast.AST]) -> tuple[list[str], list[str], list[
     return dead_imports, dead_defs, stale
 
 
+def forbidden_tempfile_calls(tree: ast.AST) -> list[int]:
+    """返回使用 `tempfile.mkdtemp` / `tempfile.TemporaryDirectory` 的行号。
+
+    只看 **AST**（属性访问与 from-import），不看文本：`tmpdir.py` 的模块说明里必须写出
+    这两个名字（说清为什么不用它们），文本扫描会把它自己判红——这是本项目在自检里
+    踩过好几次的坑（"扫描器自己的文字不算引用"）。
+    """
+    hits: list[int] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_ATTRS:
+            base = node.value
+            if isinstance(base, ast.Name) and base.id == "tempfile":
+                hits.append(node.lineno)
+        elif isinstance(node, ast.ImportFrom) and node.module == "tempfile":
+            for alias in node.names:
+                if alias.name in FORBIDDEN_ATTRS:
+                    hits.append(node.lineno)
+    return sorted(hits)
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="skillverify 自检（死代码 / 过期措辞）").parse_args()
@@ -204,12 +232,26 @@ def main() -> int:
           "没有「以后会做」式的过期措辞" if not stale
           else f"没有过期措辞（发现 {len(stale)} 处）:\n         " + "\n         ".join(stale[:6]))
 
+    print("[test_forbidden_tempfile]")
+    offenders: list[str] = []
+    for path, tree in trees.items():
+        rel = path.relative_to(REPO).as_posix() if path.is_relative_to(REPO) else path.name
+        offenders += [f"{rel}:{lineno}" for lineno in forbidden_tempfile_calls(tree)]
+    check(not offenders,
+          "临时目录一律走 tmpdir.py（全仓无 tempfile.mkdtemp / TemporaryDirectory）"
+          if not offenders
+          else f"临时目录必须走 tmpdir.py（发现 {len(offenders)} 处禁用写法）:\n         "
+               + "\n         ".join(offenders[:8]))
+    # 反向自检：这条守卫**能失败**吗？拿一段典型代码问它（两种写法都要认出来）
+    probe_tree = ast.parse("import tempfile\np = tempfile.mkdtemp(prefix='x')\n"
+                           "from tempfile import TemporaryDirectory\n")
+    check(len(forbidden_tempfile_calls(probe_tree)) == 2,
+          "这条守卫能失败（探针里 `tempfile.mkdtemp` 与 from-import 两种写法都被认出）")
+
     # 反向自检：这套检查**能失败**吗？故意造一处死代码与一句过期话术，验证会被抓到
     print("[test_selfcheck_can_fail]")
-    import tempfile
-
-    with tempfile.TemporaryDirectory(prefix="sv_selfcheck_") as probe_dir:
-        probe_path = Path(probe_dir) / "_probe.py"
+    with temp_dir(prefix="sv_selfcheck_") as probe_dir:
+        probe_path = probe_dir / "_probe.py"
         probe_path.write_text(
             "import os\n\n\nclass UnusedProbe:\n    pass\n\n\nX = 1\n"
             "__all__ = [\"ExportedButUnused\"]\n\n\nclass ExportedButUnused:\n"

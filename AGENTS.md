@@ -48,6 +48,13 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
 9. **`legacy/` 已归档出仓库（原先的「冻结语料」不再随仓库分发）**：旧体系语料已归档到仓库外（见 §一）。规则出处写文档级引用，
    **不许**再出现 `legacy/<路径>`（守卫查）；要跑旧语料回归就把语料放回 `legacy/` 或
    用 `--dogfood` 指向的本地目录——但**别把语料提交回来**。
+10. **临时目录一律走 `skillverify/tmpdir.py`**（`new_temp_dir` / `temp_dir`），**不许**用
+   `tempfile.mkdtemp` / `TemporaryDirectory`——后者按 `mode=0o700` 建目录，在 Windows 沙箱里
+   **创建者自己也进不去**（原地实测：`mount` 与 `lint --scripts` 的 dry-run 探针直接抛 `WinError 5`）。
+   有 AST 守卫（`tests/test_selfcheck.py::forbidden_tempfile_calls`）挡着，见 §五 第 12 条。
+11. **时效性只认显式字段，不许用文件时间推断**：`EVAL-011` 读 `run-inputs.json` 的
+   `assertions_added_at`（旧体系 V21 那套 mtime 推断已明确舍弃）；同理 `REV-000` 判"记录过期"
+   用**内容指纹**、`WS-004` 用 iteration 编号。改任何"新鲜度"判定时先问：这个事实在文件系统里吗？
 
 ## 四、测试里两个"被执行的机制"（改东西前务必知道）
 
@@ -59,7 +66,7 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
    - 行尾注释里的**第一个数字**被当作期望退出码，所以别在行尾注释里写别的数字；
    - 改命令就要同步改期望退出码；新增命令要放进这个块。
 2. **注入自测是变异测试**：`tests/test_injection.py` 先造一份全绿基线（参与判定的规则上百条，具体条数看套件输出），
-   再对**独立副本**注入 40 处缺陷（38 处单技能 + 2 处库级，见 `LIBRARY_MUTATIONS`），要求「期望规则里至少一条必须报错」且「不许牵连无关规则」。
+   再对**独立副本**注入 41 处缺陷（39 处单技能 + 2 处库级，见 `LIBRARY_MUTATIONS`），要求「期望规则里至少一条必须报错」且「不许牵连无关规则」。
    - 加新规则时，最好同时加一处覆盖它的变异（`test_coverage` 会检查 17 个规则族全覆盖；
   `AUDIT-*` 由 `tests/test_library.py` 的注入式断言承担，注释里写明了为什么）；
    - 容忍项（`tolerate`）必须写清理由，不要为了让测试变绿。
@@ -90,6 +97,22 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
     阈值——加规则时先声明常量再写规则。
 11. **测试 helper 抛出前要打印捕获的 stdout/stderr**：否则现象是"套件跑到一半安静地没了"
     （本仓库的 `run_cli` 全都这么做）。
+12. **沙箱（AppContainer）下 `tempfile.mkdtemp` 建的目录创建者自己进不去**：它按 `mode=0o700`
+    落成"仅所有者"的 DACL，而沙箱的访问检查要求 DACL **同时**授予用户 SID 与容器 SID。
+    症状：`mount` 的副本探针与 `lint --scripts` 的 dry-run 探针抛 `PermissionError: [WinError 5]`，
+    而 `tempfile` 的清理还会二次抛错——**在普通终端里跑永远复现不了**。
+    → 一律用 `skillverify/tmpdir.py`（不传 mode，继承父目录 DACL）；有 AST 守卫挡着。
+    另：沙箱里**连 shell 都受限**——`sh.exe` 建不出信号管道（`couldn't create signal pipe, Win32 error 5`），
+    所以 git hook 的端到端用例跑不了：**先探针、跑不了记 SKIP**，既不伪装成 PASS 也不让它长成假 FAIL
+    （`tests/test_automation.py::sh_can_run_hooks`）。
+13. **小样本上不要用"比例"当容差**：旧体系那套 `±0.05 比例` 在 12 条样本上，差一条就是 ~8–14%，
+    于是像样的夹具被判成偏斜——**后果不是多一行 WARN，而是基线被染脏**：
+    注入自测里"切分全在 train"那处变异因此显得"没被抓住"（基线本来就 WARN，变异后没有新增问题）。
+    → 判据按**条数**写（`|实得 − 期望| ≤ 1 条`），与样本量无关；夹具本身也要先像个样子
+    （正负例交替排列，别把正例全堆在前面再按下标切分）。
+14. **合计对不代表分项对**：《覆盖对照》里的逐族规则数长期写着 评测 29 / 评审 13 / 库级·挂载·审计 15，
+    合计 131 却刚好正确——于是没人发现分项全错。现在 `tests/test_consistency.py` 会把它与代码对账
+    （加规则时要同步改那两处）。同类的还有：套件数、提示词条数、spec 构成。
 
 ## 六、迁移/分发这个项目时要留意
 

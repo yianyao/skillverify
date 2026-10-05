@@ -29,7 +29,6 @@ import io
 import json
 import shutil
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -39,6 +38,7 @@ if __package__ in (None, ""):
 
 from skillverify import cli  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.report import FAIL  # noqa: E402
 
 _passed: list[str] = []
@@ -113,11 +113,17 @@ def write_json(path: Path, data: object) -> None:
 
 
 def trigger_queries() -> list[dict]:
+    """16 条（8 正 8 负），train 10 / validation 6，**正负交替**排列。
+
+    交替不是审美要求：正例全排在前再按下标切分，train 会拿走全部正例、
+    validation 只剩负例（那种偏斜 `TRIG-005` 会正确报出）。基线必须是**像样的资产**，
+    否则基线自己带一条 TRIG-005 WARN，"切分全在 train"那处变异就没有新增信号了。
+    """
     queries: list[dict] = []
     for idx in range(16):
-        should = idx < 8
+        should = idx % 2 == 0
         queries.append({
-            "id": f"{'P' if should else 'N'}{idx % 8 + 1:02d}",
+            "id": f"{'P' if should else 'N'}{idx // 2 + 1:02d}",
             "query": f"（示例查询 {idx + 1}）帮我处理一下这份销售数据",
             "should_trigger": should,
             "subset": "train" if idx < 10 else "validation",
@@ -380,6 +386,12 @@ def m_dep_manifest(skill: Path) -> None:
     write(skill / "requirements.txt", "requests\n")
 
 
+def m_dep_inline_unversioned(skill: Path) -> None:
+    """非 Python 的内联依赖写成不钉版本的形态（只在变异里引入，基线不受影响）。"""
+    write(skill / "scripts" / "fetch.ts",
+          'import chalk from "npm:chalk";\n\nconsole.log(chalk);\n')
+
+
 def m_sec_secret(skill: Path) -> None:
     _edit(skill / "SKILL.md", "## 步骤\n",
           "## 步骤\n\n配置：`AWS_ACCESS_KEY_ID=AKIA3F9K2LMQ7ZP1RTUV`。\n")
@@ -544,6 +556,11 @@ MUTATIONS: list[Mutation] = [
     Mutation("dep:版本漂移标签", m_dep_unpinned, ("DEP-001",), note="@latest 不可复现"),
     Mutation("dep:独立依赖清单", m_dep_manifest, ("DEP-003",),
              note="requirements.txt 会引入额外安装步骤"),
+    Mutation("dep:非 Python 内联依赖未钉版本", m_dep_inline_unversioned, ("DEP-005",),
+             tolerate=("REF-007", "SCRIPT-003"),
+             note="Deno 的 npm: 说明符没写版本，会拉最新版；变异**新增了一个 .ts 文件**，"
+                  "于是「脚本要列出」（REF-007）与「脚本要有参数解析线索」（SCRIPT-003）"
+                  "也各报一条——新增文件的必然连带，不是误报"),
     Mutation("sec:明文密钥", m_sec_secret, ("SEC-001",), note="真实形态的密钥"),
     Mutation("sec:下载即执行", m_sec_pipe_sh, ("SEC-004",),
              tolerate=("SEC-007",), note="外部端点也应声明"),
@@ -692,7 +709,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="skillverify 注入自测（fail-loud）")
     parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_injection_"))
+    tmp = new_temp_dir(prefix="sv_test_injection_")
     try:
         print("[test_baseline]")
         base = tmp / "base"

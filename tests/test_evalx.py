@@ -22,9 +22,9 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -32,6 +32,7 @@ if __package__ in (None, ""):
 
 from skillverify import cli, evalx  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 
 _passed: list[str] = []
@@ -655,6 +656,66 @@ def run_workspace(tmp: Path) -> None:
           "references/ 下的散落 grading.json 不参与校验（旧体系按文件名任意深度抓取）")
 
 
+def run_assertion_timing(tmp: Path) -> None:
+    """EVAL-011：断言写入时机**只认显式声明**，绝不用文件 mtime 推断。"""
+    print("[test_assertion_timing]")
+    root = tmp / "at"
+    skill = write_skill(root, "csv-analyzer", evals=OFFICIAL_EVALS)
+    ref = root / "csv-analyzer" / "evals" / "files"
+    ref.mkdir(parents=True, exist_ok=True)
+    for name in ("sales_2025.csv", "customers.csv"):
+        (ref / name).write_text("x")
+    ws = build_workspace(root)
+    record = ws / "iteration-1" / evalx.RUN_INPUTS_NAME
+
+    # ① 没声明 → INFO（不适用），并说明本项不做推断
+    check(statuses(evalx.check_evals(skill))["EVAL-011"] == INFO
+          and "不做推断" in evidence_of(evalx.check_evals(skill), "EVAL-011"),
+          "没声明断言写入时机 → EVAL-011 INFO（不适用），并写明不做推断")
+
+    # ② 声明了可解析的时间 → PASS，证据里带出时间
+    write_json(record, {"iteration": 1, "assertions_added_at": "2026-10-05T11:00:00+08:00"})
+    report = evalx.check_evals(skill)
+    check(statuses(report)["EVAL-011"] == PASS
+          and "2026-10-05T11:00:00+08:00" in evidence_of(report, "EVAL-011"),
+          "声明了 ISO 时间 → PASS 且证据带出该时间")
+
+    # ③ 先写断言再跑 vs 先跑再补断言——**两种都只登记，不判缺陷**
+    #    （官方明确允许"先跑一轮再补断言"，工具不替使用者选流程）
+    write_json(record, {"iteration": 1,
+                        "assertions_added_at": "2026-10-05T11:00:00+08:00",
+                        "outputs_produced_at": "2026-10-05T12:00:00+08:00"})
+    report = evalx.check_evals(skill)
+    check(statuses(report)["EVAL-011"] == PASS
+          and "先写断言再跑" in evidence_of(report, "EVAL-011"),
+          "断言早于输出 → PASS 并写明先后关系")
+    write_json(record, {"iteration": 1,
+                        "assertions_added_at": "2026-10-05T13:00:00+08:00",
+                        "outputs_produced_at": "2026-10-05T12:00:00+08:00"})
+    report = evalx.check_evals(skill)
+    check(statuses(report)["EVAL-011"] == PASS
+          and "官方允许" in evidence_of(report, "EVAL-011"),
+          "断言晚于输出（先跑再补）→ 仍 PASS：只登记事实，不把官方允许的流程判成缺陷")
+
+    # ④ 声明了但解析不出来 → WARN（无法解析的声明等于没声明，但要让人知道）
+    write_json(record, {"iteration": 1, "assertions_added_at": "上周三"})
+    report = evalx.check_evals(skill)
+    check(statuses(report)["EVAL-011"] == WARN
+          and "ISO 8601" in evidence_of(report, "EVAL-011"),
+          "时间不是 ISO 8601 → WARN 并给出期望格式")
+
+    # ⑤ **判别性断言**：改文件 mtime 不影响结论与证据（旧实现就是靠 mtime 猜的）
+    write_json(record, {"iteration": 1, "assertions_added_at": "2026-10-05T11:00:00+08:00"})
+    before = evalx.check_evals(skill)
+    stamp = 4102444800  # 2100-01-01
+    for path in (record, skill / "evals" / "evals.json"):
+        os.utime(path, (stamp, stamp))
+    after = evalx.check_evals(skill)
+    check((statuses(after)["EVAL-011"], evidence_of(after, "EVAL-011"))
+          == (statuses(before)["EVAL-011"], evidence_of(before, "EVAL-011")),
+          "把 mtime 改到 2100 年，EVAL-011 的判定与证据逐字不变（不用 mtime 推断）")
+
+
 # --------------------------------------------------------------------------- #
 # 没有评测资产 / 阶段整合
 # --------------------------------------------------------------------------- #
@@ -756,12 +817,13 @@ def main() -> int:
                         help="额外对 legacy/ 跑一遍并打印结论")
     args = parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_evalx_"))
+    tmp = new_temp_dir(prefix="sv_test_evalx_")
     try:
         run_evals_json(tmp)
         run_grading(tmp)
         run_benchmark(tmp)
         run_workspace(tmp)
+        run_assertion_timing(tmp)
         run_no_evals_and_stages(tmp)
         if args.dogfood:
             run_dogfood(Path(__file__).resolve().parent.parent)

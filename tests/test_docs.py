@@ -29,7 +29,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -38,6 +37,7 @@ if __package__ in (None, ""):
 from skillverify import cli, review  # noqa: E402
 from skillverify.discover import RULES as DISC_RULES  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.evalx import RULES as EVAL_RULES  # noqa: E402
 from skillverify.lint import RULES as LINT_RULES  # noqa: E402
 from skillverify.spec import RULES as SPEC_RULES  # noqa: E402
@@ -252,12 +252,14 @@ def write_assets(skill: Path, skill_name: str, assertions: list[str]) -> None:
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
     # 触发评测资产（本项目约定；与官方 evals.json 分开）：8 正 + 8 负，train 62.5%，
     # 每条 3 次运行，正例全触发、负例全不触发。
+    # 正负例**交替**排列后再按下标切分——"正例全在前"会让 train 拿走几乎全部正例、
+    # validation 只剩负例，那种偏斜是 TRIG-005 会正确报出的资产缺陷。
     queries = []
     for idx in range(16):
-        should = idx < 8
+        should = idx % 2 == 0
         queries.append({
-            "id": f"{'P' if should else 'N'}{idx % 8 + 1:02d}",
-            "query": f"（示例查询 {idx + 1}）帮我处理一下这份销售数据",
+            "id": f"{'P' if should else 'N'}{idx // 2 + 1:02d}",
+            "query": f"（示例查询 {idx + 1}）帮我处理一下这份数据",
             "should_trigger": should,
             "subset": "train" if idx < 10 else "validation",
             "category": "positive-direct" if should else "negative-near-miss",
@@ -726,7 +728,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="skillverify 文档回归测试")
     parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_docs_"))
+    tmp = new_temp_dir(prefix="sv_test_docs_")
     try:
         run_consistency()
         run_agent_notes()

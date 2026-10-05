@@ -8,6 +8,8 @@
 - 每条查询跑 **3 次**，触发率阈值 **0.5**（正例 >0.5、负例 <0.5）；
 - **train ~60% / validation ~40%** 固定切分；只据 train 失败修订，
   修订后另造 5–10 条全新查询做泛化终测。
+  切分是否合格**按条数判**（train 条数与 60% 期望值相差 ≤1 条；两个子集的正负配比
+  与全集相差 ≤1 条）——比例容差在小样本上会过度触发，理由见 `SPLIT_TOLERANCE` 的注释。
 
 **落点（M4 时明确留给后续的那件事）**：`evals/trigger-queryset.json` 与
 `evals/trigger-runs.json`——**与官方 `evals/evals.json` 分开**。
@@ -53,8 +55,17 @@ MAX_PER_SIDE = 10
 MIN_TOTAL = 12
 RUNS_PER_QUERY = 3
 TRIGGER_THRESHOLD = 0.5
-TRAIN_SHARE_MIN = 0.55
-TRAIN_SHARE_MAX = 0.65
+
+#: train 的目标占比（官方口径 ~60%）：train 只用于修订，validation 留作泛化终测
+TRAIN_TARGET_SHARE = 0.60
+#: 切分判定的容差，单位是**条**，不是百分比。
+#:
+#: 为什么必须按条数：同一个比例阈值在不同样本量下含义完全不同——12 条里差一条就是
+#: ~8–14%，20 条里差一条只有 ~5%。旧体系用 ±0.05 的比例容差，在 12 条量级的夹具上
+#: 必然过度触发，而后果不只是多一行 WARN：**基线被染脏**之后，注入自测里
+#: "切分全在 train"那处变异会显得"没被抓住"（基线本来就 WARN，变异后没有新增问题）。
+#: 按条数写（|实得 − 期望| ≤ 1）就与样本量无关地表达"差一条以内"。
+SPLIT_TOLERANCE = 1
 
 #: 负例的 near-miss 类别名（旧体系用 `negative-near-miss`）
 NEAR_MISS_HINTS = ("near", "nearmiss", "near-miss", "近似", "擦边")
@@ -97,10 +108,12 @@ RULES: dict[str, Rule] = {
     ),
     "TRIG-005": Rule(
         "TRIG-005",
-        f"train 占比 {TRAIN_SHARE_MIN:.0%}–{TRAIN_SHARE_MAX:.0%}（固定切分，只据 train 修订）",
+        f"切分口径：train 约 {TRAIN_TARGET_SHARE:.0%}（按条数 ±{SPLIT_TOLERANCE}），"
+        f"且两个子集的正负配比与全集一致",
         "HOUSE",
         _EVAL,
-        "按约 6:4 切分 train/validation；validation 只用于泛化终测，不参与修订",
+        "按约 6:4 分层切分 train/validation（每个子集里正负例都要有，别把正例全堆进 train）；"
+        "validation 只用于泛化终测，不参与修订",
     ),
     "TRIG-006": Rule(
         "TRIG-006",
@@ -169,6 +182,15 @@ def _summarize(items: list[str], limit: int = 5) -> str:
 
 def _is_bool(value: object) -> bool:
     return isinstance(value, bool)
+
+
+def expected_count(share: float, size: int) -> int:
+    """`share × size` 取整，**四舍五入（.5 进位）**。
+
+    不用内置 `round`：它是"银行家舍入"（`round(2.5) == 2`、`round(3.5) == 4`），
+    在"期望几条"这种语境下会给出反直觉的结果，且让边界用例难以解释。
+    """
+    return int(share * size + 0.5)
 
 
 def read_queryset(skill_dir: Path) -> Queryset:
@@ -273,16 +295,29 @@ def _check_queryset(doc: Queryset) -> list[Result]:
     elif not train:
         out.append(_res(RULES["TRIG-005"], WARN, "没有 train 项：没有可用于修订的切分"))
     else:
-        share = len(train) / (len(train) + len(validation))
-        if not (TRAIN_SHARE_MIN <= share <= TRAIN_SHARE_MAX):
-            out.append(_res(RULES["TRIG-005"], WARN,
-                            f"train 占比 {share:.0%} 不在 "
-                            f"{TRAIN_SHARE_MIN:.0%}–{TRAIN_SHARE_MAX:.0%} 之间"
-                            f"（train {len(train)} / validation {len(validation)}）"))
+        split_issues: list[str] = []
+        expected_train = expected_count(TRAIN_TARGET_SHARE, total)
+        if abs(len(train) - expected_train) > SPLIT_TOLERANCE:
+            split_issues.append(
+                f"train {len(train)} 条，按 {TRAIN_TARGET_SHARE:.0%} 期望 {expected_train} 条"
+                f"（允许 ±{SPLIT_TOLERANCE} 条）")
+        # 分层抽样的意义：修订只准看 train，但**验收**要看 validation。
+        # 正例全堆在 train（或全堆在 validation）时，那一侧就测不出"该触发时不触发"。
+        share = len(positives) / total
+        for label, subset in (("train", train), ("validation", validation)):
+            got = len([q for q in subset if q.get("should_trigger") is True])
+            expected = expected_count(share, len(subset))
+            if abs(got - expected) > SPLIT_TOLERANCE:
+                split_issues.append(
+                    f"{label} 的正例 {got}/{len(subset)} 条，按全集正例占比 {share:.0%} "
+                    f"期望 {expected} 条（允许 ±{SPLIT_TOLERANCE} 条）")
+        if split_issues:
+            out.append(_res(RULES["TRIG-005"], WARN, _summarize(split_issues)))
         else:
             out.append(_res(RULES["TRIG-005"], PASS,
                             f"train {len(train)} / validation {len(validation)}"
-                            f"（train 占比 {share:.0%}）"))
+                            f"（共 {total} 条）；两个子集的正例占比与全集（{share:.0%}）一致"
+                            f"（按条数 ±{SPLIT_TOLERANCE}）"))
 
     if not negatives:
         out.append(_res(RULES["TRIG-006"], INFO, "不适用：没有负例"))

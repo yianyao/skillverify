@@ -20,7 +20,6 @@ import json
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -28,6 +27,7 @@ if __package__ in (None, ""):
 
 from skillverify import cli, review  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.lint import lint_skill  # noqa: E402
 from skillverify.report import FAIL, PASS, SKIP, WARN  # noqa: E402
 from skillverify.spec import check_spec  # noqa: E402
@@ -859,7 +859,7 @@ def run_dogfood(repo: Path) -> None:
     if not legacy.is_dir():
         ok("无 legacy/ 目录，跳过")
         return
-    root = Path(tempfile.mkdtemp(prefix="sv_review_dog_"))
+    root = new_temp_dir(prefix="sv_review_dog_")
     try:
         catalog = review.load_catalog()
         count = 0
@@ -880,7 +880,7 @@ def main() -> int:
                         help="额外对 legacy/ 各技能生成任务包")
     args = parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_review_"))
+    tmp = new_temp_dir(prefix="sv_test_review_")
     try:
         run_catalog(tmp)
         run_pack(tmp)

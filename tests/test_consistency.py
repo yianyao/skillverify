@@ -24,7 +24,7 @@ if __package__ in (None, ""):
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from skillverify import evalx, review  # noqa: E402
+from skillverify import audit, evalx, library, mount, review, spec, trigger  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
 from skillverify.lint import RULES as LINT_RULES  # noqa: E402
 from skillverify.spec import RULES as SPEC_RULES  # noqa: E402
@@ -46,6 +46,7 @@ USER_VISIBLE = (
     ("badcase_to_evals.py", "bad case 回流样例"),
     ("run_evals.py", "评测执行器样例"),
     ("run-inputs.json", "执行轮次自证（WS-008）"),
+    ("assertions_added_at", "断言写入时机的显式声明（EVAL-011）"),
     ("adjudications.json", "WARN 的人工裁决留痕"),
     ("REV-013", "⚑ 逐条双评（署名判定）"),
 )
@@ -161,6 +162,34 @@ def run_numbers() -> None:
     check(not bad_claims, f"没有「指本工具却写 29 条提示词」的说法（问题行: {bad_claims[:3]}）")
     check(f"{catalog_n} 条提示词" in cov or "30 条提示词" in cov,
           "覆盖对照写明了本工具的提示词条数（30）")
+
+    # 逐族规则数：《覆盖对照》里那两处「机械层（N 条规则：spec a / lint b / 评测 c / …）」
+    # 此前一直没人查，于是长期写着 评测 29 / 评审 13 / 库级·挂载·审计 15（合计对、分项全错）。
+    # 这里把它与代码事实对账——**合计对了不代表分项对了**，而分项正是读者判断
+    # 「哪一层做了多少」的依据。
+    families = {
+        "spec": len(SPEC_RULES),
+        "lint": len(LINT_RULES),
+        "评测": len(evalx.RULES),
+        "触发": len(trigger.RULES),
+        "评审": len(review.RULES),
+        "库级·挂载·审计": len(library.RULES) + len(mount.RULES) + len(audit.RULES),
+    }
+    pattern = (r"(\d+) 条规则[（(：:]\s*spec (\d+) / lint (\d+) / 评测 (\d+) / 触发 (\d+)"
+               r" / 评审 (\d+) / 库级·挂载·审计 (\d+)")
+    hits = list(re.finditer(pattern, cov))
+    check(len(hits) >= 2, f"《覆盖对照》里能找到逐族规则数（找到 {len(hits)} 处）")
+    reported = {}
+    for m in hits:
+        declared_total = int(m.group(1))
+        declared = dict(zip(families, (int(m.group(i)) for i in range(2, 8))))
+        reported = declared
+        check(declared_total == sum(declared.values()),
+              f"逐族规则数之和 = 声明的总数（{declared_total} vs {sum(declared.values())}）")
+        check(declared == families,
+              f"逐族规则数与代码一致（文档 {declared}，实际 {families}）")
+    check(bool(reported) and sum(families.values()) == 133,
+          f"规则总数 = 133（实得 {sum(families.values())}）——加规则时要同步文档")
 
 
 # --------------------------------------------------------------------------- #

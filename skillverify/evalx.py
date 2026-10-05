@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from .encoding import read_json, read_text
@@ -93,6 +94,17 @@ RUN_INPUTS_NAME = "run-inputs.json"
 #: 允许的隔离级别。**「降级」「未执行」不是失败，但必须写出来**——
 #: 那一轮的数据只能当「参考级证据」，不许被算成技能带来的增益。
 ISOLATION_LEVELS = ("隔离", "降级", "未执行")
+
+#: 断言写入时机的**显式声明字段**（写在 iteration-N/ 的 run-inputs.json 里）。
+#:
+#: 为什么只认显式声明：旧实现比较文件 mtime 来推断「断言是什么时候补的」——复制、克隆、
+#: 任何一次重写都会改掉 mtime，而「断言是不是看过输出之后才写的」这件事**根本不在文件系统里**。
+#: 所以这里不猜：声明了就读出来登记，没声明就记 INFO（不适用）。EVAL-011。
+ASSERTIONS_TIME_FIELD = "assertions_added_at"
+#: 同一份自证里可选的「本轮输出产出时间」，用来给出先后关系。
+#: 注意：给出先后关系**不等于**判定好坏——官方明确允许"先跑一轮再补断言"，
+#: 而"先写断言再跑"同样有它的道理；本项只登记事实，不替使用者选一种流程。
+OUTPUTS_TIME_FIELD = "outputs_produced_at"
 
 
 RULES: dict[str, Rule] = {
@@ -320,6 +332,17 @@ RULES: dict[str, Rule] = {
         f"在 iteration-N/ 下放一份 {RUN_INPUTS_NAME}（模板见 examples/）："
         f"写清 isolation（{'/'.join(ISOLATION_LEVELS)}）、executor、input_hash、prompt_hashes。"
         f"做不到隔离就如实写「降级」——那一轮只能当参考级证据，不许算增益",
+    ),
+    "EVAL-011": Rule(
+        "EVAL-011",
+        f"断言写入时机只认显式声明（{ASSERTIONS_TIME_FIELD}），不用文件时间推断",
+        "HOUSE",
+        "旧体系 V21（断言时机）的机械部分——**换机制**：旧实现靠文件 mtime 推断，"
+        "本项目不猜时间（复制/克隆/重写都会误判）",
+        f"想登记就在 iteration-N/{RUN_INPUTS_NAME} 里写 {ASSERTIONS_TIME_FIELD}"
+        f"（ISO 8601 字符串，例如 2026-10-05T11:00:00+08:00），"
+        f"可选再写 {OUTPUTS_TIME_FIELD} 让工具给出先后关系；不写就记「未声明」，"
+        f"工具不替你推断",
     ),
 }
 
@@ -1097,6 +1120,83 @@ def _check_discrimination(workspace: Path, iteration: int | None) -> Result:
                 f"{len(enough)} 条断言都有区分度（每条观测 ≥{MIN_ASSERTION_OBSERVATIONS} 次）")
 
 
+def parse_iso_time(value: object) -> datetime | None:
+    """把声明里的时间解析成 `datetime`；解析不了返回 None。
+
+    只接受 ISO 8601（`date.fromisoformat`/`datetime.fromisoformat` 能吃的形态，
+    含 `Z` 后缀）。**宽松一点没关系**：这是人写的自证字段，不是机器产出；
+    但它必须**能被解析**——无法解析的声明等于没有声明（记 WARN 而不是当它不存在）。
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _check_assertion_timing(workspace: Path, iteration: int | None) -> Result:
+    """EVAL-011：断言写入时机**只认显式声明**，绝不用文件 mtime 推断。
+
+    来历：旧体系 V21 要求"断言与用例的时机关系"可核对，旧实现靠比较文件 mtime 来推断
+    "断言是什么时候补的"。这条路本机实测就不可靠：复制、克隆、重写、git checkout
+    都会改 mtime，而真正想知道的事（有没有看过输出才写断言）根本不在文件系统里。
+    本项目**明确舍弃 mtime 推断**，改为：谁想登记就在执行自证里写一句时间。
+
+    判定：
+    - 没有 iteration 目录 / 没有 run-inputs.json / 没写这个字段 → INFO（不适用：未声明）；
+    - 写了但解析不出 ISO 8601 → **WARN**（无法解析的声明等于没声明，但要让人知道）；
+    - 写了且可解析 → PASS，证据给出先后关系（同时声明了输出产出时间时）。
+      **先后关系只登记、不判好坏**：官方明确允许"先跑一轮再补断言"，
+      "先写断言再跑"也自有道理——工具不替使用者选一种流程，只把事实写进报告。
+    """
+    iterations, _odd = _iterations(workspace)
+    if iteration is not None:
+        iterations = [item for item in iterations if item[0] == iteration]
+    if not iterations:
+        return _res(RULES["EVAL-011"], INFO, "不适用：没有 iteration 目录")
+
+    declared: list[str] = []
+    bad: list[str] = []
+    for number, path in iterations:
+        record = path / RUN_INPUTS_NAME
+        if not record.is_file():
+            continue
+        data, error = read_json(record)
+        if error or not isinstance(data, dict) or ASSERTIONS_TIME_FIELD not in data:
+            continue
+        raw = data.get(ASSERTIONS_TIME_FIELD)
+        added = parse_iso_time(raw)
+        if added is None:
+            bad.append(f"iteration-{number}: {ASSERTIONS_TIME_FIELD} 应为 ISO 8601 字符串"
+                       f"（实为 {raw!r}）——无法解析的声明等于没有声明")
+            continue
+        produced_raw = data.get(OUTPUTS_TIME_FIELD)
+        produced = parse_iso_time(produced_raw)
+        if produced is None:
+            declared.append(f"iteration-{number}：断言写入 {raw}"
+                            f"（未声明 {OUTPUTS_TIME_FIELD}，只登记时间，不给先后关系）")
+        elif added < produced:
+            declared.append(f"iteration-{number}：断言 {raw} 早于输出 {produced_raw}"
+                            f"（先写断言再跑）")
+        else:
+            declared.append(f"iteration-{number}：断言 {raw} 不早于输出 {produced_raw}"
+                            f"（先跑一轮再补断言——官方允许的流程，只登记不判缺陷）")
+    if bad:
+        return _res(RULES["EVAL-011"], WARN, "；".join(bad[:3]))
+    if not declared:
+        return _res(RULES["EVAL-011"], INFO,
+                    f"未声明：{RUN_INPUTS_NAME} 里没有 {ASSERTIONS_TIME_FIELD}"
+                    f"——本项**不做推断**（旧实现用文件 mtime 猜「断言何时补的」，"
+                    f"复制/克隆/重写都会误判）；想登记就写一句 ISO 时间")
+    return _res(RULES["EVAL-011"], PASS, _summarize(declared, limit=3))
+
+
 def _check_workspace(skill_dir: Path, workspace: Path, doc: EvalsDoc,
                      iteration: int | None) -> list[Result]:
     out: list[Result] = []
@@ -1325,9 +1425,13 @@ def check_evals(
                             "不适用：未找到评测工作区（没有跨轮次观测，谈不上区分度）"))
         results.append(_res(RULES["WS-008"], INFO,
                             "不适用：未找到评测工作区（谈不上执行自证）"))
+        results.append(_res(RULES["EVAL-011"], INFO,
+                            "不适用：未找到评测工作区（没有执行自证可读，"
+                            "谈不上断言写入时机）"))
     else:
         results.extend(_check_workspace(skill_dir, ws, doc, iteration))
         results.append(_check_discrimination(ws, iteration))
+        results.append(_check_assertion_timing(ws, iteration))
         # 幂等：某些路径（例如指定的 iteration 不存在）会先行产出 WS-008 的空结论
         if not any(item.rid == "WS-008" for item in results):
             results.append(_check_run_inputs(ws, iteration))

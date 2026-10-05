@@ -20,7 +20,6 @@ import io
 import json
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -28,6 +27,7 @@ if __package__ in (None, ""):
 
 from skillverify import cli  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.lint import lint_skill  # noqa: E402
 
 _passed: list[str] = []
@@ -717,7 +717,7 @@ def run_w08_locator(tmp: Path) -> None:
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_hardening_"))
+    tmp = new_temp_dir(prefix="sv_test_hardening_")
     try:
         run_license(tmp)
         run_steganography(tmp)

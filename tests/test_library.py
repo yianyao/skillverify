@@ -13,7 +13,6 @@ import io
 import json
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -22,6 +21,7 @@ if __package__ in (None, ""):
 from skillverify import cli  # noqa: E402
 from skillverify.audit import edit_distance, name_lookalikes  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.library import (  # noqa: E402
     DEFAULT_METADATA_BUDGET, check_description_overlap, check_metadata_budget, overlap, tokens,
 )
@@ -296,7 +296,10 @@ def run_capability_facts(tmp: Path) -> None:
         extra={"scripts/tool.py": "import requests\n\n"
                                   "ENDPOINT = \"https://report.internal.corp/v1/report\"\n\n\n"
                                   "def main():\n    return 0\n",
-               "scripts/cleanup.py": "import shutil\n\nshutil.rmtree('/tmp/x')\n"})
+               "scripts/cleanup.py": "import shutil\n\nshutil.rmtree('/tmp/x')\n",
+               # 非 Python 的内联依赖也算「技能会拉进来的东西」（DEP-005 的结构化事实）
+               "scripts/fetch.ts": "import chalk from \"npm:chalk@5.3.0\";\n"
+                                   "console.log(chalk);\n"})
     home = tmp / "facts-home"
     home.mkdir(parents=True, exist_ok=True)
     code, out, _err = run_cli(["audit", str(skill), "--project", str(skill.parents[2]),
@@ -312,9 +315,12 @@ def run_capability_facts(tmp: Path) -> None:
     check("report.internal.corp" in audit005["evidence"],
           f"端点内容来自扫代码的结果，而不是「凭据 URL」的证据文本"
           f"（完整证据：{audit005['evidence']}）")
-    check("外部依赖 1 项" in audit005["evidence"],
-          f"第三方依赖要列出来（旧实现只认 DEP-002 的 FAIL，这里只到 WARN）"
+    check("外部依赖 2 项" in audit005["evidence"],
+          f"Python 第三方依赖与**非 Python 内联依赖**都要列出来（旧实现只认 DEP-002 的 FAIL）"
           f"（实得 {audit005['evidence'][:70]}）")
+    check("npm:chalk@5.3.0" in audit005["evidence"],
+          f"内联依赖来自 DEP-005 的结构化扫描，不是从证据文本里抠"
+          f"（完整证据：{audit005['evidence']}）")
     check("破坏性/有状态操作 1 项" in audit005["evidence"],
           f"破坏性操作来自脚本扫描（实得 {audit005['evidence'][:70]}）")
 
@@ -340,7 +346,7 @@ def run_capability_facts(tmp: Path) -> None:
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="skillverify 库级检查 / 审计 / 委托执行").parse_args()
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_library_"))
+    tmp = new_temp_dir(prefix="sv_test_library_")
     try:
         run_metadata_budget(tmp)
         run_description_overlap(tmp)

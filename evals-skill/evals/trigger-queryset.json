@@ -1,6 +1,6 @@
 {
   "skill_name": "evals-skill",
-  "notes": "正例 10 / 负例 10；train 12 / validation 8。正例刻意不照抄 description 词句。",
+  "notes": "正例 10 / 负例 10；train 12 / validation 8。**每个子集里正负例都有**（train 6 正 6 负、validation 4 正 4 负）：validation 只有负例时，修订后测不出「该触发却不触发」。正例刻意不照抄 description 词句。",
   "queries": [
     {
       "id": "q01",
@@ -48,28 +48,28 @@
       "id": "q07",
       "query": "我想知道我的技能有没有自我应验的毛病",
       "should_trigger": true,
-      "subset": "train",
+      "subset": "validation",
       "rationale": "正例：该技能该被触发（描述生成/评测资产）"
     },
     {
       "id": "q08",
       "query": "查询集正负例比例怎么配",
       "should_trigger": true,
-      "subset": "train",
+      "subset": "validation",
       "rationale": "正例：该技能该被触发（描述生成/评测资产）"
     },
     {
       "id": "q09",
       "query": "断言写成什么样算可判定",
       "should_trigger": true,
-      "subset": "train",
+      "subset": "validation",
       "rationale": "正例：该技能该被触发（描述生成/评测资产）"
     },
     {
       "id": "q10",
       "query": "帮我把线上遇到的坏例子变成用例",
       "should_trigger": true,
-      "subset": "train",
+      "subset": "validation",
       "rationale": "正例：该技能该被触发（描述生成/评测资产）"
     },
     {
@@ -118,28 +118,28 @@
       "id": "q17",
       "query": "推荐几本讲分布式系统的书",
       "should_trigger": false,
-      "subset": "validation",
+      "subset": "train",
       "rationale": "负例：与评测资产生成无关的常见请求"
     },
     {
       "id": "q18",
       "query": "帮我算一下这个月的房贷",
       "should_trigger": false,
-      "subset": "validation",
+      "subset": "train",
       "rationale": "负例：与评测资产生成无关的常见请求"
     },
     {
       "id": "q19",
       "query": "写一首关于秋天的五言诗",
       "should_trigger": false,
-      "subset": "validation",
+      "subset": "train",
       "rationale": "负例：与评测资产生成无关的常见请求"
     },
     {
       "id": "q20",
       "query": "这段报错是什么意思",
       "should_trigger": false,
-      "subset": "validation",
+      "subset": "train",
       "rationale": "负例：与评测资产生成无关的常见请求"
     }
   ]

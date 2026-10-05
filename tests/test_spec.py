@@ -16,13 +16,13 @@ import os
 import argparse
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):  # 允许 `python tests/test_spec.py` 直接运行
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.report import FAIL, PASS  # noqa: E402
 from skillverify.spec import check_spec, find_official_cli, run_official  # noqa: E402
 
@@ -316,7 +316,7 @@ def main() -> int:
         print("FAIL: --require-official 但未找到官方 CLI", file=sys.stderr)
         return 1
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_spec_"))
+    tmp = new_temp_dir(prefix="sv_test_spec_")
     try:
         run_case_matrix(tmp, official)
         run_semantics(tmp)

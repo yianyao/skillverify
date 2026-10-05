@@ -19,7 +19,6 @@ import json
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -28,10 +27,12 @@ if __package__ in (None, ""):
 from skillverify import cli, deliver, watch  # noqa: E402
 from skillverify.discover import discover_skills, load_config  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir, temp_dir  # noqa: E402
 from skillverify.report import FAIL, PASS, SKIP, WARN, LibraryEntry, LibraryReport, Report, Result  # noqa: E402
 
 _passed: list[str] = []
 _failed: list[str] = []
+_skipped: list[str] = []
 
 
 def ok(msg: str) -> None:
@@ -42,6 +43,16 @@ def ok(msg: str) -> None:
 def fail(msg: str) -> None:
     _failed.append(msg)
     print(f"  FAIL {msg}")
+
+
+def skip(msg: str) -> None:
+    """本项**未执行**（环境事实），既不算通过也不算失败。
+
+    与 `skillverify` 自己的 SKIP 语义一致：不可执行的环境不能让结论看起来是绿的，
+    但也不该让"沙箱里跑不了 sh"这种环境限制长成一条假缺陷（红的 FAIL 会掩盖真问题）。
+    """
+    _skipped.append(msg)
+    print(f"  SKIP {msg}")
 
 
 def check(cond: bool, msg: str) -> None:
@@ -93,6 +104,30 @@ def make_repo(root: Path, name: str = "repo") -> Path:
     (repo / ".agents" / "skills").mkdir(parents=True)
     git(repo, "init", "-q")
     return repo
+
+
+def sh_can_run_hooks(tmp: Path) -> tuple[bool, str]:
+    """探针：git 在这台机器上到底能不能执行 hook。
+
+    hook 是 `#!/bin/sh` 脚本，由 git 自带的 `sh.exe`（MSYS）解释。实测过两种让它彻底
+    跑不起来的环境：① 本机 `sh` 不在 PATH（不影响——git 用自带的那个）；② **沙箱**
+    （DSH 的 AppContainer 模式）里 MSYS 连信号管道都建不出来：
+    `sh: *** fatal error - couldn't create signal pipe, Win32 error 5`。
+
+    探针故意用一个 `exit 0` 的 hook：它只会**放行**提交。因此"探针提交失败"只可能是
+    环境跑不了 hook，不可能是门禁逻辑有问题——先把环境问清楚，再决定端到端用例
+    "执行了没有"，而不是让环境限制伪装成 3 条 FAIL。
+    """
+    probe = make_repo(tmp / "shprobe")
+    (probe / "README.md").write_text("# probe\n", encoding="utf-8", newline="")
+    hook = deliver.hook_path(probe)
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="")
+    git(probe, "add", "-A")
+    proc = git(probe, "commit", "-m", "probe")
+    if proc.returncode == 0:
+        return True, ""
+    return False, (proc.stderr or proc.stdout).strip().replace("\n", " ")
 
 
 # --------------------------------------------------------------------------- #
@@ -356,7 +391,7 @@ def run_hook_fallback(tmp: Path) -> None:
 
     checkout = Path(__file__).resolve().parent.parent
     # cwd 用临时目录：真实 hook 的 cwd 是「被提交的那个项目」，不是本工具的 checkout
-    with tempfile.TemporaryDirectory(prefix="sv_hookprobe_") as neutral:
+    with temp_dir(prefix="sv_hookprobe_") as neutral:
         neutral_dir = Path(neutral)
         ok, why = deliver.probe_hook_fallback(sys.executable, checkout, cwd=neutral_dir)
         check(ok, f"兜底自测在非 checkout 目录下也能导入（实得 {ok}：{why}）")
@@ -413,6 +448,19 @@ def run_hook(tmp: Path) -> None:
     check(code == 1 and "用法" in err, "裸 `hook` 打印用法并返回 1")
 
     # 端到端：坏技能提交被拦，修好后放行
+    #
+    # 先探明环境能不能执行 hook（见 sh_can_run_hooks 的说明）。跑不了就记 SKIP：
+    # 安装侧的事实（hook 文本、状态、幂等、他人 hook 的处理）上面的断言已经查过，
+    # 未执行的是"提交那一刻门禁真的拦住了吗"这一条。
+    sh_ok, sh_why = sh_can_run_hooks(tmp)
+    if not sh_ok:
+        skip(f"端到端 hook 拦截未执行：本机 git 无法执行 hook（{sh_why[:200]}）")
+        skip("端到端：仓库历史里没有这次提交 未执行：同上（环境限制）")
+        skip("端到端 hook 放行未执行：同上（环境限制，不是门禁缺陷）")
+        skip("端到端非技能文件不阻断未执行：同上（环境限制，不是门禁缺陷）")
+        skip("端到端 `--no-verify` 逃生阀未执行：同上（环境限制，不是门禁缺陷）")
+        return
+
     e2e = make_repo(tmp / "hk" / "e2e")
     skill = write_skill(e2e / ".agents" / "skills", "demo-skill",
                         body="# Demo\n\nSee `references/missing.md`.\n", with_guide=False)
@@ -551,9 +599,9 @@ def run_dogfood(repo: Path) -> None:
     if not legacy.is_dir():
         ok("无 legacy/ 目录，跳过")
         return
-    with tempfile.TemporaryDirectory(prefix="sv_auto_home_") as home:
+    with temp_dir(prefix="sv_auto_home_") as home:
         code, out, err = run_cli([
-            "deliver", "--project", str(repo), "--user-home", home,
+            "deliver", "--project", str(repo), "--user-home", str(home),
             "--root", str(legacy), "--stages", "lint", "--json",
         ])
     payload = json.loads(out)
@@ -576,7 +624,7 @@ def main() -> int:
                         help="额外对 legacy/ 跑一次 deliver 并打印阻断项")
     args = parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_automation_"))
+    tmp = new_temp_dir(prefix="sv_test_automation_")
     try:
         run_watch_helpers(tmp)
         run_watch_loop(tmp)
@@ -588,14 +636,14 @@ def main() -> int:
             run_hook_fallback(tmp)
             run_staged_filter(tmp)
         else:
-            ok("git 不可用：hook / --staged 用例跳过")
+            skip("git 不可用：hook / --staged 用例未执行")
         if args.dogfood:
             run_dogfood(Path(__file__).resolve().parent.parent)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     total = len(_passed) + len(_failed)
-    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")
+    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
 
 

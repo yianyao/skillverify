@@ -18,14 +18,15 @@ import io
 import json
 import shutil
 import sys
-import tempfile
 from pathlib import Path
+from typing import Callable
 
 if __package__ == "" or __package__ is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillverify import cli, trigger  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
+from skillverify.tmpdir import new_temp_dir  # noqa: E402
 from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 
 _passed: list[str] = []
@@ -49,12 +50,35 @@ def check(cond: bool, msg: str) -> None:
 DESC = "A demo skill used by the trigger-asset regression suite."
 
 
+def interleave(positives: int, negatives: int) -> list[tuple[str, bool]]:
+    """正负例**交替**排列（P,N,P,N,…）。
+
+    **为什么不能"正例全在前、负例全在后"再按下标切分**：那样 train 会拿走几乎所有正例、
+    validation 只剩负例——而 validation 的用途正是"修订后测泛化"，只有负例就永远测不出
+    "该触发时不触发"。`TRIG-005` 会（正确地）报出这种偏斜；夹具本身必须是像样的资产，
+    否则注入自测的基线会被自己的 WARN 染脏（"切分全在 train"那处变异就失去信号）。
+    """
+    out: list[tuple[str, bool]] = []
+    pi = ni = 0
+    while pi < positives or ni < negatives:
+        if pi < positives:
+            out.append((f"P{pi + 1:02d}", True))
+            pi += 1
+        if ni < negatives:
+            out.append((f"N{ni + 1:02d}", False))
+            ni += 1
+    return out
+
+
 def make_queries(*, positives: int = 8, negatives: int = 8, train_share: float = 0.625,
-                 near_miss: bool = True, categories: bool = True) -> list[dict]:
-    """造一份符合口径的查询集（正负各 8 条 = 16 条，train 占 62.5%）。"""
+                 near_miss: bool = True, categories: bool = True,
+                 subset_of: Callable[[dict], str] | None = None) -> list[dict]:
+    """造一份符合口径的查询集（正负各 8 条 = 16 条，train 占 62.5%）。
+
+    `subset_of` 给出时按它决定每条的子集（用来构造"配比偏斜"这类反例）。
+    """
     queries: list[dict] = []
-    items = ([("P%02d" % (i + 1), True) for i in range(positives)]
-             + [("N%02d" % (i + 1), False) for i in range(negatives)])
+    items = interleave(positives, negatives)
     train_count = round(len(items) * train_share)
     for idx, (pid, should) in enumerate(items):
         item = {
@@ -68,6 +92,9 @@ def make_queries(*, positives: int = 8, negatives: int = 8, train_share: float =
             item["category"] = "positive-direct" if should else (
                 "negative-near-miss" if near_miss else "negative-unrelated")
         queries.append(item)
+    if subset_of is not None:
+        for item in queries:
+            item["subset"] = subset_of(item)
     return queries
 
 
@@ -213,17 +240,40 @@ def run_queryset(tmp: Path) -> None:
     ev = evidence_of(trigger.check_trigger(none_neg), "TRIG-004")
     check("没有负例" in ev, "没有负例 → 明确指出")
 
-    # 切分
+    # 切分：口径**按条数**判（|实得 − 期望| ≤ 1 条），且两个子集的正负配比要与全集一致
     no_val = write_skill(root, "no-val", queries=make_queries(train_share=1.0))
     check(statuses(trigger.check_trigger(no_val))["TRIG-005"] == WARN
           and "validation" in evidence_of(trigger.check_trigger(no_val), "TRIG-005"),
           "全在 train（没有 validation）→ TRIG-005 WARN")
     skewed = write_skill(root, "skewed", queries=make_queries(train_share=0.9))
-    check(statuses(trigger.check_trigger(skewed))["TRIG-005"] == WARN,
-          "train 占比 90% 超出 55–65% → WARN")
+    check(statuses(trigger.check_trigger(skewed))["TRIG-005"] == WARN
+          and "期望" in evidence_of(trigger.check_trigger(skewed), "TRIG-005"),
+          "train 14/16 远超期望 10 条（差 4 条）→ WARN，证据里给出期望条数")
     check(statuses(trigger.check_trigger(
         write_skill(root, "ok-split", queries=make_queries())))["TRIG-005"] == PASS,
-        "62.5% train → PASS")
+        "train 10/16（62.5%）与期望 10 条一致 → PASS")
+
+    # 这条是"按条数"口径的**判别性**断言：12 条样本里 train=8 是 66.7%，
+    # 落在旧的 ±0.05 比例带（55–65%）之外会被误报；差 1 条在容差内，必须放过。
+    edge = write_skill(root, "edge", queries=make_queries(positives=6, negatives=6,
+                                                          train_share=8 / 12))
+    check(statuses(trigger.check_trigger(edge))["TRIG-005"] == PASS,
+          "12 条里 train=8（差 1 条，比例 66.7% 在旧比例口径带外）→ PASS：容差是按条数的")
+
+    # 配比偏斜：train 条数合格，但正例全在 train、validation 只剩负例
+    seen = {"neg": 0}
+
+    def biased_subset(item: dict) -> str:
+        if item["should_trigger"]:
+            return "train"
+        seen["neg"] += 1
+        return "train" if seen["neg"] <= 2 else "validation"
+
+    biased = write_skill(root, "biased", queries=make_queries(subset_of=biased_subset))
+    report = trigger.check_trigger(biased)
+    check(statuses(report)["TRIG-005"] == WARN
+          and "validation 的正例 0/" in evidence_of(report, "TRIG-005"),
+          "正例全堆进 train（validation 只剩负例）→ WARN：泛化终测测不出漏触发")
 
     # near-miss 标注
     no_cat = write_skill(root, "no-cat", queries=make_queries(categories=False))
@@ -394,7 +444,7 @@ def main() -> int:
                         help="额外确认旧库资产被识别为需迁移")
     args = parser.parse_args()
 
-    tmp = Path(tempfile.mkdtemp(prefix="sv_test_trigger_"))
+    tmp = new_temp_dir(prefix="sv_test_trigger_")
     try:
         run_presence(tmp)
         run_queryset(tmp)

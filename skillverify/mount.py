@@ -16,18 +16,19 @@
 `--host` 可选：不指定就**逐个已配置的宿主档**都跑一遍（新接一个宿主时，这正是"零代码接入"的验收）。
 
 **为什么不碰原目录**：V23 自己就写明"复制为临时副本……不触碰原目录"。这里照办：
-所有注入都在 `tempfile` 里做，原技能目录全程只读。
+所有注入都在临时目录（`tmpdir.temp_dir`）里做，原技能目录全程只读。
 """
 
 from __future__ import annotations
 
-import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 
 from .discover import Config, Discovery, discover_skills, load_config
 from .encoding import read_text
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .spec import find_skill_md, skill_md_case_mismatch
+from .tmpdir import temp_dir
 from .report import FAIL, PASS, SKIP, WARN, Report, Result, Rule
 
 #: 旧方案的出处（本项目承接其**仓库侧**部分）
@@ -110,7 +111,14 @@ def _readable(skill: Path) -> tuple[str, str, str]:
 def check_fail_loud(skill_name: str) -> Result:
     """V23 的方法：对**临时副本**注入结构破坏，断言解析器逐个报错。"""
     failures: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="skillverify-mount-") as tmp:
+    with ExitStack() as stack:
+        try:
+            tmp = stack.enter_context(temp_dir(prefix="skillverify-mount-"))
+        except OSError as exc:
+            # 临时目录建不出来是**环境事实**，不是技能缺陷：记 SKIP（本项未执行），
+            # 绝不静默按通过处理（本项目对 SKIP 的定义：未执行 ≠ 通过 ≠ 不适用）。
+            return _res(RULES["MOUNT-004"], SKIP,
+                        f"未执行：临时目录不可用（{exc}）——无法建立副本做注入探针")
         probe_root = Path(tmp) / skill_name
         probe_root.mkdir(parents=True)
         # ---- 对照组（旧 V23 的方法要求）----

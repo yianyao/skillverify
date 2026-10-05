@@ -1,6 +1,6 @@
 ---
 name: evals-skill
-description: 为新建或已有的 Agent Skill 生成评测资产——官方格式的 evals.json（输出质量用例与可判定断言）和 trigger-queryset.json（触发查询集，约20条、正负各8到10条、near-miss 负例为主、train 占55%-65%），内置口径硬约束、空洞断言拦截、防自我应验查重与 skillverify 校验闭环；绝不生成 trigger-runs.json（那是执行层的产物，凭空伪造即假证据）。当用户要为某个技能补评测、写 evals、建触发查询集时使用。
+description: 为新建或已有的 Agent Skill 生成评测资产——官方格式的 evals.json（输出质量用例与可判定断言）和 trigger-queryset.json（触发查询集，约20条、正负各8到10条、near-miss 负例为主、train 约60%且按条数±1、两个子集分层），内置口径硬约束、空洞断言拦截、防自我应验查重与 skillverify 校验闭环；绝不生成 trigger-runs.json（那是执行层的产物，凭空伪造即假证据）。当用户要为某个技能补评测、写 evals、建触发查询集时使用。
 license: MIT
 ---
 
@@ -42,7 +42,7 @@ license: MIT
 
 - 约 **20 条**查询（起步可 4–6 条先跑通流程，交付说明里标注"过渡规模"）；
 - 正例 8–10 条、负例 8–10 条，**负例以 near-miss 为主**（共享表面词、意图不同）；
-- `subset`：train 占 **55%–65%**——train 用来调描述，validation 留作验收，调描述时只准看 train；
+- `subset`：train 占 **约 60%**（**按条数**判，容差 ±1 条）——train 用来调描述，validation 留作验收，调描述时只准看 train；且两个子集里正负例都要有（正例全堆进 train 会让验收那侧测不出漏触发）；
 - `id` 同文件内唯一；`should_trigger` 严格布尔 `true`/`false`（写成字符串会被判错）；
 - `category` 建议写（如 positive-direct / negative-near-miss，工具不校验取值，供人读与统计）；
 - `rationale` **必写**——负例的价值全在这句话里（例：「有『算一下』但对象是数学题」）。

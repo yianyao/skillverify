@@ -283,7 +283,7 @@ def capabilities(ctx: LintContext | None) -> dict:
         "破坏性/有状态操作": [f"{rp}: {'、'.join(kinds)}"
                               for rp, kinds in script_facts.destructive],
         "疑似硬编码密钥": list(security_facts.strong_secrets),
-        "外部依赖": list(dep_facts.third_party),
+        "外部依赖": list(dep_facts.third_party) + list(dep_facts.inline),
     }
 
 

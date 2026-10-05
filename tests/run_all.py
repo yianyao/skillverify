@@ -25,14 +25,14 @@ if __package__ in (None, ""):
 #: (模块名, 简述)；顺序按依赖从底层到上层
 SUITES: list[tuple[str, str]] = [
     ("test_spec", "官方规范（对齐 skills-ref 0.1.1）"),
-    ("test_lint", "机械补检 42 条规则"),
+    ("test_lint", "机械补检 47 条规则"),
     ("test_discover", "技能发现 + 声明式宿主适配 + check"),
     ("test_automation", "watch / deliver / git hook"),
     ("test_evalx", "评测资产（官方 evals 形状与工作区产物）"),
     ("test_trigger", "触发评测资产（查询集 / 运行记录 / 阈值）"),
     ("test_review", "语义评审（提示词目录 / 任务包 / 回写 / 汇总）"),
     ("test_docs", "文档与结构说明（演练块真跑 + 文件树一致）"),
-    ("test_injection", "注入自测（变异 40 处 = 38 单技能 + 2 库级，必须逐处报错且不牵连）"),
+    ("test_injection", "注入自测（变异 41 处 = 39 单技能 + 2 库级，必须逐处报错且不牵连）"),
     ("test_selfcheck", "自检（死代码 / 过期措辞）"),
     ("test_library", "库级检查（元数据预算 / 描述重叠）+ 外来技能审计 + 评测委托执行"),
     ("test_hardening", "A 组加固（许可 / 隐写 / dry-run / 评委校准 / 断言区分度 / 豁免 / 工作区历史 / 记录维度）"),
@@ -77,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
         module = importlib.import_module(f"tests.{name}")
         module._passed.clear()  # noqa: SLF001 - 同一进程内复用模块级计数器
         module._failed.clear()  # noqa: SLF001
+        skip_list = getattr(module, "_skipped", None)  # 只有实现了 SKIP 的套件才有
+        if skip_list is not None:
+            skip_list.clear()
         extra = ["--dogfood"] if (args.dogfood and name in DOGFOOD_SUITES) else []
         if name in SLOW_SUITES and args.install:
             extra.append("--install")
@@ -89,18 +92,25 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             sys.argv = saved_argv
         passed, failed = len(module._passed), len(module._failed)  # noqa: SLF001
-        results.append((name, code, f"PASS={passed} FAIL={failed}"))
-        if not args.quiet and failed:
+        skipped = len(skip_list) if skip_list is not None else 0
+        detail = f"PASS={passed} FAIL={failed}" + (f" SKIP={skipped}" if skipped else "")
+        results.append((name, code, detail))
+        if not args.quiet and (failed or skipped):
             for line in buffer.getvalue().splitlines():
-                if "FAIL " in line:
+                if "FAIL " in line or "SKIP " in line:
                     print(f"  {line.strip()}")
         status = "OK  " if code == 0 else "FAIL"
-        print(f"[{status}] {name:<18} {desc:<34} {results[-1][2]}")
+        print(f"[{status}] {name:<18} {desc:<34} {detail}")
 
     total_pass = sum(int(r[2].split()[0].split("=")[1]) for r in results)
     total_fail = sum(int(r[2].split()[1].split("=")[1]) for r in results)
+    total_skip = sum(int(tok.split("=")[1]) for _n, _c, d in results for tok in d.split()
+                     if tok.startswith("SKIP="))
     bad = [name for name, code, _ in results if code != 0]
-    print(f"\n合计: 套件 {len(results)} 个；断言 PASS={total_pass} FAIL={total_fail}")
+    line = f"\n合计: 套件 {len(results)} 个；断言 PASS={total_pass} FAIL={total_fail}"
+    if total_skip:
+        line += f"；**未执行 SKIP={total_skip}**（不算通过，见上面的 SKIP 行）"
+    print(line)
     if bad:
         print(f"未通过的套件: {', '.join(bad)}", file=sys.stderr)
         return 1
