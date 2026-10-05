@@ -1,7 +1,6 @@
 ---
 name: evals-skill
 description: 为新建或已有的 Agent Skill 生成评测资产——官方格式的 evals.json（输出质量用例与可判定断言）和 trigger-queryset.json（触发查询集，约20条、正负各8到10条、near-miss 负例为主、train 占55%-65%），内置口径硬约束、空洞断言拦截、防自我应验查重与 skillverify 校验闭环；绝不生成 trigger-runs.json（那是执行层的产物，凭空伪造即假证据）。当用户要为某个技能补评测、写 evals、建触发查询集时使用。
-version: 1.0.0
 license: MIT
 ---
 

@@ -417,9 +417,10 @@ fi
 PY="{_sh_path(Path(python))}"
 CHECKOUT="{_sh_path(checkout)}"
 if [ -x "$PY" ]; then
-    PYTHONPATH="$CHECKOUT${{PYTHONPATH:+{sep}$PYTHONPATH}}"
-    export PYTHONPATH
-    exec "$PY" -m skillverify.cli deliver --staged --quiet
+    # 用 `-c` + sys.path.insert 而不是 `-m` + PYTHONPATH：嵌入式发行版（带 `._pth`）会
+    # **忽略 PYTHONPATH**，那种写法会让兜底静默失效（hook 只打印告警就放行，等于空转）。
+    exec "$PY" -c "import sys; sys.path.insert(0, r'$CHECKOUT'); \
+from skillverify.cli import main; raise SystemExit(main(['deliver', '--staged', '--quiet']))"
 fi
 
 echo "{HOOK_MARKER}: 未找到可执行的 skillverify（已安装的解释器: $PY）" >&2
@@ -466,7 +467,36 @@ def install_hook(project: Path, *, force: bool = False, fail_closed: bool = Fals
         path.chmod(path.stat().st_mode | 0o111)
     except OSError:
         pass
+
+    # 装完**当场验一次兜底命令**：嵌入式/`._pth` 解释器上它可能压根导不进来，
+    # 那时 hook 会静默空转（fail-open 是声明的取舍，但"装了就等于没装"必须当场说出来）。
+    ok, why = probe_hook_fallback(sys.executable, checkout, cwd=project)
+    if not ok:
+        action += (f"；**注意**：兜底命令在这台机器上不可用（{why}）——"
+                   f"若你的 PATH 里没有 skillverify，提交将不会被门禁检查")
     return path, action
+
+
+def probe_hook_fallback(python: str, checkout: Path, *, cwd: Path | None = None,
+                        timeout_s: float = 30.0) -> tuple[bool, str]:
+    """测一次 hook 的兜底命令（与生成出来的 hook 同形），返回 (是否可用, 原因)。
+
+    与 hook 里那段保持**同形**很重要：测别的形式等于没测。
+    `cwd` 也要贴近真实：git 跑 hook 时的 cwd 是**被提交的那个项目**，不是本工具的 checkout——
+    所以"在 checkout 目录里能 import"证明不了兜底可用（那里的 cwd 本来就在 sys.path 上）。
+    """
+    code = ("import sys; sys.path.insert(0, r'%s'); "
+            "from skillverify.cli import main; print('ok')" % checkout)
+    try:
+        proc = subprocess.run([python, "-c", code], capture_output=True, text=True,
+                              cwd=str(cwd) if cwd else None,
+                              encoding="utf-8", errors="replace", timeout=timeout_s)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"无法执行 {python}（{exc}）"
+    if proc.returncode == 0 and "ok" in (proc.stdout or ""):
+        return True, ""
+    detail = ((proc.stderr or proc.stdout or "").strip().splitlines() or ["无输出"])[-1]
+    return False, detail[:120]
 
 
 def hook_status(project: Path) -> tuple[str, Path]:

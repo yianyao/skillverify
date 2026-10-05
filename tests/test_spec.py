@@ -256,6 +256,30 @@ def run_regressions(tmp: Path) -> None:
     check(doc5.get("key") == "第一行\n第二行", f"`|-` 去掉末尾换行（实得 {doc5.get('key')!r}）")
 
 
+def run_repo_skills(tmp: Path) -> None:
+    """本仓库**自己发布**的技能必须过自家 spec（legacy/ 是冻结语料，不算）。
+
+    为什么需要：`evals-skill/SKILL.md` 曾带一个 `version:` 顶层字段（违反 SKILL-004），
+    而 `--dogfood` 只拉 `legacy/`，于是自家回归永远抓不到「我们自己的技能过不了自己的校验器」。
+    """
+    print("[test_repo_skills]")
+    repo = Path(__file__).resolve().parent.parent
+    found: list[Path] = []
+    for path in repo.rglob("SKILL.md"):
+        rel = path.relative_to(repo).as_posix()
+        if rel.startswith("legacy/") or ".agents/" in rel or ".verify" in rel:
+            continue
+        found.append(path)
+    check(bool(found), f"仓库里有自家发布的技能可检查（{len(found)} 个）")
+    bad: list[str] = []
+    for path in found:
+        _doc, report = check_spec(path.parent)
+        fails = [r.rid for r in report.results if r.status == FAIL]
+        if fails:
+            bad.append(f"{path.relative_to(repo).as_posix()}: {', '.join(fails)}")
+    check(not bad, f"自家技能全部通过 spec（不过的: {bad}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     parser = argparse.ArgumentParser(description="skillverify spec 模块回归测试")
@@ -275,6 +299,7 @@ def main() -> int:
         run_semantics(tmp)
         run_path_errors(tmp)
         run_regressions(tmp)
+        run_repo_skills(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

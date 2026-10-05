@@ -161,6 +161,17 @@ def run_catalog(tmp: Path) -> None:
     check("PASS 判据" in md and "FAIL 判据" in md and "证据要求" in md,
           "Markdown 渲染含判据与证据要求小节")
 
+    # runner 的指令模板必须与校验器同口径：早先它写 PASS|FAIL|NA|WARN，
+    # 而 VERDICTS 只认三个——照文档填 WARN 的 runner 会被 REV-005 判 FAIL，
+    # 档 1 流水线必然报错（"按文档写就会错"的硬伤）。
+    from skillverify import runner
+    check(runner.VERDICT_ENUM == "|".join(review.VERDICTS),
+          f"runner 的 verdict 枚举从 VERDICTS 派生（实得 {runner.VERDICT_ENUM}）")
+    check(f'"verdict": "{runner.VERDICT_ENUM}"' in runner._INSTRUCTION,
+          "指令模板里出现的枚举与派生值一致（不是另写一份）")
+    check("WARN" not in runner._INSTRUCTION.split("verdict")[1].split(",")[0],
+          "指令模板的 verdict 取值里没有 WARN（校验器不认它）")
+
     # 选择器
     check(len(review.select_prompts(catalog, "W-01,W-13")) == 2, "--prompts 按 id 选择")
     check(len(review.select_prompts(catalog, None, ["W"])) == 17, "--family 按家族选择")

@@ -29,6 +29,7 @@ from . import __version__
 from .report import FAIL, PASS, WARN, Report, Result, Rule
 from .review import (
     RECORD_SCHEMA,
+    VERDICTS,
     WRITEBACK_SCHEMA,
     Prompt,
     load_catalog,
@@ -53,9 +54,15 @@ DEFAULT_TIMEOUT_S = 180.0
 #: 要求 runner 输出的单条结论字段
 ENTRY_FIELDS = ("prompt_id", "verdict", "evidence", "finding", "suggestion")
 
+#: 指令模板里的 verdict 枚举**从校验器派生**，绝不另写一份：
+#: 早先这里写死成 `PASS|FAIL|NA|WARN`，而 `review.VERDICTS` 只认三个——
+#: 照文档填 `WARN` 的 runner 会被 `REV-005` 判 FAIL，档 1 流水线必然报错。
+#: 这是全仓库唯一一处「按文档写就会错」的硬伤，改成派生后这一类分叉不可能再发生。
+VERDICT_ENUM = "|".join(VERDICTS)
+
 _INSTRUCTION = """你是技能评审者。请**只**输出一个 JSON 对象（不要解释、不要围栏）：
 
-{{"prompt_id": "{pid}", "verdict": "PASS|FAIL|NA|WARN", "evidence": "可定位的证据（文件:行 / 原文片段 / 具体计数）", "finding": "判 FAIL 时写清问题，否则空串", "suggestion": "可选建议"}}
+{{"prompt_id": "{pid}", "verdict": "{verdict_enum}", "evidence": "可定位的证据（文件:行 / 原文片段 / 具体计数）", "finding": "判 FAIL 时写清问题，否则空串", "suggestion": "可选建议"}}
 
 硬性要求：
 - 必须看技能目录里的真实文件再下结论；推测、复述判据、空话一律无效；
@@ -69,6 +76,8 @@ _INSTRUCTION = """你是技能评审者。请**只**输出一个 JSON 对象（�
 判据（FAIL）：{fail_criteria}
 证据要求：{evidence_required}
 """
+_INSTRUCTION = _INSTRUCTION.replace("{verdict_enum}", VERDICT_ENUM)
+
 
 
 @dataclass

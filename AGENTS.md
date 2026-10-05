@@ -17,13 +17,16 @@
 ## 二、跑起来
 
 ```powershell
-python -m tests.run_all              # 11 个套件，约 2 分钟（离线）
+python -m tests.run_all              # 12 个套件（默认 11），约 2 分钟（离线）
 python -m tests.run_all --dogfood    # 另把 legacy/ 下的旧技能拉进来跑
 python -m tests.run_all --install    # 再跑打包真装检查（需要网络，约 1 分钟）
 python -m tests.test_lint            # 也可以单跑某一套
 ```
 
-解释器路径与 UTF-8 环境变量见 `AGENTS.local.md`。要求 Python ≥3.11（`tomllib`）。
+解释器路径与 UTF-8 环境变量见 `AGENTS.local.md`。
+Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`/`review` 在 3.10 可用）；
+`discover`/`check`/`watch`/`deliver`/`hook` 需要 **≥3.11**（用 `tomllib` 解析 `hosts.toml`）。
+推荐统一用 3.11+，省得记哪条命令要哪个版本。
 
 ## 三、不许破坏的不变量（每条都有测试守着）
 
@@ -89,7 +92,7 @@ python -m tests.test_lint            # 也可以单跑某一套
   另有开发者向的《覆盖对照-生命周期验证方案.md》与本文件。
 - `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
 - 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
-- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（11 个套件 + 打包真装；具体断言数看输出，本文件不写死数字）。
+- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（12 个套件 = 默认 11 + 打包真装；具体断言数看输出，本文件不写死数字）。
 - CI 样例在 `.github/workflows/skillverify.yml`：改门禁口径时同步它。
 - 库级检查 `LIB-001/002` 在 `library.py`：预算默认 8000 **是本项目约定**（文档里必须保留这句，
   别写成官方口径）；两条都只记 WARN——预算口径由宿主决定，工具不替宿主阻断。

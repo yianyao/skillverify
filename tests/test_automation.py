@@ -341,6 +341,31 @@ def run_deliver_command(tmp: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
+def run_hook_fallback(tmp: Path) -> None:
+    """hook 的兜底调用不许依赖 PYTHONPATH（嵌入式解释器会忽略它），且安装时要自测。
+
+    早先兜底是 `PYTHONPATH=... exec "$PY" -m skillverify.cli`：在带 `._pth` 的嵌入式发行版上
+    PYTHONPATH 被忽略 → 兜底静默失效，hook 只打印告警就放行（等于空转）。
+    """
+    print("[test_hook_fallback]")
+    content = deliver.hook_content(sys.executable, Path("/checkout"))
+    check("PYTHONPATH=" not in content and "export PYTHONPATH" not in content,
+          "hook 不再用 PYTHONPATH 注入路径（注释里提到它没关系）")
+    check("sys.path.insert" in content, "hook 用 sys.path.insert 把 checkout 放进路径")
+    check("skillverify.cli" in content, "hook 仍然调用同一个入口")
+
+    checkout = Path(__file__).resolve().parent.parent
+    # cwd 用临时目录：真实 hook 的 cwd 是「被提交的那个项目」，不是本工具的 checkout
+    with tempfile.TemporaryDirectory(prefix="sv_hookprobe_") as neutral:
+        neutral_dir = Path(neutral)
+        ok, why = deliver.probe_hook_fallback(sys.executable, checkout, cwd=neutral_dir)
+        check(ok, f"兜底自测在非 checkout 目录下也能导入（实得 {ok}：{why}）")
+        bad_ok, bad_why = deliver.probe_hook_fallback(sys.executable,
+                                                     Path("/nonexistent-checkout"),
+                                                     cwd=neutral_dir)
+        check(not bad_ok and bool(bad_why), f"自测能失败（假 checkout → {bad_why[:40]}）")
+
+
 def run_hook(tmp: Path) -> None:
     print("[test_hook]")
     repo = make_repo(tmp / "hk")
@@ -560,6 +585,7 @@ def main() -> int:
         run_deliver_previous(tmp)
         if shutil.which("git"):
             run_hook(tmp)
+            run_hook_fallback(tmp)
             run_staged_filter(tmp)
         else:
             ok("git 不可用：hook / --staged 用例跳过")
