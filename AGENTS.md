@@ -84,7 +84,11 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
 8. **`pip install -e .` 证明不了 `package-data`**：editable 直接用源码树。
    要验证发布物必须**构建 wheel 并检查包内文件**（`tests/test_packaging.py --install` 做的就是这个）。
 9. **Windows 上 `venv/Scripts/x`（无扩展名）跑得起来但 `is_file()` 说不存在**；判存在性带 `.exe`。
-10. **测试 helper 抛出前要打印捕获的 stdout/stderr**：否则现象是"套件跑到一半安静地没了"
+10. **规则标题里引用的常量必须定义在 `RULES` 字典之前**。踩过 4 次（`LICENSE_FIELD_MAX`、
+    `MIN_ASSERTION_OBSERVATIONS`、`RUN_LOG_NAME`、`RUN_LOG_STALE_DAYS`）：常量写在 `_res`
+    或检查函数旁边（即 `RULES` **之后**），导入时就 `NameError`。规则标题是对外文案，会引用
+    阈值——加规则时先声明常量再写规则。
+11. **测试 helper 抛出前要打印捕获的 stdout/stderr**：否则现象是"套件跑到一半安静地没了"
     （本仓库的 `run_cli` 全都这么做）。
 
 ## 六、迁移/分发这个项目时要留意

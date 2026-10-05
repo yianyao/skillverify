@@ -46,6 +46,7 @@ USER_VISIBLE = (
     ("badcase_to_evals.py", "bad case 回流样例"),
     ("run_evals.py", "评测执行器样例"),
     ("run-inputs.json", "执行轮次自证（WS-008）"),
+    ("adjudications.json", "WARN 的人工裁决留痕"),
 )
 
 #: 面向使用者的文档（开发者向的 AGENTS/结构说明不在其列）

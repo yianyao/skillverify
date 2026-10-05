@@ -283,6 +283,83 @@ def rules_hash() -> str:
 # --------------------------------------------------------------------------- #
 
 
+#: 人工裁决留痕（可选）：把「这条 WARN 我看过了，接受 / 要修」记下来
+ADJUDICATIONS_NAME = "adjudications.json"
+
+
+def _evidence_hash(evidence: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(evidence.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _split_warning(item: str) -> tuple[str, str, str]:
+    """把 `技能 · 规则 · 证据` 拆开（形状与 blockers 相同，故复用同一约定）。"""
+    parts = [part.strip() for part in item.split("·")]
+    skill = parts[0] if parts else ""
+    rid = parts[1] if len(parts) > 1 else ""
+    evidence = " · ".join(parts[2:]) if len(parts) > 2 else ""
+    return skill, rid, evidence
+
+
+def pending_adjudications(trace_dir: Path, warnings: list[str]) -> dict:
+    """算「待人工裁决清单」：WARN 里哪些还没人认领、哪些的裁决已因证据变化失效。
+
+    **为什么需要**：本项目的判定分级里 `WARN` = 人工甄别，但早先 WARN 只是被记进
+    记录的 notable 列表——没人被要求判断、也没有地方记下判断结果，等于"记录一下就过去了"，
+    与「WARN 人工甄别」的口径自相矛盾。
+
+    **裁决绑定证据指纹**：条目存的是 `规则 + 证据哈希`。同一规则但证据变了（例如数量从 3 变 8），
+    旧裁决**自动失效**回到待裁决——这就是"本次签认不覆盖别的项"的机械实现。
+
+    文件（可选）`<留痕目录>/adjudications.json`：
+    `{"adjudications": [{"skill", "rid", "evidence_hash", "decision": "accept|fix",
+    "reason", "by", "at"}]}`
+    """
+    path = trace_dir / ADJUDICATIONS_NAME if trace_dir else None
+    entries: list[dict] = []
+    error = ""
+    if path is not None and path.is_file():
+        data, read_error = read_json(path)
+        if read_error or not isinstance(data, dict):
+            error = read_error or "形状不符"
+        else:
+            raw = data.get("adjudications")
+            entries = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+    resolved: list[str] = []
+    pending: list[str] = []
+    void: list[str] = []
+    for item in warnings:
+        skill, rid, evidence = _split_warning(item)
+        digest = _evidence_hash(evidence)
+        hit = next((entry for entry in entries
+                    if str(entry.get("skill")) == skill and str(entry.get("rid")) == rid), None)
+        if hit is None:
+            pending.append(item)
+            continue
+        missing = [key for key in ("decision", "reason", "by", "at") if not hit.get(key)]
+        if missing:
+            void.append(f"{item}（裁决缺 {'、'.join(missing)}）")
+            continue
+        if str(hit.get("evidence_hash") or "") != digest:
+            void.append(f"{item}（证据已变化，旧裁决失效）")
+            continue
+        resolved.append(item)
+
+    state = {
+        "pending": pending,
+        "void": void,
+        "resolved": resolved,
+        "checked": len(warnings),
+        "note": ("裁决是「人看过并拍板」的留痕：decision=accept 表示接受现状，"
+                 "fix 表示要去修。裁决只对**同一份证据**有效，证据一变就要重新裁决。"),
+    }
+    if error:
+        state["error"] = f"{ADJUDICATIONS_NAME} 读不出来：{error}"
+    return state
+
+
 def build_record(
     library: LibraryReport,
     gate: DeliveryGate,
@@ -314,6 +391,8 @@ def build_record(
             "rules_hash": rules_hash(),
         },
         "reviewers": _reviewers(discovery.trace_dir, [e.skill for e in library.entries]),
+        # WARN = 人工甄别：哪些还没裁决、哪些裁决已失效，一并留痕（不只是"记一下就算了"）
+        "adjudications": pending_adjudications(discovery.trace_dir, list(gate.warnings)),
         "workspaces": {e.skill: workspace_fingerprints(Path(e.path)) for e in library.entries},
         "gate": gate.to_dict(),
         "counts": library.counts(),

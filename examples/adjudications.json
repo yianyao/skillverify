@@ -1,0 +1,20 @@
+{
+  "_说明": "人工裁决留痕（可选）。放在中央留痕目录：<项目>/.agents/skillverify/adjudications.json。",
+  "_口径": [
+    "deliver 的每一条 WARN 都要有人拍板：decision=accept（接受现状）或 fix（要去修）。",
+    "必须写 reason（依据）、by（谁拍的板）、at（何时），缺一项视为未裁决。",
+    "裁决只对同一份证据有效：evidence_hash 变了（例如数量/措辞变了）旧裁决自动失效，回到待裁决。",
+    "这就是「本次签认不覆盖别的项」的机械实现。"
+  ],
+  "adjudications": [
+    {
+      "skill": "csv-report",
+      "rid": "HYG-007",
+      "evidence_hash": "把 latest.json 里该条的 evidence 用 sha256 取前 16 位填这里",
+      "decision": "accept",
+      "reason": "内部自用技能，不需要对外交付许可文件；已确认不流向外部",
+      "by": "张三",
+      "at": "2026-10-05T14:00:00+08:00"
+    }
+  ]
+}

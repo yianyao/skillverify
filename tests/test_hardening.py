@@ -574,6 +574,50 @@ def run_run_log(tmp: Path) -> None:
           f"只有 90 天前的记录 → WARN 提醒观测停了（实得 {row.status}：{row.evidence[:70]}）")
 
 
+def run_adjudications(tmp: Path) -> None:
+    """B：WARN 的人工裁决留痕——没裁决的要列出来，裁决随证据变化自动失效。"""
+    print("[test_adjudications]")
+    import hashlib
+
+    from skillverify import deliver
+
+    trace = tmp / "adj-trace"
+    trace.mkdir(parents=True, exist_ok=True)
+    evidence = "声明了 license（MIT）但技能目录里没有随包许可文件"
+    warning = f"adj-skill · HYG-007 · {evidence}"
+
+    state = deliver.pending_adjudications(trace, [warning])
+    check(state["pending"] == [warning] and not state["resolved"],
+          f"没有裁决文件时全部待裁决（实得 {state['pending'][:1]}）")
+
+    digest = hashlib.sha256(evidence.strip().encode("utf-8")).hexdigest()[:16]
+    ok_entry = {"skill": "adj-skill", "rid": "HYG-007", "evidence_hash": digest,
+                "decision": "accept", "reason": "内部自用，不对外交付",
+                "by": "张三", "at": "2026-10-05T14:00:00+08:00"}
+    (trace / "adjudications.json").write_text(
+        json.dumps({"adjudications": [ok_entry]}, ensure_ascii=False),
+        encoding="utf-8", newline="")
+    state = deliver.pending_adjudications(trace, [warning])
+    check(not state["pending"] and state["resolved"] == [warning],
+          f"裁决齐备且证据一致 → 不再待裁决（实得 pending={state['pending']}）")
+
+    stale = dict(ok_entry, evidence_hash="deadbeefdeadbeef")
+    (trace / "adjudications.json").write_text(
+        json.dumps({"adjudications": [stale]}, ensure_ascii=False),
+        encoding="utf-8", newline="")
+    state = deliver.pending_adjudications(trace, [warning])
+    check(state["void"] and "失效" in state["void"][0],
+          f"证据变了 → 旧裁决失效（实得 {state['void'][:1]}）")
+
+    partial = {key: ok_entry[key] for key in ("skill", "rid", "evidence_hash", "decision")}
+    (trace / "adjudications.json").write_text(
+        json.dumps({"adjudications": [partial]}, ensure_ascii=False),
+        encoding="utf-8", newline="")
+    state = deliver.pending_adjudications(trace, [warning])
+    check(state["void"] and "缺" in state["void"][0],
+          f"缺理由/人/时间 → 视为未裁决（实得 {state['void'][:1]}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -590,6 +634,7 @@ def main() -> int:
         run_endpoint_boundary(tmp)
         run_destructive_scope(tmp)
         run_run_log(tmp)
+        run_adjudications(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)
