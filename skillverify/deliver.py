@@ -139,6 +139,18 @@ def filter_staged_skills(
 # --------------------------------------------------------------------------- #
 
 
+#: 阻断项 / WARN 的**结构化**形状：(技能, 规则ID, 证据)。
+#: 字符串版本仍然照旧渲染（记录、报告、断言都用它），结构化的这一份只给**需要按规则 ID 匹配**
+#: 的地方用（豁免、人工裁决）。早先那两处拿渲染好的字符串 `split("·")` 反解规则 ID——
+#: 技能名或证据里一出现 `·`，`parts[1]` 就不再是规则 ID，豁免会静默错配。
+GateItem = tuple[str, str, str]
+
+
+def render_item(item: GateItem) -> str:
+    """把结构化条目渲染成人读的一行（与历史格式逐字一致）。"""
+    return f"{item[0]} · {item[1]} · {item[2]}"
+
+
 @dataclass
 class DeliveryGate:
     """交付门禁结论。"""
@@ -150,6 +162,10 @@ class DeliveryGate:
     uncovered: list[str] = field(default_factory=list)     # 未覆盖（optional SKIP）
     warnings: list[str] = field(default_factory=list)      # 需书面甄别
     checked_skills: int = 0
+    #: 与 `blockers` / `warnings` **一一对应**的结构化副本（豁免与裁决按规则 ID 匹配时用）。
+    #: 长度不一致时按"不豁免 / 待裁决"处理——**绝不回退去解析字符串**（fail-safe）。
+    blocker_items: list[GateItem] = field(default_factory=list)
+    warning_items: list[GateItem] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -177,26 +193,33 @@ def evaluate(library: LibraryReport, *, strict: bool = False) -> DeliveryGate:
     gate = DeliveryGate(passed=True, strict=strict, checked_skills=len(library.entries))
     for entry in library.entries:
         for res in entry.report.results:
-            item = f"{entry.skill} · {res.rid} · {res.evidence or res.title}"
+            item = (entry.skill, res.rid, res.evidence or res.title)
             if res.status == FAIL:
-                gate.blockers.append(item)
+                gate.blockers.append(render_item(item))
+                gate.blocker_items.append(item)
             elif res.status == SKIP:
                 if res.optional and not strict:
-                    gate.uncovered.append(item)
+                    gate.uncovered.append(render_item(item))
                 else:
                     gate.blockers.append(
-                        item if not res.optional else f"{item}（strict：要求全项覆盖）"
+                        render_item(item) if not res.optional
+                        else f"{render_item(item)}（strict：要求全项覆盖）"
                     )
+                    gate.blocker_items.append(item)
             elif res.status == WARN:
-                gate.warnings.append(item)
+                gate.warnings.append(render_item(item))
+                gate.warning_items.append(item)
     for res in library.results:  # 库级结果（如 DISC-001 歧义）
-        item = f"(库级) {res.rid} · {res.evidence or res.title}"
+        item = ("(库级)", res.rid, res.evidence or res.title)
         if res.status == FAIL:
-            gate.blockers.append(item)
+            gate.blockers.append(f"(库级) {res.rid} · {res.evidence or res.title}")
+            gate.blocker_items.append(item)
         elif res.status == SKIP:
-            gate.blockers.append(item)
+            gate.blockers.append(f"(库级) {res.rid} · {res.evidence or res.title}")
+            gate.blocker_items.append(item)
         elif res.status == WARN:
-            gate.warnings.append(item)
+            gate.warnings.append(f"(库级) {res.rid} · {res.evidence or res.title}")
+            gate.warning_items.append(item)
     gate.passed = not gate.blockers
     return gate
 
@@ -212,15 +235,21 @@ def apply_waivers(gate: DeliveryGate, rids: list[str], because: str,
     wanted = {rid.strip() for rid in rids if rid.strip()}
     kept: list[str] = []
     waived: list[str] = []
-    for item in gate.blockers:
-        parts = item.split("·")
-        rid = parts[1].strip() if len(parts) > 1 else ""
+    kept_items: list[GateItem] = []
+    # 结构化副本缺失/长度不符时**一条都不豁免**：宁可让人再去 --accept 一次，
+    # 也不能凭"猜"把豁免挂到别的规则上（本节开头那段注释就是为这个写的）。
+    aligned = len(gate.blocker_items) == len(gate.blockers)
+    for index, item in enumerate(gate.blockers):
+        rid = gate.blocker_items[index][1] if aligned else ""
         if rid in wanted:
             suffix = f"；豁免人：{by}" if by else ""
             waived.append(f"{item}（豁免理由：{because}{suffix}）")
         else:
             kept.append(item)
+            if aligned:
+                kept_items.append(gate.blocker_items[index])
     gate.blockers = kept
+    gate.blocker_items = kept_items
     gate.waivers = waived
     gate.passed = not kept
     return gate, waived
@@ -293,16 +322,8 @@ def _evidence_hash(evidence: str) -> str:
     return hashlib.sha256(evidence.strip().encode("utf-8")).hexdigest()[:16]
 
 
-def _split_warning(item: str) -> tuple[str, str, str]:
-    """把 `技能 · 规则 · 证据` 拆开（形状与 blockers 相同，故复用同一约定）。"""
-    parts = [part.strip() for part in item.split("·")]
-    skill = parts[0] if parts else ""
-    rid = parts[1] if len(parts) > 1 else ""
-    evidence = " · ".join(parts[2:]) if len(parts) > 2 else ""
-    return skill, rid, evidence
-
-
-def pending_adjudications(trace_dir: Path, warnings: list[str]) -> dict:
+def pending_adjudications(trace_dir: Path, warnings: list[str],
+                          items: list[GateItem] | None = None) -> dict:
     """算「待人工裁决清单」：WARN 里哪些还没人认领、哪些的裁决已因证据变化失效。
 
     **为什么需要**：本项目的判定分级里 `WARN` = 人工甄别，但早先 WARN 只是被记进
@@ -311,6 +332,10 @@ def pending_adjudications(trace_dir: Path, warnings: list[str]) -> dict:
 
     **裁决绑定证据指纹**：条目存的是 `规则 + 证据哈希`。同一规则但证据变了（例如数量从 3 变 8），
     旧裁决**自动失效**回到待裁决——这就是"本次签认不覆盖别的项"的机械实现。
+
+    `items` 是与 `warnings` 一一对应的结构化副本（`gate.warning_items`）：给了就按它取
+    `(技能, 规则ID, 证据)`，**不去解析渲染好的字符串**（技能名或证据里出现 `·` 时，反解会取到
+    错的规则 ID）。没给或长度不符时，那些 WARN 一律算**待裁决**——不猜、也不静默放过。
 
     文件（可选）`<留痕目录>/adjudications.json`：
     `{"adjudications": [{"skill", "rid", "evidence_hash", "decision": "accept|fix",
@@ -330,8 +355,13 @@ def pending_adjudications(trace_dir: Path, warnings: list[str]) -> dict:
     resolved: list[str] = []
     pending: list[str] = []
     void: list[str] = []
-    for item in warnings:
-        skill, rid, evidence = _split_warning(item)
+    aligned = items is not None and len(items) == len(warnings)
+    for index, item in enumerate(warnings):
+        if not aligned:
+            # 没有结构化副本 → 无法可靠取出规则 ID：**算作待裁决**（不解析字符串、不静默放过）
+            pending.append(item)
+            continue
+        skill, rid, evidence = items[index]
         digest = _evidence_hash(evidence)
         hit = next((entry for entry in entries
                     if str(entry.get("skill")) == skill and str(entry.get("rid")) == rid), None)
@@ -392,7 +422,8 @@ def build_record(
         },
         "reviewers": _reviewers(discovery.trace_dir, [e.skill for e in library.entries]),
         # WARN = 人工甄别：哪些还没裁决、哪些裁决已失效，一并留痕（不只是"记一下就算了"）
-        "adjudications": pending_adjudications(discovery.trace_dir, list(gate.warnings)),
+        "adjudications": pending_adjudications(discovery.trace_dir, list(gate.warnings),
+                                               list(gate.warning_items)),
         "workspaces": {e.skill: workspace_fingerprints(Path(e.path)) for e in library.entries},
         "gate": gate.to_dict(),
         "counts": library.counts(),

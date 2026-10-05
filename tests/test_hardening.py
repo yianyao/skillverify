@@ -608,11 +608,40 @@ def run_adjudications(tmp: Path) -> None:
     trace = tmp / "adj-trace"
     trace.mkdir(parents=True, exist_ok=True)
     evidence = "声明了 license（MIT）但技能目录里没有随包许可文件"
-    warning = f"adj-skill · HYG-007 · {evidence}"
+    item = ("adj-skill", "HYG-007", evidence)
+    warning = "adj-skill · HYG-007 · " + evidence
 
-    state = deliver.pending_adjudications(trace, [warning])
+    state = deliver.pending_adjudications(trace, [warning], [item])
     check(state["pending"] == [warning] and not state["resolved"],
           f"没有裁决文件时全部待裁决（实得 {state['pending'][:1]}）")
+
+    # 证据里带 `·` 也照样按 (技能, 规则) 匹配——早先是从渲染字符串 `split("·")` 反解规则 ID，
+    # 那种写法在证据含 `·` 时会取到错的"规则 ID"，裁决静默错配。
+    dotted = ("adj-skill", "HYG-007", "证据里带了 · 分隔符 · 还有第二处")
+    dotted_warning = "adj-skill · HYG-007 · 证据里带了 · 分隔符 · 还有第二处"
+    dotted_digest = hashlib.sha256(dotted[2].strip().encode("utf-8")).hexdigest()[:16]
+    (trace / "adjudications.json").write_text(
+        json.dumps({"adjudications": [{
+            "skill": "adj-skill", "rid": "HYG-007", "evidence_hash": dotted_digest,
+            "decision": "accept", "reason": "证据里的分隔符不该影响匹配",
+            "by": "张三", "at": "2026-10-05T14:00:00+08:00"}]}, ensure_ascii=False),
+        encoding="utf-8", newline="")
+    state = deliver.pending_adjudications(trace, [dotted_warning], [dotted])
+    check(state["resolved"] == [dotted_warning],
+          f"证据含 `·` 时仍按结构化规则 ID 匹配（实得 pending={state['pending']}）")
+
+    # 豁免那一半同理：技能名里带 `·` 也要命中（旧写法 `split("·")[1]` 会取到技能名的碎片）
+    gate = deliver.DeliveryGate(passed=False, strict=False,
+                                blockers=["my·skill · HYG-007 · 缺随包许可文件"],
+                                blocker_items=[("my·skill", "HYG-007", "缺随包许可文件")])
+    gate, waived = deliver.apply_waivers(gate, ["HYG-007"], "内部自用", by="张三")
+    check(not gate.blockers and len(waived) == 1 and gate.passed,
+          f"技能名含 `·` 时豁免仍命中该规则（实得 blockers={gate.blockers}）")
+    # 结构化副本缺失 → 一条都不豁免（fail-safe：宁可让人再 --accept 一次，也不能错配）
+    gate2 = deliver.DeliveryGate(passed=False, strict=False, blockers=["x · HYG-007 · e"])
+    gate2, waived2 = deliver.apply_waivers(gate2, ["HYG-007"], "内部自用")
+    check(gate2.blockers and not waived2,
+          "缺结构化副本时不做豁免（不回退去解析渲染字符串）")
 
     digest = hashlib.sha256(evidence.strip().encode("utf-8")).hexdigest()[:16]
     ok_entry = {"skill": "adj-skill", "rid": "HYG-007", "evidence_hash": digest,
@@ -621,15 +650,20 @@ def run_adjudications(tmp: Path) -> None:
     (trace / "adjudications.json").write_text(
         json.dumps({"adjudications": [ok_entry]}, ensure_ascii=False),
         encoding="utf-8", newline="")
-    state = deliver.pending_adjudications(trace, [warning])
+    state = deliver.pending_adjudications(trace, [warning], [item])
     check(not state["pending"] and state["resolved"] == [warning],
           f"裁决齐备且证据一致 → 不再待裁决（实得 pending={state['pending']}）")
+
+    # 没有结构化副本（老调用/手工构造）→ 一律算**待裁决**：不解析字符串、也不静默放过
+    state = deliver.pending_adjudications(trace, [warning])
+    check(state["pending"] == [warning],
+          f"缺结构化副本时不猜规则 ID，记待裁决（实得 pending={state['pending'][:1]}）")
 
     stale = dict(ok_entry, evidence_hash="deadbeefdeadbeef")
     (trace / "adjudications.json").write_text(
         json.dumps({"adjudications": [stale]}, ensure_ascii=False),
         encoding="utf-8", newline="")
-    state = deliver.pending_adjudications(trace, [warning])
+    state = deliver.pending_adjudications(trace, [warning], [item])
     check(state["void"] and "失效" in state["void"][0],
           f"证据变了 → 旧裁决失效（实得 {state['void'][:1]}）")
 
@@ -637,7 +671,7 @@ def run_adjudications(tmp: Path) -> None:
     (trace / "adjudications.json").write_text(
         json.dumps({"adjudications": [partial]}, ensure_ascii=False),
         encoding="utf-8", newline="")
-    state = deliver.pending_adjudications(trace, [warning])
+    state = deliver.pending_adjudications(trace, [warning], [item])
     check(state["void"] and "缺" in state["void"][0],
           f"缺理由/人/时间 → 视为未裁决（实得 {state['void'][:1]}）")
 
