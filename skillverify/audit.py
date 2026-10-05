@@ -29,7 +29,8 @@ from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
 from .spec import check_spec
 from .watch import fingerprint
 
-_LEGACY = "legacy/Agent-Skill-生命周期验证方案.md（供应链：安装前审计）"
+#: 旧体系方案（语料已归档到仓库外，这里只作**文档级**引用，不依赖任何本地路径）
+_LEGACY = "旧体系《Agent-Skill 生命周期验证方案》v1.3（供应链：安装前审计）"
 
 #: 审计单的落点（相对 trace_dir）
 AUDIT_DIR = "audit"

@@ -385,7 +385,8 @@ def _res(rule: Rule, status: str, evidence: str = "") -> Result:
 
 
 #: 识别旧体系方言，把"不符合官方形状"说成可操作的一句话
-#: （实测：本仓库 legacy/ 下 4 个 `evals/evals.json` 全是 `queries` 方言的触发评测草案）
+#: （实测：旧体系语料里的 4 个 `evals/evals.json` 全是 `queries` 方言的触发评测草案；
+#: 该语料已归档到仓库外，此处只作经验记录）
 _DIALECTS: dict[str, str] = {
     "queries": "顶层是 `queries`（旧体系触发评测查询集草案）",
     "cases": "顶层是 `cases`（旧体系用例方言）",

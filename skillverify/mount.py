@@ -31,7 +31,7 @@ from .spec import find_skill_md, skill_md_case_mismatch
 from .report import FAIL, PASS, SKIP, WARN, Report, Result, Rule
 
 #: 旧方案的出处（本项目承接其**仓库侧**部分）
-_LEGACY = "legacy/Agent-Skill-生命周期验证方案.md（V3 注册发现冒烟 / V23 跨宿主加载冒烟）"
+_LEGACY = "旧体系《Agent-Skill 生命周期验证方案》v1.3（V3 注册发现冒烟 / V23 跨宿主加载冒烟）"
 
 RULES: dict[str, Rule] = {
     "MOUNT-001": Rule(

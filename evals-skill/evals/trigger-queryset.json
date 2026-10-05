@@ -1,0 +1,146 @@
+{
+  "skill_name": "evals-skill",
+  "notes": "正例 10 / 负例 10；train 12 / validation 8。正例刻意不照抄 description 词句。",
+  "queries": [
+    {
+      "id": "q01",
+      "query": "我要给这个技能补评测用例，从哪下手",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q02",
+      "query": "怎么判断我的评测断言是不是太水了",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q03",
+      "query": "触发查询该怎么写才不会被自己抄到描述",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q04",
+      "query": "帮我起草一份 trigger-queryset.json",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q05",
+      "query": "评测集要几条用例才算够",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q06",
+      "query": "如何给技能做质量证据",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q07",
+      "query": "我想知道我的技能有没有自我应验的毛病",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q08",
+      "query": "查询集正负例比例怎么配",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q09",
+      "query": "断言写成什么样算可判定",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q10",
+      "query": "帮我把线上遇到的坏例子变成用例",
+      "should_trigger": true,
+      "subset": "train",
+      "rationale": "正例：该技能该被触发（描述生成/评测资产）"
+    },
+    {
+      "id": "q11",
+      "query": "帮我写一个读写 CSV 的 Python 脚本",
+      "should_trigger": false,
+      "subset": "train",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q12",
+      "query": "今天杭州天气怎么样",
+      "should_trigger": false,
+      "subset": "train",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q13",
+      "query": "把这段话翻译成英文",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q14",
+      "query": "给我讲讲 Kubernetes 的调度原理",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q15",
+      "query": "怎么用 Excel 做透视表",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q16",
+      "query": "帮我把这张图裁剪成正方形",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q17",
+      "query": "推荐几本讲分布式系统的书",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q18",
+      "query": "帮我算一下这个月的房贷",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q19",
+      "query": "写一首关于秋天的五言诗",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    },
+    {
+      "id": "q20",
+      "query": "这段报错是什么意思",
+      "should_trigger": false,
+      "subset": "validation",
+      "rationale": "负例：与评测资产生成无关的常见请求"
+    }
+  ]
+}

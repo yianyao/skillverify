@@ -135,6 +135,18 @@ def run_numbers() -> None:
     samples = len(review.load_calibration())
     check(samples >= 4, f"校准样本随包分发（{samples} 个）")
 
+    # #2 口径统一：凡"指本工具"的提示词条数都必须是 30（旧 29 + 新增 W-17）；
+    # 引用**旧体系**那 29 条时，必须写成「旧体系 29」这种限定说法，避免读者以为工具只有 29 条。
+    cov = read("覆盖对照-生命周期验证方案.md")
+    bad_claims = [f"{name}:{n}" for name in ("覆盖对照-生命周期验证方案.md", "验证流程指南.md",
+                                             "仓库结构说明.md", "技能编写指南.md")
+                  for n, line in enumerate(read(name).splitlines(), 1)
+                  if re.search(r"语义层（29 条提示词）|（29 条提示词）", line)
+                  and "旧体系" not in line]
+    check(not bad_claims, f"没有「指本工具却写 29 条提示词」的说法（问题行: {bad_claims[:3]}）")
+    check(f"{catalog_n} 条提示词" in cov or "30 条提示词" in cov,
+          "覆盖对照写明了本工具的提示词条数（30）")
+
 
 # --------------------------------------------------------------------------- #
 # 守卫 2：《覆盖对照》的算术自洽
@@ -178,15 +190,17 @@ def run_capability_coverage() -> None:
           f"用户文档提到了全部用户可见能力（缺: {missing}）——"
           f"新增能力时把它加进 USER_VISIBLE 并写进手册")
 
-    absent: list[str] = []
-    sources = list((REPO / "skillverify").rglob("*.py"))
-    for path in sources:
+    # 旧体系语料已归档到**仓库外**：代码里不许再出现 `legacy/<路径>` 这种仓库内引用
+    # （出处必须写成文档级引用，例如「旧体系《…方案》v1.3 §8.3.10」），
+    # 否则换机器/干净克隆上出处就是死链——这类漂移靠守卫兜住。
+    stale: list[str] = []
+    for path in (REPO / "skillverify").rglob("*.py"):
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for m in re.finditer(r'"(legacy/[\w\-./\u4e00-\u9fff]+)', line):
-                target = REPO / m.group(1)
-                if not target.exists():
-                    absent.append(f"{path.name}:{lineno} {m.group(1)}")
-    check(not absent, f"规则出处指向的文件都存在（缺失: {absent[:3]}）")
+            if re.search(r"legacy/[\w\-./\u4e00-\u9fff]+", line):
+                stale.append(f"{path.name}:{lineno}")
+    check(not stale, f"代码里不再引用仓库内的 legacy/ 路径（残留: {stale[:3]}）")
+    check(not (REPO / "legacy").exists(),
+          "legacy/ 已移出仓库（语料归档在仓库外，发布物里不含它）")
 
 
 def main() -> int:

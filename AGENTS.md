@@ -11,15 +11,16 @@
 
 `skillverify`：宿主无关的 Agent Skill 全生命周期验证套件（纯标准库、强制 UTF-8）。
 十一个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `mount` / `audit` / `watch` / `deliver` / `hook`。
-`legacy/` 是**旧体系归档，已冻结**（见 `legacy/归档冻结说明.md`）：不修、不迁、不跟进，
-它只作为 `--dogfood` 的回归语料。**它已不在版本控制里**（发布物不含它）：
-干净克隆上 `--dogfood` 会自动跳过，规则出处里指向 `legacy/...` 的路径也只在本机可查。
+`legacy/`（旧体系 237 条方案 + 旧技能语料）**已移出本仓库**，归档在仓库外
+（仓库外的姊妹目录 `..\skillSpec-legacy-archive`），不再参与构建、测试与发布。
+因此：① 规则出处一律写**文档级引用**（如「旧体系《Agent-Skill 生命周期验证方案》v1.3 §8.3.10」），
+**不许**再出现 `legacy/<路径>` 这种仓库内引用（有守卫查）；② `--dogfood` 变成「可选本地语料」，默认 `legacy/`，目录不在就跳过。
 
 ## 二、跑起来
 
 ```powershell
 python -m tests.run_all              # 14 个套件（默认 13），约 2 分钟（离线）
-python -m tests.run_all --dogfood    # 另把 legacy/ 下的旧技能拉进来跑
+python -m tests.run_all --dogfood    # 可选：把本地语料（默认 legacy/，不在就跳过）拉进来跑
 python -m tests.run_all --install    # 再跑打包真装检查（需要网络，约 1 分钟）
 python -m tests.test_lint            # 也可以单跑某一套
 ```
@@ -44,7 +45,9 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
    要在 `pyproject.toml` 的 `package-data` 里；漏了 `discover`/`review` 直接失效，
    而且**在源码目录里跑永远发现不了**——必须构建 wheel 才看得出（`--install` 会查）。
 8. **两份交付文档必须自包含**：不得引用 `handoff/`、`legacy/`、会话文档，不得出现盘符路径。
-9. **`legacy/` 冻结**：不要"顺手修好"里面的技能——它是回归基准，改了等于改基准。
+9. **`legacy/` 已归档出仓库（原先的「冻结语料」不再随仓库分发）**：旧体系语料已归档到仓库外（见 §一）。规则出处写文档级引用，
+   **不许**再出现 `legacy/<路径>`（守卫查）；要跑旧语料回归就把语料放回 `legacy/` 或
+   用 `--dogfood` 指向的本地目录——但**别把语料提交回来**。
 
 ## 四、测试里两个"被执行的机制"（改东西前务必知道）
 

@@ -279,6 +279,19 @@ def run_repo_skills(tmp: Path) -> None:
             bad.append(f"{path.relative_to(repo).as_posix()}: {', '.join(fails)}")
     check(not bad, f"自家技能全部通过 spec（不过的: {bad}）")
 
+    # 自家技能也要过**机械层**（含 --scripts 真跑）：只查 spec 会让"我们的技能过不了我们自己的
+    # lint"这类问题漏掉（evals-skill 就是这么进来的）。`--scripts` 的 SKIP 不算失败。
+    from skillverify.lint import lint_skill
+    lint_bad: list[str] = []
+    for path in found:
+        report = lint_skill(path.parent, run_scripts=True)
+        fails = [r.rid for r in report.results if r.status == FAIL]
+        if fails:
+            lint_bad.append(f"{path.relative_to(repo).as_posix()}: {', '.join(fails)}")
+    check(not lint_bad,
+          f"自家技能全部通过 lint --scripts（不过的: {lint_bad}）——"
+          f"自家技能是「工具自己的门面」，不许带着 FAIL 发布")
+
 
 def main() -> int:
     force_utf8_stdio()

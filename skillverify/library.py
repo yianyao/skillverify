@@ -26,7 +26,7 @@ from pathlib import Path
 from .report import FAIL, INFO, PASS, WARN, Result, Rule
 from .spec import load_skill
 
-_LEGACY = "legacy/Agent-Skill-生命周期验证方案.md（V2 命名冲突预检；上下文预算）"
+_LEGACY = "旧体系《Agent-Skill 生命周期验证方案》v1.3（V2 命名冲突预检；上下文预算）"
 
 #: 元数据预算默认值（**本项目约定，非官方硬约束**）
 DEFAULT_METADATA_BUDGET = 8000

@@ -209,7 +209,7 @@ def run_agent_notes() -> None:
     topics = {
         "运行时零依赖": "dependencies",
         "判定分级（SKIP=未执行）": "SKIP",
-        "legacy 冻结": "冻结",
+        "legacy": "冻结",
         "运行时数据随包分发": "package-data",
         "文档命令真跑": "runnable",
         "注入自测": "变异",
