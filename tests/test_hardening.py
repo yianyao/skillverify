@@ -678,6 +678,25 @@ def run_dual_review(tmp: Path) -> None:
           f"署了名却没写时间 → WARN 并点明（实得 {status}：{evidence[:60]}）")
 
 
+def run_mount_control(tmp: Path) -> None:
+    """MOUNT-004 的对照组：未修改的合法样本必须被接受，否则注入断言恒过。"""
+    print("[test_mount_control]")
+    from skillverify import mount
+
+    row = mount.check_fail_loud("probe-skill")
+    check(row.status == "PASS",
+          f"对照通过时，注入检查照常给出结论（实得 {row.status}：{row.evidence[:70]}）")
+
+    saved = mount._readable
+    mount._readable = lambda root: ("", "", "拒了")
+    try:
+        row = mount.check_fail_loud("probe-skill")
+    finally:
+        mount._readable = saved
+    check(row.status == "SKIP" and "对照未通过" in row.evidence,
+          f"解析器见谁拒谁时 → SKIP（结论不可信），而不是 PASS（实得 {row.status}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -696,6 +715,7 @@ def main() -> int:
         run_run_log(tmp)
         run_adjudications(tmp)
         run_dual_review(tmp)
+        run_mount_control(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)

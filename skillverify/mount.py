@@ -113,6 +113,18 @@ def check_fail_loud(skill_name: str) -> Result:
     with tempfile.TemporaryDirectory(prefix="skillverify-mount-") as tmp:
         probe_root = Path(tmp) / skill_name
         probe_root.mkdir(parents=True)
+        # ---- 对照组（旧 V23 的方法要求）----
+        # "未修改的合法样本**必须先被接受**"。没有这一步，一个"见谁拒谁"的解析器
+        # 也能通过全部注入断言——这种"恒过的自测"等于没测（本项目在 EVAL-010 里
+        # 正是把"恒真/恒假"当缺陷看）。对照不通过就转 SKIP：结论不可信，别装成通过。
+        (probe_root / "SKILL.md").write_text(
+            f"---\nname: {skill_name}\ndescription: 未修改的对照样本，必须被接受。\n---\n\n# 对照\n",
+            encoding="utf-8", newline="")
+        control_name, _control_desc, control_error = _readable(probe_root)
+        if not (control_name and not control_error):
+            return _res(RULES["MOUNT-004"], SKIP,
+                        f"对照未通过：未修改的合法样本都没被接受（name={control_name!r}，"
+                        f"error={control_error!r}）——此时注入断言恒过，结论不可信，本项未执行")
         for label, filename, content in PROBES:
             (probe_root / filename).write_text(content, encoding="utf-8", newline="")
             name, _desc, error = _readable(probe_root)

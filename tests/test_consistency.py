@@ -92,8 +92,6 @@ def run_numbers() -> None:
     print("[test_doc_numbers]")
     total, default = suites()
     agents = read("AGENTS.md")
-    claims = numbers(agents, r"(\d+) 个套件（默认 (\d+)）".replace("(\\d+) 个套件（默认 (\\d+)）",
-                                                                  r"(\d+) 个套件（默认 (\d+)）"))
     m = re.search(r"(\d+) 个套件（默认 (\d+)）", agents)
     check(m is not None and (int(m.group(1)), int(m.group(2))) == (total, default),
           f"AGENTS 的套件数与 run_all 一致（文档 {m.groups() if m else None}，"
@@ -190,7 +188,6 @@ def run_coverage_math() -> None:
             bad.append(f"{cells[0][:24]}: {nums}")
     check(rows >= 8, f"解析到 {rows} 行汇总（覆盖对照的矩阵表）")
     check(not bad, f"每行都满足「条数 = 覆盖 + 部分 + 未覆盖」（异常行: {bad[:3]}）")
-    check("汇总数字未重算" in text or True, "（重算后本行注释可删）")
 
 
 # --------------------------------------------------------------------------- #
