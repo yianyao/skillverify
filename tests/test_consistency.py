@@ -31,6 +31,7 @@ from skillverify.spec import RULES as SPEC_RULES  # noqa: E402
 
 _passed: list[str] = []
 _failed: list[str] = []
+_skipped: list[str] = []
 
 #: 用户可见能力：新增了命令/旗标/检查项，就往这里加一行（守卫会要求用户文档提到它）
 USER_VISIBLE = (
@@ -64,6 +65,12 @@ def ok(msg: str) -> None:
 def fail(msg: str) -> None:
     _failed.append(msg)
     print(f"  FAIL {msg}")
+
+
+def skip(msg: str) -> None:
+    """本项**未执行**（环境或前置条件缺失）：既不算通过、也不算失败。"""
+    _skipped.append(msg)
+    print(f"  SKIP {msg}")
 
 
 def check(cond: bool, msg: str) -> None:
@@ -248,14 +255,70 @@ def run_capability_coverage() -> None:
           "legacy/ 已移出仓库（语料归档在仓库外，发布物里不含它）")
 
 
+HANDOFF_STATUS_MARK = "## 〇、现状与待办"
+#: 除 §〇 以外不许再出现这些标题——它们就是「多处待办互相矛盾」的来源
+#: （实测过：旧交接里同时存在「下一步：M5」「下一步（M7）」「阶段计划」三份清单，
+#:  新会话照着任一份做都是错的，只能靠重读代码重建现状）
+HANDOFF_RIVAL_RE = re.compile(r"^#{2,3}.*(现状|待办|下一步|启动指令|从这里开始)")
+#: §〇 里必须被守卫核对的结构数字：(标签, 正则, 期望值取法)
+HANDOFF_FACTS = ("套件", "命令", "机械规则", "语义提示词")
+
+
+def run_handoff() -> None:
+    """守卫 **交接文档**：它是跨会话唯一的记忆，不能靠自觉保持准确。
+
+    两条（都对着本次踩过的坑）：
+    1. 只有**一处**「现状/待办」标题——多处清单必然互相矛盾；
+    2. §〇 里的结构数字（套件/命令/规则/提示词）与代码事实一致。
+    `handoff/` 不在时跳过（它已 gitignore，别的机器上没有）。
+    """
+    print("[test_handoff]")
+    path = REPO / "handoff" / "会话交接-2026-10-04.md"
+    if not path.is_file():
+        skip("handoff/ 不存在（本地会话目录，未随仓库分发）：交接守卫未执行")
+        return
+    text = path.read_text(encoding="utf-8")
+    heads = [line for line in text.splitlines() if HANDOFF_RIVAL_RE.match(line)]
+    # 「历史：…（已被 §〇 取代）」这类**指回 §〇**的标题不算竞争者：它们不含活的口径
+    rival = [line for line in heads if not re.search(r"历史|已被 §〇 取代|见 §〇", line)]
+    check(len(rival) == 1 and rival[0].startswith(HANDOFF_STATUS_MARK),
+          f"交接文档只有 §〇 一处「现状/待办」标题（实得 {len(rival)} 处：{rival[:3]}）")
+
+    total, _default = suites()
+    facts = {
+        "套件": total,
+        "命令": _command_count(),
+        "机械规则": len(SPEC_RULES) + len(LINT_RULES) + len(evalx.RULES) + len(trigger.RULES)
+                  + len(review.RULES) + len(material.RULES) + len(runner.RULES)
+                  + len(library.RULES) + len(mount.RULES) + len(audit.RULES),
+        "语义提示词": len(review.load_catalog()),
+    }
+    # 只认一种写法（`套件 **14**`）：§〇 的格式由本守卫固定，省得"对上了但没人看得懂"
+    missing = [f"{name}={want}" for name, want in facts.items()
+               if f"{name} **{want}**" not in text]
+    check(not missing, f"§〇 的结构数字与代码一致（不符: {missing}）")
+
+
+def _command_count() -> int:
+    """CLI 顶层子命令数（11 个）：只数 `sub.add_parser(` 那一层。
+
+    **别用 `add_parser` 的裸计数**：`hook`/`review` 还有自己的二级子解析器
+    （`hook_sub` / `review_sub`），裸计数会得到 18。
+    """
+    text = read("skillverify/cli/__init__.py")
+    return len(set(re.findall(r"^\s*p_\w+ = sub\.add_parser\(\s*\n?\s*\"([\w-]+)\"",
+                              text, re.MULTILINE)))
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="文档与代码一致性守卫").parse_args()
     run_numbers()
     run_coverage_math()
     run_capability_coverage()
+    run_handoff()
     total = len(_passed) + len(_failed)
-    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")
+    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
 
 
