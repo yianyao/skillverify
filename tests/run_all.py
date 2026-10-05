@@ -4,7 +4,7 @@
 （`python -m tests.test_lint`），这里只是省掉逐条敲命令。
 
     python -m tests.run_all                # 全部套件（不含 dogfood）
-    python -m tests.run_all --dogfood      # 额外把 legacy/ 拉进来跑 dogfood 项
+    python -m tests.run_all --dogfood      # 可选：把本地语料（默认 legacy/，不在就跳过）拉进来跑
     python -m tests.run_all --only lint,docs
 
 退出码：0 = 全绿；1 = 任一套件有 FAIL。
@@ -51,7 +51,7 @@ SLOW_SUITES = {"test_packaging"}
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="skillverify 回归套件统一入口")
     parser.add_argument("--dogfood", action="store_true",
-                        help="额外把 legacy/ 下归档的旧技能拉进来跑 dogfood 项")
+                        help="可选：把本地语料（默认 legacy/，目录不在就跳过）拉进来跑 dogfood 项")
     parser.add_argument("--only", metavar="名1,名2",
                         help="只跑指定套件（名字去掉 test_ 前缀，如 lint,docs）")
     parser.add_argument("--install", action="store_true",

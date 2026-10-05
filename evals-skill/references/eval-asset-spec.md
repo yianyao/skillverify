@@ -1,7 +1,7 @@
 # 评测资产规格：evals.json 与 trigger-queryset.json
 
 本文件是 `evals-skill` 的字段级规格参考。两份文件都由**人/模型**编写，`skillverify evals`
-与 `skillverify trigger` 只读它们并校验形状与口径；工具从不生成这两份 JSON。
+`skillverify evals` 只读它们并校验形状与口径（触发资产 `TRIG-*` 也在 `evals` 里）；工具从不生成这两份 JSON。
 
 ## 1. evals/evals.json（输出质量评测，官方格式）
 

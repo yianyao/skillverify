@@ -13,7 +13,7 @@
 
 用法：
     python -m tests.test_evalx
-    python -m tests.test_evalx --dogfood   # 额外对 legacy/ 跑一遍并打印结论
+    python -m tests.test_evalx --dogfood   # 可选：本地语料（默认 legacy/） 跑一遍并打印结论
 """
 
 from __future__ import annotations

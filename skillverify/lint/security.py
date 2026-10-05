@@ -332,13 +332,16 @@ def check(ctx: LintContext) -> list[Result]:
 
     # ---- SEC-008：隐藏字符 / 隐写注入 ----
     bidi, invisible = _scan_invisible(ctx)
+    # 发现隐藏字符时**必须**把语义侧拉进来：机械层只能证明「有隐藏字符」，
+    # 证明不了「它是不是在向 Agent 下指令」——那正是 W-17（指令注入）要判的。
+    hint = "；这类内容一律按不可信处理，并务必跑语义评审的 W-17（指令注入）"
     if bidi:
         # 双向控制符在技能内容里没有正当用途，在代码里等于 Trojan Source → 客观缺陷
         out.append(res(RULES["SEC-008"], FAIL,
-                       f"发现双向控制符（可让内容看起来与实际不一致）: {summarize(bidi)}"))
+                       f"发现双向控制符（可让内容看起来与实际不一致）: {summarize(bidi)}{hint}"))
     elif invisible:
         out.append(res(RULES["SEC-008"], WARN,
-                       f"发现不可见字符（可能是隐写或误贴）: {summarize(invisible)}"))
+                       f"发现不可见字符（可能是隐写或误贴）: {summarize(invisible)}{hint}"))
     else:
         out.append(res(RULES["SEC-008"], PASS, "未发现双向控制符或不可见字符"))
 

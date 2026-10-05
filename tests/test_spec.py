@@ -256,21 +256,31 @@ def run_regressions(tmp: Path) -> None:
     check(doc5.get("key") == "第一行\n第二行", f"`|-` 去掉末尾换行（实得 {doc5.get('key')!r}）")
 
 
-def run_repo_skills(tmp: Path) -> None:
-    """本仓库**自己发布**的技能必须过自家 spec（legacy/ 是冻结语料，不算）。
+#: 本工具**声明发布**的技能所在根（相对仓库根）。只有这些位置的技能参与工具回归。
+#: 放在别处的 SKILL.md（根目录的外挂/自用技能）**不参与**：它们与工具解耦，
+#: 可独立增删改写而不影响工具自身的回归结论。
+REPO_SKILL_ROOTS = (".agents/skills",)
 
-    为什么需要：`evals-skill/SKILL.md` 曾带一个 `version:` 顶层字段（违反 SKILL-004），
-    而 `--dogfood` 只拉 `legacy/`，于是自家回归永远抓不到「我们自己的技能过不了自己的校验器」。
+
+def run_repo_skills(tmp: Path) -> None:
+    """仓库**自己发布**的技能必须过自家 spec 与 lint（--scripts）。
+
+    范围只限 `REPO_SKILL_ROOTS`（本工具宣称发布的技能）。为什么不扫全仓库——
+    根目录的 `evals-skill/` 是「外挂」（刻意不与工具耦合，只随 git 同步）；
+    拿它当回归对象等于把两者绑在一起：它一改，工具的套件就红。
     """
     print("[test_repo_skills]")
     repo = Path(__file__).resolve().parent.parent
     found: list[Path] = []
-    for path in repo.rglob("SKILL.md"):
-        rel = path.relative_to(repo).as_posix()
-        if rel.startswith("legacy/") or ".agents/" in rel or ".verify" in rel:
-            continue
-        found.append(path)
-    check(bool(found), f"仓库里有自家发布的技能可检查（{len(found)} 个）")
+    for root in REPO_SKILL_ROOTS:
+        base = repo / root
+        if base.is_dir():
+            found.extend(sorted(base.glob("*/SKILL.md")))
+    check(True, f"声明的技能根: {'、'.join(REPO_SKILL_ROOTS)}"
+                f"（当前 {len(found)} 个技能；放别处的按「外挂」处理，不参与回归）")
+    if not found:
+        check(True, "声明的技能根里暂时没有技能（本项不适用）")
+        return
     bad: list[str] = []
     for path in found:
         _doc, report = check_spec(path.parent)

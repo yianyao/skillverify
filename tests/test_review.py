@@ -8,7 +8,7 @@
 
 用法：
     python -m tests.test_review
-    python -m tests.test_review --dogfood   # 额外对 legacy/ 各技能跑一次 pack
+    python -m tests.test_review --dogfood   # 可选：本地语料（默认 legacy/） 各技能跑一次 pack
 """
 
 from __future__ import annotations

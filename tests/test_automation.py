@@ -7,7 +7,7 @@
 
 用法：
     python -m tests.test_automation
-    python -m tests.test_automation --dogfood   # 额外对 legacy/ 跑一次 deliver
+    python -m tests.test_automation --dogfood   # 可选：本地语料（默认 legacy/） 跑一次 deliver
 """
 
 from __future__ import annotations

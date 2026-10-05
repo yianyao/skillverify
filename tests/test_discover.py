@@ -7,7 +7,7 @@
 
 用法：
     python -m tests.test_discover
-    python -m tests.test_discover --dogfood   # 额外对 legacy/ 跑一遍整库 check
+    python -m tests.test_discover --dogfood   # 可选：本地语料（默认 legacy/） 跑一遍整库 check
 """
 
 from __future__ import annotations

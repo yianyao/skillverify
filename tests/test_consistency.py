@@ -96,6 +96,20 @@ def run_numbers() -> None:
           f"AGENTS 的套件数与 run_all 一致（文档 {m.groups() if m else None}，"
           f"实际 {(total, default)}）")
 
+    # 所有根文档里的套件数都必须等于事实——此前只查了两份文档，
+    # 结果迁移指南与流程指南各留了一处旧数字（靠人工重查才发现）。
+    drift: list[str] = []
+    for name in sorted(p.name for p in REPO.glob("*.md")):
+        text = read(name)
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for m in re.finditer(r"(\d+) 个(?:回归)?套件", line):
+                if int(m.group(1)) != total:
+                    drift.append(f"{name}:{lineno}「{m.group(0)}」应为 {total}")
+            for m in re.finditer(r"默认跑 (\d+)", line):
+                if int(m.group(1)) != default:
+                    drift.append(f"{name}:{lineno}「{m.group(0)}」应为 {default}")
+    check(not drift, f"全部根文档的套件数与 run_all 一致（漂移: {drift[:4]}）")
+
     structure = read("仓库结构说明.md")
     lint_n = len(LINT_RULES)
     m = re.search(r"机械补检 (\d+) 条", structure)
