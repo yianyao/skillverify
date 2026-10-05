@@ -27,7 +27,7 @@ if __package__ in (None, ""):
 
 from skillverify import cli, review  # noqa: E402
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
-from skillverify.tmpdir import new_temp_dir  # noqa: E402
+from skillverify.tmpdir import base_dir, new_temp_dir  # noqa: E402
 from skillverify.lint import lint_skill  # noqa: E402
 from skillverify.report import FAIL, INFO, PASS, SKIP, WARN  # noqa: E402
 from skillverify.spec import check_spec  # noqa: E402
@@ -810,6 +810,15 @@ _RUNNER_SOURCES: dict[str, list[str]] = {
         "pid = m.group(1) if m else 'W-01'",
         "print(json.dumps({'prompt_id': pid, 'verdict': 'PASS', 'evidence': ''}, ensure_ascii=False))",
     ],
+    # 空 verdict：**不许替它编 NA**——那是凭空造一个判定
+    "no_verdict": [
+        "import json, re, sys",
+        "payload = sys.stdin.read()",
+        "m = re.search(r'提示词 (\\S+)：', payload)",
+        "pid = m.group(1) if m else 'W-01'",
+        "print(json.dumps({'prompt_id': pid, 'verdict': '',"
+        " 'evidence': '看了 description，感觉没有明显问题，材料也齐'}, ensure_ascii=False))",
+    ],
 }
 
 
@@ -855,6 +864,16 @@ def run_runner_suite(tmp: Path) -> None:
           "输出不可解析 → RUN-001 FAIL（不伪装成 NA）")
     check(report.exit_code() == 1, "runner 失败时退出码非零")
 
+    # 空 verdict：必须记成 runner 的失败，**不许替它编 NA**（有"像样"的证据也不行）
+    no_verdict = fake_runner(tmp, "no_verdict")
+    report, writeback = runner.run_runner(skill, no_verdict, prompt_ids=["W-01"])
+    check(statuses(report)["RUN-001"] == FAIL and writeback["results"] == []
+          and "verdict" in evidence_of(report, "RUN-001"),
+          f"空 verdict → RUN-001 FAIL 且点名 verdict（实得 "
+          f"{statuses(report)['RUN-001']}／{len(writeback['results'])} 条）")
+    check(not any((r.get("verdict") or "") == "NA" for r in writeback["results"]),
+          "空 verdict 没有被悄悄改写成 NA")
+
     # runner 崩溃（非零退出）
     crash = fake_runner(tmp, "crash")
     report, _wb = runner.run_runner(skill, crash, prompt_ids=["W-01"])
@@ -866,9 +885,15 @@ def run_runner_suite(tmp: Path) -> None:
 
     # CLI 端到端：产出可复核的回写文件 + --collect 写中央记录
     out_dir = root / "cli-out"
+    scratch_before = {p.name for p in base_dir().glob("sv_runner_*")}
     code, out, err = run_cli(["review", "run", str(skill), "--runner", good,
                               "--prompts", "W-01,W-13", "--out", str(out_dir),
                               "--collect", "--project", str(root), "--json"])
+    scratch_after = {p.name for p in base_dir().glob("sv_runner_*")}
+    # 只比"新增"：历史残留（正是这条断言要防的东西）不该让用例变红
+    check(not (scratch_after - scratch_before),
+          f"`--collect` 的中转临时目录用完即删（本次新增残留 "
+          f"{sorted(scratch_after - scratch_before)}）")
     written = out_dir / "run-skill-review-cli.json"
     payload = json.loads(out)
     check(code == 0 and written.is_file(),

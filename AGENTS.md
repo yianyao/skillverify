@@ -76,6 +76,11 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
 1. **PowerShell here-string 会改坏代码内容**（反引号是转义符、内层引号被吃）。
    症状：`SyntaxError ... Perhaps you forgot a comma?` 指向中文串；更坏的是**内容错了但脚本照跑**。
    → **用 write 工具把补丁写成 `.py` 再执行**。本仓库的历史提交里多处这么做，就是为这个。
+   **同一类还有提交信息**：`Set-Content -Encoding UTF8` 在本机 PowerShell 上会写出 **BOM**，
+   于是 `git commit -F` 把 U+FEFF 写进提交主题（`git cat-file commit HEAD` 可见；`git log` 里
+   它会被终端吞掉，肉眼几乎看不出）。→ **提交信息也交给 write 工具写文件**，
+   提交后用 `git cat-file commit HEAD | head -c 20` 复核一次（实测：用 Set-Content 那次有 BOM，
+   用 write 工具那次没有）。
 2. **中文串里别嵌 ASCII 双引号**，用「」。本仓库代码里大量中文提示语，这条踩过六七次。
 3. **模块变包会让 `python -m 包.模块` 失效**（缺 `__main__.py`）。`skillverify/cli/` 拆包时
    正是如此——而 **git hook 的兜底调用就是这个形式**，结果所有提交被拦。

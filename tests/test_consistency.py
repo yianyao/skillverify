@@ -24,7 +24,9 @@ if __package__ in (None, ""):
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from skillverify import audit, evalx, library, material, mount, review, runner, spec, trigger  # noqa: E402
+from skillverify import (  # noqa: E402
+    audit, discover, evalx, library, material, mount, review, runner, spec, trigger,
+)
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
 from skillverify.lint import RULES as LINT_RULES  # noqa: E402
 from skillverify.spec import RULES as SPEC_RULES  # noqa: E402
@@ -182,23 +184,26 @@ def run_numbers() -> None:
         "触发": len(trigger.RULES),
         "评审": len(review.RULES),
         "材料·执行器": len(material.RULES) + len(runner.RULES),
+        "发现": len(discover.RULES),
         "库级·挂载·审计": len(library.RULES) + len(mount.RULES) + len(audit.RULES),
     }
     pattern = (r"(\d+) 条规则[（(：:]\s*spec (\d+) / lint (\d+) / 评测 (\d+) / 触发 (\d+)"
-               r" / 评审 (\d+) / 材料·执行器 (\d+) / 库级·挂载·审计 (\d+)")
+               r" / 评审 (\d+) / 材料·执行器 (\d+) / 发现 (\d+) / 库级·挂载·审计 (\d+)")
     hits = list(re.finditer(pattern, cov))
     check(len(hits) >= 2, f"《覆盖对照》里能找到逐族规则数（找到 {len(hits)} 处）")
     reported = {}
     for m in hits:
         declared_total = int(m.group(1))
-        declared = dict(zip(families, (int(m.group(i)) for i in range(2, 9))))
-        reported = declared
+        declared = dict(zip(families, (int(m.group(i)) for i in range(2, 10))))
         check(declared_total == sum(declared.values()),
               f"逐族规则数之和 = 声明的总数（{declared_total} vs {sum(declared.values())}）")
         check(declared == families,
               f"逐族规则数与代码一致（文档 {declared}，实际 {families}）")
-    check(bool(reported) and sum(families.values()) == 139,
-          f"规则总数 = 139（实得 {sum(families.values())}）——加规则时要同步文档")
+    # 总数必须等于**全仓** RULES 之和：分族表漏掉一个模块（早先漏过 DISC-* 与 MAT/RUN），
+    # 合计就会静默偏小——这是"合计对不代表分项对"的镜像（分项全了、分母却缺一块）。
+    all_rules = sum(families.values())
+    check(all_rules == 143,
+          f"规则总数 = 143（全仓 RULES 之和，实得 {all_rules}）——加规则时要同步文档")
 
 
 # --------------------------------------------------------------------------- #

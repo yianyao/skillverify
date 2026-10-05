@@ -183,7 +183,15 @@ def run_runner(
         entry["prompt_id"] = prompt.id  # 以我们的 id 为准，不让 runner 改归属
         for key in ("verdict", "evidence", "finding", "suggestion"):
             entry[key] = str(entry.get(key) or "").strip()
-        entry["verdict"] = entry["verdict"].upper() or "NA"
+        if entry["verdict"].upper() not in VERDICTS:
+            # 空 verdict **不替它编 NA**：那是"凭空造一个判定"，本项目的红线。
+            # 下游虽然会以"NA 未说明理由"拦下，但那条证据是误导的（问题在 runner 没给结论）。
+            outcome.failures.append(
+                f"{prompt.id}: runner 没给出合法 verdict（实为 {entry['verdict']!r}；"
+                f"只能是 {'/'.join(VERDICTS)}）")
+            outcome.failed.append(prompt.id)
+            continue
+        entry["verdict"] = entry["verdict"].upper()
         outcome.entries.append(entry)
         outcome.produced.append(prompt.id)
 

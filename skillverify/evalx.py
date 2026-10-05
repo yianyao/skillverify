@@ -1006,7 +1006,7 @@ def _check_feedback(path: Path) -> Result:
 
 
 def _check_run_inputs(workspace: Path, iteration: int | None) -> Result:
-    """WS-006：本轮的执行自证（隔离方式 / 执行器 / 输入冻结哈希 / 两臂提示词哈希）。
+    """WS-008：本轮的执行自证（隔离方式 / 执行器 / 输入冻结哈希 / 两臂提示词哈希）。
 
     来历：旧体系双跑对照要求每轮写 `run-inputs.md`，如实写明"两臂各派新进程、禁用 Skill 工具、
     禁 resume"，或在做不到时写明"降级为同会话顺序执行""未执行"——**并把作废轮留档**。

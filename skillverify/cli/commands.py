@@ -9,10 +9,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 from .. import __version__
-from ..tmpdir import new_temp_dir
+from ..tmpdir import temp_dir
 from ..deliver import (
     apply_waivers,
     attach_previous,
@@ -691,20 +692,22 @@ def cmd_review(args: argparse.Namespace) -> int:
             print(f"已生成: {target}", file=sys.stderr)
 
         if args.collect:
-            if target is None:
-                # 只作 collect 的输入载体；临时目录不可用属环境故障，明确报错而不是静默跳过留痕。
-                try:
-                    scratch = new_temp_dir(prefix="sv_runner_")
-                except OSError as exc:
-                    print(f"FAIL: 临时目录不可用（{exc}），无法在 --collect 下转存回写 JSON。",
-                          file=sys.stderr)
-                    return 1
-                target = scratch / f"{skill_dir.name}-review-cli.json"
-                target.write_text(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n",
-                                  encoding="utf-8", newline="")
-            collect_report, record = collect_reviews(
-                [target], load_catalog(), skill_dir=skill_dir,
-                expected_ids=writeback.get("prompt_ids"))
+            with ExitStack() as stack:
+                if target is None:
+                    # 只作 collect 的输入载体，用完即删：早先建了就不管，
+                    # 每跑一次 --collect 就在系统临时目录留一个残骸。
+                    try:
+                        scratch = stack.enter_context(temp_dir(prefix="sv_runner_"))
+                    except OSError as exc:
+                        print(f"FAIL: 临时目录不可用（{exc}），无法在 --collect 下转存回写 JSON。",
+                              file=sys.stderr)
+                        return 1
+                    target = scratch / f"{skill_dir.name}-review-cli.json"
+                    target.write_text(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n",
+                                      encoding="utf-8", newline="")
+                collect_report, record = collect_reviews(
+                    [target], load_catalog(), skill_dir=skill_dir,
+                    expected_ids=writeback.get("prompt_ids"))
             for res in collect_report.results:
                 report.add(res)
             discovery, _config = _load_discovery(args)

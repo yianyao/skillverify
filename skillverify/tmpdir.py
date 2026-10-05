@@ -27,6 +27,13 @@ from typing import Iterator
 #: 默认前缀；调用方一律再给一个语义化的前缀，便于排查残留
 DEFAULT_PREFIX = "skillverify-"
 
+#: 建目录时的 mode：**POSIX 用 0700，Windows 不传**。
+#: - POSIX：`mkdtemp` 的 0700 是对的（同机其他用户不该看到临时副本内容），不传会得到
+#:   `0777 & ~umask`（通常 0755，别人能列目录）；这里补回 0700 是本模块唯一的用途差异。
+#: - Windows：**不能传 mode**——CPython 会把它落成"仅所有者"的 DACL，而沙箱（AppContainer）
+#:   的访问检查要求 DACL 同时授予用户 SID 与容器 SID，于是创建者自己也进不去（见模块说明）。
+TEMP_DIR_MODE: int | None = 0o700 if os.name == "posix" else None
+
 #: 撞名重试次数（6 字节随机后缀撞名概率可忽略，这里只是不写死 while True）
 _MAX_ATTEMPTS = 64
 
@@ -46,7 +53,10 @@ def new_temp_dir(prefix: str = DEFAULT_PREFIX) -> Path:
     for _ in range(_MAX_ATTEMPTS):
         candidate = base / f"{prefix}{os.urandom(6).hex()}"
         try:
-            os.mkdir(candidate)
+            if TEMP_DIR_MODE is None:
+                os.mkdir(candidate)
+            else:
+                os.mkdir(candidate, TEMP_DIR_MODE)
         except FileExistsError:
             continue
         return candidate

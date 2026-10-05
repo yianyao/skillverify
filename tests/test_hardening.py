@@ -576,6 +576,27 @@ def run_run_log(tmp: Path) -> None:
     check(row.status == "WARN" and "没更新" in row.evidence,
           f"只有 90 天前的记录 → WARN 提醒观测停了（实得 {row.status}：{row.evidence[:70]}）")
 
+    # 日期**不能按字符串比大小**：`"2026-9-5" > "2026-10-05"` 逐字符为真（`9` > `1`），
+    # 于是"最新一条"会取错、陈旧检查被静默绕过。用固定输入直接断言这条纯函数——
+    # 集成用例做不到稳定复现：哪种写法更大取决于今天是几月。
+    from datetime import date as _d
+
+    check(audit.newest_ledger_date(["2026-9-5", "2026-10-05"])[0] == _d(2026, 10, 5),
+          "非补零与 ISO 日期混排时按**真实时间**取最新，而不是按字符串")
+    check(audit.newest_ledger_date(["2026/10/05", "2026-10-06"])[0] == _d(2026, 10, 6),
+          "斜杠写法也认（`2026/10/05`）")
+    newest_day, bad = audit.newest_ledger_date(["上周三", "2026-10-05"])
+    check(newest_day == _d(2026, 10, 5) and bad == ["上周三"],
+          f"认不出来的日期单独报出来（实得 newest={newest_day}，bad={bad}）")
+
+    # 日期一条都认不出来 → 陈旧检查**未执行**，必须说出来（而不是当作通过）
+    (trace / "run-log.md").write_text(
+        header + "| 上周三 | rl-skill | 旧记录 | 是 | 否 | 否 | — | — |\n",
+        encoding="utf-8", newline="")
+    row = audit.check_run_log(trace, "rl-skill")
+    check(row.status == "WARN" and "未执行" in row.evidence,
+          f"日期认不出来 → WARN 说明「陈旧检查未执行」（实得 {row.status}：{row.evidence[:70]}）")
+
 
 def run_adjudications(tmp: Path) -> None:
     """B：WARN 的人工裁决留痕——没裁决的要列出来，裁决随证据变化自动失效。"""

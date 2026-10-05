@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 import re
 import sys
 from pathlib import Path
@@ -27,7 +28,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
-from skillverify.tmpdir import temp_dir  # noqa: E402
+from skillverify.tmpdir import TEMP_DIR_MODE, temp_dir  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -247,6 +248,12 @@ def main() -> int:
                            "from tempfile import TemporaryDirectory\n")
     check(len(forbidden_tempfile_calls(probe_tree)) == 2,
           "这条守卫能失败（探针里 `tempfile.mkdtemp` 与 from-import 两种写法都被认出）")
+    # 平台差异是**刻意的**：POSIX 补回 0700（同机别的用户不该看到临时副本），
+    # Windows 不能传 mode（传了会落成"仅所有者"的 DACL，沙箱里创建者自己进不去）。
+    if os.name == "posix":
+        check(TEMP_DIR_MODE == 0o700, f"POSIX 上临时目录用 0700（实得 {oct(TEMP_DIR_MODE)}）")
+    else:
+        check(TEMP_DIR_MODE is None, "Windows 上不传 mode（继承父目录 DACL，沙箱才可用）")
 
     # 反向自检：这套检查**能失败**吗？故意造一处死代码与一句过期话术，验证会被抓到
     print("[test_selfcheck_can_fail]")

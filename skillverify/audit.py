@@ -127,30 +127,27 @@ def check_run_log(trace_dir: Path, skill: str | None = None) -> Result:
 
     empty_marks = ("", "—", "-", "待定", "无")
     unhandled: list[str] = []
-    newest = ""
     parsed_rows = 0
+    seen_dates: list[str] = []
     for lineno, cells in rows:
         date, row_skill, _task, trigger, _script, _cost, anomaly, action = cells[:8]
         if skill and row_skill and skill not in row_skill:
             continue
         parsed_rows += 1
-        if date > newest:
-            newest = date
+        seen_dates.append(date)
         if anomaly not in empty_marks and action in empty_marks:
             unhandled.append(f"{RUN_LOG_NAME}:{lineno}（异常观察没写处置）")
         if ("误触发" in trigger or "漏触发" in trigger) and action in empty_marks:
             unhandled.append(f"{RUN_LOG_NAME}:{lineno}（触发问题没写处置）")
 
+    newest, unparsable = newest_ledger_date(seen_dates)
     stale = ""
-    try:
+    if newest is not None:
         from datetime import date as _date
-        from datetime import datetime as _datetime
 
-        age = (_date.today() - _datetime.strptime(newest, "%Y-%m-%d").date()).days
+        age = (_date.today() - newest).days
         if age > RUN_LOG_STALE_DAYS:
-            stale = f"最近一条是 {newest}（{age} 天前）"
-    except (ValueError, TypeError):
-        stale = ""
+            stale = f"最近一条是 {newest.isoformat()}（{age} 天前）"
 
     if unhandled:
         return _res(RULES["AUDIT-006"], WARN, "台账里有没处置的条目：" + "；".join(unhandled[:4]))
@@ -158,7 +155,53 @@ def check_run_log(trace_dir: Path, skill: str | None = None) -> Result:
         return _res(RULES["AUDIT-006"], WARN,
                     f"运行台账 {stale}：超过 {RUN_LOG_STALE_DAYS} 天没更新——"
                     f"要么技能没人用（可接受），要么观测停了（该恢复）")
+    if unparsable:
+        # 有台账行、但一条日期都认不出来 → 陈旧检查**未执行**：必须说出来，
+        # 不能因为"没算出 stale"就当作通过（早先 strptime 抛错被吞掉，就是这个效果）。
+        head = "；".join(unparsable[:3]) + ("…" if len(unparsable) > 3 else "")
+        return _res(RULES["AUDIT-006"], WARN,
+                    f"台账有 {parsed_rows} 条但日期都认不出来（{head}）："
+                    f"陈旧检查**未执行**——请按 `YYYY-MM-DD` 写日期（模板见 examples/{RUN_LOG_NAME}）")
     return _res(RULES["AUDIT-006"], PASS, f"运行台账 {parsed_rows} 条，异常均已处置")
+
+
+def newest_ledger_date(texts: list[str]):
+    """返回 (最新日期, 认不出来的原始值列表)。
+
+    **独立成函数是为了能被直接断言**：这里曾经写成"把所有日期当字符串取最大，
+    再 strptime 解析"，于是 `"2026-9-5" > "2026-10-05"`（逐字符比 `9` 与 `1`），
+    一条该报陈旧的台账会被静默判成新鲜；而"哪种写法更大"取决于今天是几月，
+    靠集成用例很难稳定地复现——所以把这条逻辑做成纯函数，用固定输入断言。
+    """
+    parsed: list[tuple[object, str]] = []
+    bad: list[str] = []
+    for text in texts:
+        day = _parse_ledger_date(text)
+        if day is None:
+            bad.append(text)
+        else:
+            parsed.append((day, text))
+    if not parsed:
+        return None, bad
+    return max(parsed, key=lambda item: item[0])[0], bad
+
+
+def _parse_ledger_date(text: str):
+    """台账里的日期：接受 `YYYY-MM-DD`、`YYYY-M-D`、`YYYY/M/D`；认不出返回 None。
+
+    **为什么不能直接拿字符串比大小**：本机实测过 `"2026-9-5" > "2026-10-05"` 为真
+    （逐字符比 `9` 与 `1`），于是一条该报"30 天没更新"的台账被静默判成新鲜。
+    """
+    from datetime import date as _date
+
+    cleaned = (text or "").strip().replace("/", "-")
+    parts = cleaned.split("-")
+    if len(parts) != 3:
+        return None
+    try:
+        return _date(int(parts[0]), int(parts[1]), int(parts[2]))
+    except ValueError:
+        return None
 
 
 def _res(rule: Rule, status: str, evidence: str = "") -> Result:
