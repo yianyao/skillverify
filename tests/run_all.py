@@ -36,6 +36,7 @@ SUITES: list[tuple[str, str]] = [
     ("test_selfcheck", "自检（死代码 / 过期措辞）"),
     ("test_library", "库级检查（元数据预算 / 描述重叠）+ 外来技能审计 + 评测委托执行"),
     ("test_hardening", "A 组加固（许可 / 隐写 / dry-run / 评委校准 / 断言区分度 / 豁免 / 工作区历史 / 记录维度）"),
+    ("test_consistency", "文档与代码一致性（数字 / 算术 / 能力清单）"),
     ("test_packaging", "打包（pyproject 静态检查；--install 时真装一遍）"),
 ]
 

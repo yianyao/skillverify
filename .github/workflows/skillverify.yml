@@ -51,7 +51,7 @@ jobs:
             .agents/skillverify/deliver/latest.json
             .agents/skillverify/deliver/latest.md
 
-  # 只在开发**这个工具本身**时需要：跑 13 个回归套件（默认 12）
+  # 只在开发**这个工具本身**时需要：跑 14 个回归套件（默认 13）
   self-test:
     if: ${{ hashFiles('tests/run_all.py') != '' }}
     runs-on: ubuntu-latest
