@@ -232,9 +232,29 @@ def _scan_patterns(ctx: LintContext) -> dict[str, list[str]]:
     return buckets
 
 
+#: 从 frontmatter 里抠出"声明过的外部主机"（声明是散文，所以按形态提取而不是整段子串比对）
+DECLARED_HOST_RE = re.compile(r"[a-z0-9][a-z0-9.\-]*\.[a-z]{2,}")
+
+
+def _declared_hosts(ctx: LintContext) -> set[str]:
+    """frontmatter/正文里出现过的外部主机名（小写）。
+
+    早先的实现是 `host in declared`——**整段子串匹配**：声明了 `example.com` 而代码里写
+    `api.example.com` 会被判成"未声明"（误报），而声明里随便出现过的字符串又会放过一切。
+    这里改成先提取候选主机，再按**域名边界**比较（相等或其子域）。
+    """
+    text = (ctx.meta_text() or "").lower()
+    return {match.group(0).strip(".") for match in DECLARED_HOST_RE.finditer(text)}
+
+
+def _host_allowed(host: str, allowed: set[str]) -> bool:
+    """相等，或是某个已声明主机的子域（`api.example.com` ⊆ `example.com`；反之不成立）。"""
+    return any(host == base or host.endswith("." + base) for base in allowed if base)
+
+
 def _scan_endpoints(ctx: LintContext) -> list[str]:
     """代码文件里出现、且未在 frontmatter 中声明的外部主机（按主机去重）。"""
-    declared = (ctx.meta_text() or "").lower()
+    allowed = set(DEFAULT_ALLOWED_HOSTS) | _declared_hosts(ctx)
     found: dict[str, str] = {}
     for rec in ctx.inventory.texts:
         if not rec.is_code:
@@ -242,9 +262,7 @@ def _scan_endpoints(ctx: LintContext) -> list[str]:
         for match in URL_RE.finditer(rec.text or ""):
             url = match.group(0)
             host = re.sub(r"^\w+://", "", url).split("/")[0].split(":")[0].lower()
-            if not host or host in DEFAULT_ALLOWED_HOSTS:
-                continue
-            if host in declared or any(host.endswith("." + base) for base in DEFAULT_ALLOWED_HOSTS):
+            if not host or _host_allowed(host, allowed):
                 continue
             found.setdefault(host, f"{rec.rp}: {host}")
     return sorted(found.values())
