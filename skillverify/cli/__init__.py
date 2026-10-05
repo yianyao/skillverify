@@ -257,6 +257,11 @@ def build_parser() -> _ArgParser:
                            help="只检查 git 暂存内容涉及的技能（pre-commit 用）")
     p_deliver.add_argument("--strict", action="store_true",
                            help="连「未覆盖项」也阻断（发行前跑一次）")
+    p_deliver.add_argument("--accept", action="append", metavar="规则ID", default=None,
+                           help="把该规则的阻断项记为「已豁免」（必须配 --because 写明理由；"
+                                "会写进交付记录，绝不静默放过）")
+    p_deliver.add_argument("--because", metavar="理由", default=None,
+                           help="豁免理由（与 --accept 同用）")
     p_deliver.add_argument("--stages", choices=("all", "both", "spec", "lint", "evals", "review"),
                            default="all",
                            help="跑哪些阶段（默认 all = spec+lint+evals+review：交付要考虑"

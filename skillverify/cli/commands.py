@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .. import __version__
 from ..deliver import (
+    apply_waivers,
     attach_previous,
     build_record,
     evaluate,
@@ -446,6 +447,15 @@ def cmd_deliver(args: argparse.Namespace) -> int:
         )
 
     gate = evaluate(library, strict=args.strict)
+    # §6.1 的豁免通道：显式、有理由、落盘。没有它，误报只有"改到过"一条路。
+    if getattr(args, "accept", None):
+        if not getattr(args, "because", None):
+            print("FAIL: --accept 必须配 --because <理由>——豁免要留下书面理由，会写进交付记录",
+                  file=sys.stderr)
+            return 1
+        gate, waived = apply_waivers(gate, args.accept, args.because)
+        for item in waived:
+            print(f"  已豁免 {item}", file=sys.stderr)
     markdown = library.to_markdown()
     command = f"{PROG} deliver {'--staged ' if args.staged else ''}" \
               f"--project {args.project}" + (" --strict" if args.strict else "")
@@ -464,6 +474,9 @@ def cmd_deliver(args: argparse.Namespace) -> int:
     if previous.get("found"):
         marks = "⚠ 退步" if previous.get("worse") else ("改善" if previous.get("better") else "持平")
         print(f"  与上一轮相比：{marks} —— {previous.get('note', '')}", file=sys.stderr)
+    for item in previous.get("history_rewritten") or []:
+        print(f"  ⚠ 工作区历史被改动：{item}"
+              f"（同名 iteration 的内容与上一轮不同——旧结果被覆盖了）", file=sys.stderr)
     for item in gate.blockers:
         print(f"  阻断 {item}", file=sys.stderr)
     if args.verbose:

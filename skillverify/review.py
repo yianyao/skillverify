@@ -36,7 +36,7 @@ from pathlib import Path
 
 from . import __version__
 from .encoding import read_json, write_text
-from .report import FAIL, PASS, SKIP, WARN, Report, Result, Rule
+from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
 
 #: 提示词目录（随包分发的数据文件；提示词是数据，不是代码）
 CATALOG_PATH = Path(__file__).resolve().parent / "data" / "review-prompts.json"
@@ -157,6 +157,14 @@ RULES: dict[str, Rule] = {
         "HOUSE",
         "只有问题没有方向的 FAIL 会让使用者停在原地",
         "补一句可执行的 suggestion",
+    ),
+    "REV-012": Rule(
+        "REV-012",
+        "评委须先通过校准样本（判错则本轮结论不可用）",
+        "HOUSE",
+        "skill-up 的 Judges 校准实践；旧体系未覆盖",
+        "先按样本材料的判据判一遍校准样本（答案明确），判错就换评委或先统一判据理解，"
+        "再重做本轮评审",
     ),
 }
 
@@ -375,12 +383,14 @@ def build_pack(
         for prompt in prompts:
             body = render_prompts_md([prompt])
             path = per_prompt_dir / f"{prompt.id}.md"
-            write_text(path, _pack_header(name, [prompt]) + body + "\n" + OUTPUT_CONTRACT)
+            write_text(path, _pack_header(name, [prompt])
+                       + (render_calibration_md() if prompt is prompts[0] else "")
+                       + body + "\n" + OUTPUT_CONTRACT)
             written.append(path)
     else:
         path = out / f"{name}-review-pack.md"
-        write_text(path, _pack_header(name, prompts) + render_prompts_md(prompts)
-                   + "\n" + OUTPUT_CONTRACT)
+        write_text(path, _pack_header(name, prompts) + render_calibration_md()
+                   + render_prompts_md(prompts) + "\n" + OUTPUT_CONTRACT)
         written.append(path)
 
     template = {
@@ -388,6 +398,9 @@ def build_pack(
         "skill": name,
         "reviewer": "",
         "tier": "pack",
+        # 评委校准（第 0 步）：判错的结论不可用。留空表示本轮未做校准（记 INFO，不阻断）。
+        "calibration": [{"sample_id": s.get("id"), "verdict": ""}
+                        for s in load_calibration()],
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "prompt_ids": [p.id for p in prompts],
         "results": [
@@ -471,6 +484,69 @@ def _is_restatement(evidence: str, prompt: Prompt) -> bool:
     return False
 
 
+#: 评委校准样本（数据文件）：让评委先判"答案明确"的几个样本
+CALIBRATION_PATH = Path(__file__).resolve().parent / "data" / "judge-calibration.json"
+
+
+def load_calibration() -> list[dict]:
+    """读校准样本；文件缺失/损坏时返回空列表（校准是增强项，不该让工具崩）。"""
+    try:
+        raw = json.loads(CALIBRATION_PATH.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    samples = raw.get("samples") if isinstance(raw, dict) else None
+    return [s for s in samples if isinstance(s, dict)] if isinstance(samples, list) else []
+
+
+def render_calibration_md(samples: list[dict] | None = None) -> str:
+    """把校准样本渲染成任务包里的一节（第 0 步）。"""
+    samples = load_calibration() if samples is None else samples
+    if not samples:
+        return ""
+    lines = ["## 第 0 步（先做）：评委校准", "",
+             "先判下面这几个**答案明确**的样本，把结果写进回写的 `calibration` 数组：",
+             "判错说明你这个评委（人或模型）分不稳，本轮结论不可用。", ""]
+    for sample in samples:
+        lines += [f"### {sample.get('id')}（{sample.get('title', '')}）", "",
+                  "```", str(sample.get("material", "")).strip(), "```", ""]
+    return "\n".join(lines) + "\n"
+
+
+def check_calibration(data: dict, *, label: str = "") -> Result:
+    """REV-012：评委连校准样本都判错 → 本轮结论不可用。
+
+    没做校准记 SKIP（未覆盖，默认不阻断）——校准是"增强可信度"，不是人人都要跑的仪式；
+    但**做了且判错**就是硬问题：说明给结论的评委不可靠。
+    """
+    samples = load_calibration()
+    prefix = f"{label}: " if label else ""
+    if not samples:
+        return _res(RULES["REV-012"], INFO, f"{prefix}不适用：校准样本数据缺失")
+    recorded = data.get("calibration")
+    if not isinstance(recorded, list) or not recorded:
+        # 记 INFO 而不是 SKIP：校准是**增强项**（做了才更可信），不是每轮都必须的仪式。
+        # 强制它会让所有"合格回写"恒返回 2；而"做了却判错"才是真问题（见下）。
+        return _res(RULES["REV-012"], INFO,
+                    f"{prefix}不适用：没有 calibration 数组（未做校准；"
+                    f"补上它能让本轮结论更可信）")
+    expected = {str(s.get("id")): str(s.get("expected", "")).upper() for s in samples}
+    got = {}
+    for item in recorded:
+        if isinstance(item, dict):
+            got[str(item.get("sample_id"))] = str(item.get("verdict", "")).upper()
+    wrong = [f"{sid}（应 {expected[sid]}，实得 {got[sid]}）"
+             for sid in sorted(expected) if got.get(sid) and got.get(sid) != expected[sid]]
+    missing = [sid for sid in sorted(expected) if sid not in got]
+    if wrong:
+        return _res(RULES["REV-012"], FAIL,
+                    f"{prefix}评委判错了校准样本：{'；'.join(wrong)}——"
+                    f"校准不过，这一轮评审结论不可用（换评委或先统一判据理解）")
+    if missing:
+        return _res(RULES["REV-012"], WARN,
+                    f"{prefix}校准样本没判全，缺 {'、'.join(missing)}（判全才能说明分得稳）")
+    return _res(RULES["REV-012"], PASS, f"{prefix}{len(expected)} 个校准样本全部判对")
+
+
 def validate_writeback(data: object, catalog: list[Prompt], *,
                        where: str = "") -> tuple[list[Result], dict]:
     """校验一份回写，返回 (结果列表, 归一化后的回写)。判定只看字段，不看措辞。"""
@@ -526,6 +602,8 @@ def validate_writeback(data: object, catalog: list[Prompt], *,
     out.append(_res(RULES["REV-005"], FAIL if bad_verdict else PASS,
                     f"{label}: 非法 verdict {bad_verdict}" if bad_verdict
                     else f"{label}: verdict 取值合法"))
+
+    out.append(check_calibration(data, label=label))
 
     thin: list[str] = []
     restated: list[str] = []

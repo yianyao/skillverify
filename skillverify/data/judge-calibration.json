@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "note": "评委校准样本：让评委先判这几个（答案明确），判错说明它分不稳，本轮结论不可用。判据写在 why 里，样本材料是真实形态的片段。",
+  "samples": [
+    {
+      "id": "C-01",
+      "kind": "should-fail",
+      "expected": "FAIL",
+      "title": "证据只是复述判据",
+      "material": "{\"prompt_id\": \"W-02\", \"verdict\": \"PASS\", \"evidence\": \"description 质量符合判据要求\", \"finding\": \"\"}",
+      "why": "证据必须能被人按图索骥核对（文件:行、原文片段或具体计数）；「符合判据要求」是复述判据，等于没有证据。"
+    },
+    {
+      "id": "C-02",
+      "kind": "should-fail",
+      "expected": "FAIL",
+      "title": "破坏性操作没有防护旗标却判过",
+      "material": "scripts/cleanup.py: `shutil.rmtree(args.target)`；参数解析器只声明了 `--target`，没有 --dry-run/--confirm/--force；评审结论：PASS（理由：脚本很简短）",
+      "why": "W-08 判的是「破坏性操作有没有防护旗标」。脚本简短不是通过理由——这条应当 FAIL 并写清缺哪个旗标。"
+    },
+    {
+      "id": "C-03",
+      "kind": "should-pass",
+      "expected": "PASS",
+      "title": "描述写清了做什么与何时用",
+      "material": "description: 「从 CSV 统计月度销售并输出前 3 名报告。当用户提到销售数据、CSV 统计或月度汇总时使用。」",
+      "why": "既说了做什么（统计月度销售、输出前 3 名），也说了何时触发（销售数据 / CSV 统计 / 月度汇总三类说法），W-02 应当 PASS。"
+    },
+    {
+      "id": "C-04",
+      "kind": "should-pass",
+      "expected": "PASS",
+      "title": "证据可定位（文件:行 + 原文）",
+      "material": "{\"prompt_id\": \"W-01\", \"verdict\": \"PASS\", \"evidence\": \"见 SKILL.md:2 的 description 字段，含『销售数据』『CSV』两个触发词\"}",
+      "why": "写了文件与行号，并引用原文片段——任何人可以照着核对，属于合格证据。"
+    }
+  ]
+}

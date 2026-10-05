@@ -83,6 +83,10 @@ RUN_HINT = (
     "本工具只校验产物；命令不对（路径/参数/环境）时先修命令再重跑"
 )
 
+#: 判定"恒真/恒假"所需的最少观测次数（少于它不足以说明没有区分度）
+MIN_ASSERTION_OBSERVATIONS = 3
+
+
 RULES: dict[str, Rule] = {
     # ---- evals/evals.json ----
     "EVAL-000": Rule(
@@ -291,6 +295,14 @@ RULES: dict[str, Rule] = {
         "SHOULD",
         _FEEDBACK,
         "按官方形状写：`{\"<eval 目录名>\": \"<反馈，空串表示没问题>\"}`",
+    ),
+    "EVAL-010": Rule(
+        "EVAL-010",
+        f"断言要有区分度（不得恒真/恒假，观测 ≥{MIN_ASSERTION_OBSERVATIONS} 次）",
+        "HOUSE",
+        "旧体系 E-05（断言难度复核）的机械部分；官方规范未覆盖",
+        "恒真的断言换成更具体的判定（把「输出是好的」写成「输出列出 3 个月份且带数值」）；"
+        "恒假的先查判据是否写反或环境是否满足",
     ),
 }
 
@@ -952,6 +964,54 @@ def _check_feedback(path: Path) -> Result:
                 f"{path.name}: 顶层应为对象（实为 {type(data).__name__}）")
 
 
+def _check_discrimination(workspace: Path, iteration: int | None) -> Result:
+    """跨 iteration/arm 的**断言区分度**：恒真与恒假的断言都没有区分度。
+
+    - 恒真：每次都过——多半是空洞断言（"输出是好的"换个说法），也可能判据写得太松；
+    - 恒假：每次都不通过——判据可能写反，或环境从来没满足过。
+
+    只记 WARN：断言的价值最终由人判断（`E-05` 断言难度复核也管这件事）。
+    """
+    iterations, _odd = _iterations(workspace)
+    if iteration is not None:
+        iterations = [item for item in iterations if item[0] == iteration]
+    seen: dict[str, list[bool]] = {}
+    files = 0
+    for _number, path in iterations:
+        for grading in sorted(path.rglob("grading.json")):
+            data, error = read_json(grading)
+            if error or not isinstance(data, dict):
+                continue
+            files += 1
+            for item in data.get("assertion_results") or []:
+                if not isinstance(item, dict) or not isinstance(item.get("passed"), bool):
+                    continue
+                text = str(item.get("text", "")).strip()
+                if text:
+                    seen.setdefault(text, []).append(item["passed"])
+    if not files:
+        return _res(RULES["EVAL-010"], INFO, "不适用：工作区里没有可读的 grading.json")
+    enough = {text: flags for text, flags in seen.items()
+              if len(flags) >= MIN_ASSERTION_OBSERVATIONS}
+    if not enough:
+        return _res(RULES["EVAL-010"], INFO,
+                    f"不适用：没有断言被观测到 {MIN_ASSERTION_OBSERVATIONS} 次以上"
+                    f"（最多 {max((len(v) for v in seen.values()), default=0)} 次）")
+    always_true = [t for t, v in enough.items() if all(v)]
+    always_false = [t for t, v in enough.items() if not any(v)]
+    if always_true or always_false:
+        parts = []
+        if always_true:
+            parts.append(f"恒真 {len(always_true)} 条（{_summarize(always_true)}）")
+        if always_false:
+            parts.append(f"恒假 {len(always_false)} 条（{_summarize(always_false)}）")
+        return _res(RULES["EVAL-010"], WARN,
+                    f"断言没有区分度：{'；'.join(parts)}——"
+                    f"恒真的多半空洞（换成更具体的判定），恒假的先查判据是否写反")
+    return _res(RULES["EVAL-010"], PASS,
+                f"{len(enough)} 条断言都有区分度（每条观测 ≥{MIN_ASSERTION_OBSERVATIONS} 次）")
+
+
 def _check_workspace(skill_dir: Path, workspace: Path, doc: EvalsDoc,
                      iteration: int | None) -> list[Result]:
     out: list[Result] = []
@@ -1176,8 +1236,11 @@ def check_evals(
             results.append(_res(RULES[rid], INFO,
                                 f"不适用：未找到评测工作区"
                                 f"（默认找并列目录 <技能名>{WORKSPACE_SUFFIX}/，可用 --workspace 指定）"))
+        results.append(_res(RULES["EVAL-010"], INFO,
+                            "不适用：未找到评测工作区（没有跨轮次观测，谈不上区分度）"))
     else:
         results.extend(_check_workspace(skill_dir, ws, doc, iteration))
+        results.append(_check_discrimination(ws, iteration))
 
     for res in results:
         report.add(res)

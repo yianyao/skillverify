@@ -95,6 +95,14 @@ RULES: dict[str, Rule] = {
         "本项目收紧：官方只说 “Keep it concise”，未给数字；宿主常在 10–30K 字符处截断",
         "精简 `--help`：保留用途、参数、1–2 条示例",
     ),
+    "SCRIPT-009": Rule(
+        "SCRIPT-009",
+        "dry-run 类旗标试跑后不得改动技能目录",
+        "HOUSE",
+        "旧体系 V6（脚本冒烟套件：dry-run 可用）；官方规范未覆盖",
+        "让 dry-run 真的只预览：把写操作挪到 `if not args.dry_run:` 之后，"
+        "或先算后写（先产出计划再统一落盘）",
+    ),
 }
 
 #: Python：交互式输入（AST 判定，忽略注释与文档字符串）
@@ -406,6 +414,101 @@ def facts(ctx: LintContext) -> ScriptFacts:
                        destructive=destructive, unguarded=unguarded)
 
 
+#: dry-run 类旗标（试跑用：跑完**不得**改动技能目录）
+DRY_RUN_FLAGS = ("--dry-run", "--dry_run", "--dryrun", "--simulate")
+
+
+def _dir_digest(root) -> dict:
+    """目录内容摘要（相对路径 -> 内容哈希）。用于判断"跑一次到底改没改文件"。"""
+    import hashlib
+
+    out: dict = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and "__pycache__" not in path.parts:
+            try:
+                out[path.relative_to(root).as_posix()] = hashlib.sha256(
+                    path.read_bytes()).hexdigest()[:16]
+            except OSError:
+                continue
+    return out
+
+
+def _check_dry_run(ctx: LintContext, analyzable, scripts) -> Result:
+    """V6 的机械部分：声明了 dry-run 的脚本，试跑一遍并核对**技能目录未被改动**。
+
+    在**临时副本**里跑：万一脚本无视 dry-run 真的写了文件，被改的是副本，不是你的技能目录。
+    局限（写在证据里）：只能看到技能目录自身的变化——脚本写到 /tmp、家目录或远端看不见。
+    """
+    import tempfile
+    from pathlib import Path
+
+    if not scripts:
+        # 与 SCRIPT-002/003/005 同口径：没有 scripts/ 目录 = 不适用（别让纯文档技能恒返回 2）
+        return res(RULES["SCRIPT-009"], INFO, "不适用：包内无 scripts/ 目录")
+    if not ctx.run_scripts:
+        # 与 SCRIPT-004/006/007/008 同源：这是「没开启可选批次」，不是技能缺陷 → optional
+        return res(RULES["SCRIPT-009"], SKIP,
+                   "未执行：需 --scripts 显式开启（将试跑 --dry-run 并核对技能目录未被改动）",
+                   optional=True)
+
+    targets = []
+    for rec, cmd in analyzable:
+        flags = _declared_flags(rec.text or "")
+        picked = next((flag for flag in DRY_RUN_FLAGS if flag in flags), None)
+        if picked:
+            targets.append((rec, cmd, picked))
+    if not targets:
+        return res(RULES["SCRIPT-009"], INFO,
+                   "不适用：没有脚本声明 --dry-run / --simulate 类旗标")
+
+    changed: list[str] = []
+    unrun: list[str] = []
+    passed: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="skillverify-dryrun-") as tmp:
+        copy = Path(tmp) / ctx.root.name
+        shutil.copytree(ctx.root, copy, symlinks=True)
+        for rec, cmd, flag in targets:
+            script = copy / rec.rp
+            if not script.is_file():
+                unrun.append(f"{rec.rp}（副本里找不到）")
+                continue
+            before = _dir_digest(copy)
+            try:
+                proc = subprocess.run([*cmd[:-1], str(script), flag], cwd=str(copy),
+                                      stdin=subprocess.DEVNULL, capture_output=True,
+                                      text=True, encoding="utf-8", errors="replace",
+                                      timeout=ctx.script_timeout_s)
+            except subprocess.TimeoutExpired:
+                unrun.append(f"{rec.rp}（{flag} 超时）")
+                continue
+            except OSError as exc:
+                unrun.append(f"{rec.rp}（无法执行：{exc}）")
+                continue
+            after = _dir_digest(copy)
+            if proc.returncode != 0:
+                unrun.append(f"{rec.rp}（{flag} 退出码 {proc.returncode}，可能缺必需参数）")
+                continue
+            diff = sorted(set(after) ^ set(before)) or sorted(
+                key for key in before if after.get(key) != before[key])
+            if diff:
+                changed.append(f"{rec.rp}: 跑了 {flag} 之后改动了 {'、'.join(diff[:3])}")
+            else:
+                passed.append(f"{rec.rp}（{flag}）")
+    if changed:
+        return res(RULES["SCRIPT-009"], FAIL,
+                   "dry-run 竟然改动了技能目录：" + "；".join(changed)
+                   + "（在临时副本上验证，你的原目录未被触碰）")
+    if passed and not unrun:
+        return res(RULES["SCRIPT-009"], PASS,
+                   f"{len(passed)} 个脚本试跑后目录未变：{'、'.join(passed[:3])}"
+                   f"；局限：只看技能目录自身的变化")
+    if passed:
+        return res(RULES["SCRIPT-009"], WARN,
+                   f"{len(passed)} 个通过；另有无法单独试跑：{summarize(unrun)}")
+    return res(RULES["SCRIPT-009"], SKIP,
+               f"未执行：{len(unrun)} 个脚本都试跑不了（{summarize(unrun)}）", optional=True)
+
+
 def check(ctx: LintContext) -> list[Result]:
     out: list[Result] = []
     scripts, static_targets, analyzable, unanalyzed, unavailable = _targets(ctx)
@@ -479,6 +582,9 @@ def check(ctx: LintContext) -> list[Result]:
 
     # ---- SCRIPT-004/006/007/008：需要执行 ----
     out.extend(_dynamic(ctx, analyzable, bool(scripts), unavailable))
+
+    # ---- SCRIPT-009：dry-run 不得产生副作用（需执行）----
+    out.append(_check_dry_run(ctx, analyzable, scripts))
 
     return out
 

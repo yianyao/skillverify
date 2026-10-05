@@ -85,6 +85,14 @@ RULES: dict[str, Rule] = {
         "本项目收紧；仅作提示，不代表已声明即安全",
         "在 `compatibility` 里写明需要访问哪些网络端点（便于使用者判断是否放行）",
     ),
+    "SEC-008": Rule(
+        "SEC-008",
+        "不得含隐藏字符（双向控制符 / 零宽字符）",
+        "HOUSE",
+        "社区已知的隐写注入形态（Trojan Source、零宽字符藏指令）；官方规范未覆盖",
+        "把隐藏字符删掉。双向控制符能让同一段内容「读起来」与「实际执行」不一致；"
+        "零宽字符可以把指令藏进看起来无害的文本里——这类内容一律按不可信处理",
+    ),
 }
 
 #: 高置信度密钥（强特征前缀；误报率接近零）
@@ -261,6 +269,28 @@ def facts(ctx: LintContext) -> SecurityFacts:
     )
 
 
+#: 双向控制符（Trojan Source 形态：让同一段内容「读起来」与「实际执行」不一致）
+BIDI_RE = re.compile("[\u202a-\u202e\u2066-\u2069]")
+#: 其它不可见字符。**故意不含 U+200D（ZWJ）**——emoji 序列里它是合法的。
+INVISIBLE_RE = re.compile("[\u200b\u200c\u200e\u200f\u2060-\u2064\ufeff]")
+
+
+def _scan_invisible(ctx: LintContext) -> tuple[list[str], list[str]]:
+    """扫隐藏字符：返回 (双向控制符命中, 其它不可见字符命中)。"""
+    bidi: list[str] = []
+    invisible: list[str] = []
+    for rec in ctx.inventory.texts:
+        # 开头的 U+FEFF 是「文件带 BOM」——那归编码规则（ENC-003）管；
+        # 这里只找**内容中间**的隐藏字符（隐写的判断依据是"藏在不该出现的地方"）。
+        text = (rec.text or "").lstrip("\ufeff")
+        for idx, line in enumerate(text.splitlines(), 1):
+            for match in BIDI_RE.finditer(line):
+                bidi.append(f"{rec.rp}:{idx} U+{ord(match.group(0)):04X}")
+            for match in INVISIBLE_RE.finditer(line):
+                invisible.append(f"{rec.rp}:{idx} U+{ord(match.group(0)):04X}")
+    return bidi, invisible
+
+
 def check(ctx: LintContext) -> list[Result]:
     out: list[Result] = []
     strong, generic, entropy = _scan_secrets(ctx)
@@ -299,6 +329,18 @@ def check(ctx: LintContext) -> list[Result]:
                        f"URL 携带凭据参数: {summarize(buckets['exfil'])}"))
     else:
         out.append(res(RULES["SEC-006"], PASS, "无 URL 携带凭据参数"))
+
+    # ---- SEC-008：隐藏字符 / 隐写注入 ----
+    bidi, invisible = _scan_invisible(ctx)
+    if bidi:
+        # 双向控制符在技能内容里没有正当用途，在代码里等于 Trojan Source → 客观缺陷
+        out.append(res(RULES["SEC-008"], FAIL,
+                       f"发现双向控制符（可让内容看起来与实际不一致）: {summarize(bidi)}"))
+    elif invisible:
+        out.append(res(RULES["SEC-008"], WARN,
+                       f"发现不可见字符（可能是隐写或误贴）: {summarize(invisible)}"))
+    else:
+        out.append(res(RULES["SEC-008"], PASS, "未发现双向控制符或不可见字符"))
 
     if not any(rec.is_code for rec in ctx.inventory.texts):
         out.append(res(RULES["SEC-007"], INFO, "不适用：包内无代码文件"))

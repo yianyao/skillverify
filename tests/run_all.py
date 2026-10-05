@@ -35,6 +35,7 @@ SUITES: list[tuple[str, str]] = [
     ("test_injection", "注入自测（变异 40 处 = 38 单技能 + 2 库级，必须逐处报错且不牵连）"),
     ("test_selfcheck", "自检（死代码 / 过期措辞）"),
     ("test_library", "库级检查（元数据预算 / 描述重叠）+ 外来技能审计 + 评测委托执行"),
+    ("test_hardening", "A 组加固（许可 / 隐写 / dry-run / 评委校准 / 断言区分度 / 豁免 / 工作区历史 / 记录维度）"),
     ("test_packaging", "打包（pyproject 静态检查；--install 时真装一遍）"),
 ]
 

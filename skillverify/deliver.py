@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
+from .encoding import read_json
 from .discover import Discovery, SkillRef
 from .report import FAIL, SKIP, WARN, LibraryReport
 
@@ -145,6 +146,7 @@ class DeliveryGate:
     passed: bool
     strict: bool
     blockers: list[str] = field(default_factory=list)      # MUST 修：FAIL
+    waivers: list[str] = field(default_factory=list)       # 已豁免（显式 + 有理由）
     uncovered: list[str] = field(default_factory=list)     # 未覆盖（optional SKIP）
     warnings: list[str] = field(default_factory=list)      # 需书面甄别
     checked_skills: int = 0
@@ -157,6 +159,7 @@ class DeliveryGate:
             "blockers": list(self.blockers),
             "uncovered": list(self.uncovered),
             "warnings": list(self.warnings),
+            "waivers": list(self.waivers),
         }
 
     def summary(self) -> str:
@@ -196,6 +199,62 @@ def evaluate(library: LibraryReport, *, strict: bool = False) -> DeliveryGate:
             gate.warnings.append(item)
     gate.passed = not gate.blockers
     return gate
+
+
+def apply_waivers(gate: DeliveryGate, rids: list[str], because: str,
+                  *, by: str = "") -> tuple[DeliveryGate, list[str]]:
+    """把指定规则的阻断项降级为「已豁免」，返回 (gate, 豁免明细)。
+
+    **为什么需要这个出口**：机械层会有误报（尤其 SHOULD 级），而两人团队不该只有
+    「修好」一条路——方案 §6.1 原本就要求「[S] 级书面说明后放行」。
+    但豁免必须**显式 + 有理由 + 落盘**：绝不静默放过，记录里能查到是谁、为什么放过的。
+    """
+    wanted = {rid.strip() for rid in rids if rid.strip()}
+    kept: list[str] = []
+    waived: list[str] = []
+    for item in gate.blockers:
+        parts = item.split("·")
+        rid = parts[1].strip() if len(parts) > 1 else ""
+        if rid in wanted:
+            suffix = f"；豁免人：{by}" if by else ""
+            waived.append(f"{item}（豁免理由：{because}{suffix}）")
+        else:
+            kept.append(item)
+    gate.blockers = kept
+    gate.waivers = waived
+    gate.passed = not kept
+    return gate, waived
+
+
+def workspace_fingerprints(skill_path: Path) -> dict[str, str]:
+    """技能并列工作区里每个 iteration 的指纹（用于发现「历史 iteration 被覆盖」）。
+
+    工作区是**兄弟目录**（`<技能名>-workspace/`）；没有就返回空字典。
+    """
+    from .watch import fingerprint
+
+    for candidate in (skill_path.parent / f"{skill_path.name}-workspace",):
+        if not candidate.is_dir():
+            continue
+        out: dict[str, str] = {}
+        for child in sorted(candidate.iterdir()):
+            if child.is_dir() and child.name.startswith("iteration-"):
+                out[child.name] = fingerprint(child)
+        return out
+    return {}
+
+
+def _reviewers(trace_dir: Path | None, skills: list[str]) -> dict:
+    """从评审记录里取出每个技能的 Judge 身份（模型/人名）——出问题时要能定位「谁判的」。"""
+    if trace_dir is None:
+        return {}
+    out: dict = {}
+    for skill in skills:
+        data, error = read_json(trace_dir / "review" / f"{skill}.json")
+        if error or not isinstance(data, dict):
+            continue
+        out[skill] = {key: data.get(key) for key in ("reviewer", "tier", "generated_at", "verdict")}
+    return out
 
 
 def rules_hash() -> str:
@@ -239,6 +298,16 @@ def build_record(
         "scope": scope,
         "command": command,
         "git": git_info(project),
+        # 出问题时最难回答的是「是技能退化了，还是环境变了」——所以把判定环境一并记下来。
+        # Judge 身份（模型/人名）来自评审记录；没有评审记录时为空。
+        "environment": {
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "tool_version": __version__,
+            "rules_hash": rules_hash(),
+        },
+        "reviewers": _reviewers(discovery.trace_dir, [e.skill for e in library.entries]),
+        "workspaces": {e.skill: workspace_fingerprints(Path(e.path)) for e in library.entries},
         "gate": gate.to_dict(),
         "counts": library.counts(),
         "skills": [
@@ -283,6 +352,15 @@ def compare_with_previous(latest_json: Path, record: dict) -> dict:
     new = {"result": new_gate.get("result"), "blockers": len(new_gate.get("blockers") or []),
            "uncovered": len(new_gate.get("uncovered") or []),
            "warnings": len(new_gate.get("warnings") or [])}
+    # A7：工作区 iteration 的历史被改动/覆盖（deliver 只管交付记录历史，工作区是另一回事）
+    rewritten: list[str] = []
+    old_ws = previous.get("workspaces") or {}
+    for skill, iters in (record.get("workspaces") or {}).items():
+        for name, digest in (iters or {}).items():
+            before = (old_ws.get(skill) or {}).get(name)
+            if before and before != digest:
+                rewritten.append(f"{skill}/{name}")
+
     rank = {"pass": 0, "warn": 1, "fail": 2}
     worse_by_result = rank.get(str(new["result"]), 0) > rank.get(str(old["result"]), 0)
     worse = worse_by_result or new["blockers"] > old["blockers"]
@@ -300,12 +378,14 @@ def compare_with_previous(latest_json: Path, record: dict) -> dict:
     return {
         "found": True,
         "at": previous.get("generated_at"),
+        "history_rewritten": rewritten,
         "before": old,
         "after": new,
         "worse": worse,
         "better": better,
         "changed_skills": changed_skills,
-        "note": ("与上一轮相比**退步**：" if worse else
+        "note": (("工作区历史被改动：" + "、".join(rewritten) + "。") if rewritten else "")
+                + ("与上一轮相比**退步**：" if worse else
                  ("与上一轮相比有改善：" if better else "与上一轮相比无实质变化："))
                 + f"{old['result']} → {new['result']}（阻断项 {old['blockers']} → {new['blockers']}，"
                   f"未覆盖 {old['uncovered']} → {new['uncovered']}）",

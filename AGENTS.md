@@ -17,7 +17,7 @@
 ## 二、跑起来
 
 ```powershell
-python -m tests.run_all              # 12 个套件（默认 11），约 2 分钟（离线）
+python -m tests.run_all              # 13 个套件（默认 12），约 2 分钟（离线）
 python -m tests.run_all --dogfood    # 另把 legacy/ 下的旧技能拉进来跑
 python -m tests.run_all --install    # 再跑打包真装检查（需要网络，约 1 分钟）
 python -m tests.test_lint            # 也可以单跑某一套
@@ -92,7 +92,7 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
   另有开发者向的《覆盖对照-生命周期验证方案.md》与本文件。
 - `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
 - 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
-- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（12 个套件 = 默认 11 + 打包真装；具体断言数看输出，本文件不写死数字）。
+- 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（13 个套件 = 默认 12 + 打包真装；具体断言数看输出，本文件不写死数字）。
 - CI 样例在 `.github/workflows/skillverify.yml`：改门禁口径时同步它。
 - 库级检查 `LIB-001/002` 在 `library.py`：预算默认 8000 **是本项目约定**（文档里必须保留这句，
   别写成官方口径）；两条都只记 WARN——预算口径由宿主决定，工具不替宿主阻断。
@@ -108,5 +108,12 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
 - **能力与事实一律走结构化扫描**：`audit` 的口径来自 `security.facts()` / `scripts.facts()` /
   `deps.facts()`，**不许**再从 `Result.evidence` 文本里 `split("：")` 抠数据——那是本项目在 deliver
   里批评并改掉的反模式（措辞一改就静默解析出垃圾）。审计单里也写明了各类的口径。
+- **加固轮的四个约定**（都有断言守着）：
+  ① `HYG-006/007` 许可：license 字段宜简短、声明了就该有随包文件（都是 WARN）；
+  ② `SEC-008` 隐写：代码里的双向控制符记 FAIL、正文里的零宽字符记 WARN（**故意不含 ZWJ**，emoji 合法）；
+  ③ `SCRIPT-009` dry-run：在**临时副本**里试跑并比对目录哈希——只能看到技能目录自身的变化；
+  ④ `REV-012` 评委校准：判错校准样本（`data/judge-calibration.json`）则结论不可用；没做记 INFO。
+- **豁免通道**：`deliver --accept <规则ID> --because <理由>` 把该规则的阻断项记为「已豁免」并落盘。
+  它是 §6.1 要求的出口——但**必须显式 + 有理由**，缺理由直接被拒（绝不静默放过）。
 - 新增规则/命令时的固定动作：① 规则要写 level 与出处（官方条款或"本项目收紧"）；
   ② 文档里补上并放进演练块（带期望退出码）；③ 补回归断言；④ 跑一遍死代码与过期措辞扫描。

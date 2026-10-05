@@ -21,7 +21,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from ..report import FAIL, PASS, WARN, Result, Rule
+from ..report import FAIL, INFO, PASS, WARN, Result, Rule
 # 素材类扩展名与体积阈值统一取自 inventory，避免同一常量两处各写一份
 from .inventory import ASSET_EXTS, BIG_FILE_BYTES
 from .shared import (
@@ -35,6 +35,16 @@ from .shared import (
 )
 
 _SPEC_DIRS = "https://agentskills.io/specification#directory-structure"
+
+#: 随包许可/版权文件的常见名字（小写比较）
+LICENSE_FILES = frozenset({
+    "license", "license.txt", "license.md", "licence", "licence.txt",
+    "copying", "copying.txt", "notice", "notice.txt", "notice.md",
+})
+
+#: license 字段的合理长度上限（超过它多半是把完整条款塞进了 frontmatter）
+LICENSE_FIELD_MAX = 200
+
 
 RULES: dict[str, Rule] = {
     "HYG-001": Rule(
@@ -120,6 +130,21 @@ RULES: dict[str, Rule] = {
         "HOUSE",
         "本项目纪律：覆盖不完整时不得以 PASS 呈现",
         "修正文件权限或体积后复跑；覆盖有洞时本报告的 PASS 不代表该项已通过",
+    ),
+    "HYG-006": Rule(
+        "HYG-006",
+        f"license 字段宜简短（≤{LICENSE_FIELD_MAX} 字符、单行）",
+        "HOUSE",
+        "旧体系 V15（许可合规）；官方仅规定 license 为可选字段",
+        "把完整条款放进随包文件（LICENSE/COPYING），frontmatter 里只写许可名或一句指引——"
+        "frontmatter 是每次加载都要读的元数据，塞长文本会挤占上下文预算",
+    ),
+    "HYG-007": Rule(
+        "HYG-007",
+        "声明了 license 就应有随包许可文件",
+        "HOUSE",
+        "旧体系 V15（许可合规）",
+        "在技能根放一份 LICENSE（或 COPYING/NOTICE）：对外交付时收件人要能核对条款全文",
     ),
 }
 
@@ -371,9 +396,52 @@ def _check_coverage(ctx: LintContext) -> list[Result]:
     return [res(RULES["COV-001"], PASS, note)]
 
 
+def _license_files(ctx: LintContext) -> list[str]:
+    """技能根下的许可/版权文件（只看顶层与一层子目录，避免把依赖里的 LICENSE 算进来）。"""
+    found: list[str] = []
+    for rec in ctx.inventory.files:
+        if rec.path.name.lower() in LICENSE_FILES and rec.rp.count("/") <= 1:
+            found.append(rec.rp)
+    return sorted(set(found))
+
+
+def _check_license(ctx: LintContext) -> list[Result]:
+    """V15 的机械部分：`license` 字段是否简短、声明了许可时有没有随包文件。
+
+    官方只规定 `license` 是可选字段（没规定长度与文件）；这两条是本项目的 HOUSE 收紧，
+    因此都是 WARN——**不阻断交付**，但会在交付记录里留痕。
+    """
+    out: list[Result] = []
+    fm = ctx.doc.frontmatter
+    raw = fm.get("license") if fm is not None else None
+    value = raw if isinstance(raw, str) else ""
+    stripped = value.strip()
+    files = _license_files(ctx)
+
+    if not stripped:
+        out.append(res(RULES["HYG-006"], INFO, "不适用：未声明 license"))
+    elif len(stripped) > LICENSE_FIELD_MAX or "\n" in value:
+        out.append(res(RULES["HYG-006"], WARN,
+                       f"license 字段过长（{len(stripped)} 字符，上限 {LICENSE_FIELD_MAX}）："
+                       f"完整条款应放在随包文件里，字段只写许可名或一句指引"))
+    else:
+        out.append(res(RULES["HYG-006"], PASS, f"license 字段简短（{len(stripped)} 字符）"))
+
+    if not stripped:
+        out.append(res(RULES["HYG-007"], INFO, "不适用：未声明 license"))
+    elif files:
+        out.append(res(RULES["HYG-007"], PASS, f"随包许可文件：{'、'.join(files[:3])}"))
+    else:
+        out.append(res(RULES["HYG-007"], WARN,
+                       f"声明了 license（{stripped[:40]}）但技能目录里没有随包许可文件："
+                       f"对外交付时收件人无从核对条款全文"))
+    return out
+
+
 def check(ctx: LintContext) -> list[Result]:
     out: list[Result] = []
     out.extend(_check_hygiene(ctx))
+    out.extend(_check_license(ctx))
     out.extend(_check_encoding(ctx))
     out.extend(_check_i18n(ctx))
     out.extend(_check_body(ctx))
