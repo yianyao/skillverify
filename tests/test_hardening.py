@@ -374,6 +374,69 @@ def run_deliver_hardening(tmp: Path) -> None:
     check("历史被改动" in err, "A7：stderr 也提示历史被改动")
 
 
+def run_examples(tmp: Path) -> None:
+    """P3b：执行器样例模板（examples/）——它们坏掉的话，使用者照着抄就是坏的。"""
+    print("[test_executor_examples]")
+    import subprocess as _sp
+
+    repo = Path(__file__).resolve().parent.parent
+    scripts = sorted((repo / "examples").glob("*.py"))
+    check(len(scripts) == 3, f"examples/ 里有三个模板（实得 {[s.name for s in scripts]}）")
+    for script in scripts:
+        proc = _sp.run([sys.executable, str(script), "--help"], capture_output=True,
+                       text=True, encoding="utf-8", errors="replace")
+        check(proc.returncode == 0 and "usage" in (proc.stdout or ""),
+              f"{script.name} --help 可用（退出码 {proc.returncode}）")
+        check("不做什么" in script.read_text(encoding="utf-8"),
+              f"{script.name} 写明了「它不做什么」")
+
+    skill = make_skill(tmp / "ex" / ".agents" / "skills", "ex-skill")
+    (skill / "evals").mkdir(exist_ok=True)
+    evals_json = skill / "evals" / "evals.json"
+    evals_json.write_text(json.dumps({"skill_name": "ex-skill", "evals": []},
+                                     ensure_ascii=False), encoding="utf-8", newline="")
+    badcase = repo / "examples" / "badcase_to_evals.py"
+    before = evals_json.read_text(encoding="utf-8")
+    _sp.run([sys.executable, str(badcase), "--skill", str(skill), "--dry-run",
+             "--prompt", "把这份表按月汇总", "--expected", "按月汇总的表",
+             "--assertion", "输出含 month 与 total 两列"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+    check(evals_json.read_text(encoding="utf-8") == before, "--dry-run 不写盘（evals.json 未变）")
+
+    proc = _sp.run([sys.executable, str(badcase), "--skill", str(skill),
+                    "--prompt", "把这份表按月汇总", "--expected", "按月汇总的表",
+                    "--assertion", "输出含 month 与 total 两列"],
+                   capture_output=True, text=True, encoding="utf-8", errors="replace")
+    data = json.loads(evals_json.read_text(encoding="utf-8"))
+    added = data.get("evals") or []
+    check(proc.returncode == 0 and len(added) == 1 and added[0]["id"] == 1,
+          f"回流脚本追加了一条用例（id={added[0]['id'] if added else None}）")
+    check(bool(added) and added[0]["assertions"] == ["输出含 month 与 total 两列"],
+          "断言原样写进用例（没有替使用者发明断言）")
+    from skillverify import evalx as _evalx
+    report = _evalx.check_evals(skill)
+    check(not [r for r in report.results if r.status == "FAIL"],
+          "追加后的 evals.json 能被工具解析（没有 FAIL）")
+
+    (skill / "evals" / "trigger-queryset.json").write_text(json.dumps({
+        "skill_name": "ex-skill",
+        "queries": [{"id": "q1", "query": "把这个 csv 按月汇总", "should_trigger": True,
+                     "subset": "train"}],
+    }, ensure_ascii=False), encoding="utf-8", newline="")
+    fake_cmd = '"' + sys.executable + '" -c "print(1)"'
+    runs_path = skill / "evals" / "trigger-runs.json"
+    # 用一个必定回答 yes 的假命令：python -c 打印 yes
+    fake_cmd = '"' + sys.executable + '" -c "print(chr(121)+chr(101)+chr(115))"'
+    proc = _sp.run([sys.executable, str(repo / "examples" / "run_triggers.py"),
+                    "--skill", str(skill), "--cmd", fake_cmd, "--runs", "2"],
+                   capture_output=True, text=True, encoding="utf-8", errors="replace")
+    check(proc.returncode == 0 and runs_path.is_file(),
+          f"触发集执行器写出了运行记录（退出码 {proc.returncode}）")
+    runs = (json.loads(runs_path.read_text(encoding="utf-8")).get("runs") or [])
+    check(len(runs) == 2 and all(r.get("loaded") is True for r in runs),
+          f"两条运行记录都记成「会触发」（实得 {[r.get('loaded') for r in runs]}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -385,6 +448,7 @@ def main() -> int:
         run_calibration(tmp)
         run_discrimination(tmp)
         run_deliver_hardening(tmp)
+        run_examples(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)

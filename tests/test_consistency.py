@@ -42,6 +42,9 @@ USER_VISIBLE = (
     ("SCRIPT-009", "dry-run 无副作用"),
     ("EVAL-010", "断言区分度"),
     ("校准", "评委校准（review）"),
+    ("run_triggers.py", "触发集执行器样例"),
+    ("badcase_to_evals.py", "bad case 回流样例"),
+    ("run_evals.py", "评测执行器样例"),
 )
 
 #: 面向使用者的文档（开发者向的 AGENTS/结构说明不在其列）

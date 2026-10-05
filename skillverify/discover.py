@@ -23,6 +23,12 @@ Python 版本：解析 TOML 用标准库 `tomllib`（3.11+）。`tomllib` 只在
 """
 
 from __future__ import annotations
+import sys
+
+try:  # Python 3.11+：解析 hosts.toml 用。3.10 上置 None，让 spec/lint 等命令照常可用。
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - 3.10 环境
+    tomllib = None
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -153,13 +159,14 @@ def _merge(base: dict, extra: dict, source: str) -> dict:
 
 
 def _read_toml(path: Path) -> dict:
-    try:
-        import tomllib  # Python 3.11+；刻意延迟导入，使 spec/lint 在旧版本仍可用
-    except ModuleNotFoundError as exc:  # pragma: no cover - 取决于运行环境
+    if tomllib is None:  # pragma: no cover - 只有 3.10 环境会走到
+        # 报错要**可操作**：说清要哪个版本、当前是什么、还有哪条路可以走
         raise ConfigError(
-            "解析 hosts.toml 需要 Python 3.11+（标准库 tomllib）。"
-            "当前解释器过旧；可改用 `skillverify lint <技能目录>` 单独检查。"
-        ) from exc
+            f"解析 hosts.toml 需要 Python 3.11+（标准库 tomllib）；"
+            f"当前是 {sys.version.split()[0]}。"
+            f"升级 Python，或用不读配置的命令"
+            f"（spec / lint / evals / review 在 3.10 也能用）"
+        )
     try:
         with path.open("rb") as fh:
             return tomllib.load(fh)
