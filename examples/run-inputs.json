@@ -1,0 +1,19 @@
+{
+  "_说明": "执行轮次自证：放进 <技能>-workspace/iteration-N/ 下。诚实填写——做不到隔离就写「降级」，工具会把该轮标成参考级证据而不是增益。",
+  "iteration": 1,
+  "generated_at": "2026-10-05T12:00:00+08:00",
+  "isolation": "隔离",
+  "_isolation_取值": [
+    "隔离",
+    "降级",
+    "未执行"
+  ],
+  "isolation_how": "两臂各起独立进程；已禁用 Skill 工具与 resume；两臂输入逐字一致，仅差技能约束行",
+  "executor": "claude -p --disallowedTools Skill  (with_skill/without_skill 各一次)",
+  "input_hash": "sha256:<技能目录 + 靶子任务输入的联合哈希>",
+  "prompt_hashes": {
+    "with_skill": "sha256:<两臂提示词哈希>",
+    "without_skill": "sha256:<应仅差技能约束行>"
+  },
+  "notes": "若降级为同会话顺序执行，写 isolation=降级 并在 notes 里写清原因与污染风险"
+}

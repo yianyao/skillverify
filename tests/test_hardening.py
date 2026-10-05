@@ -346,6 +346,19 @@ def run_deliver_hardening(tmp: Path) -> None:
     check("environment" in record and record["environment"].get("python"),
           "A8：交付记录里含 environment（python/platform/工具版本/规则集指纹）")
     check("reviewers" in record, "A8：交付记录里含 reviewers（Judge 身份，来自评审记录）")
+    # 光"键存在"骗过人：真缺陷是键名对不上导致值恒为 None（评审记录写复数键）。
+    # 这里造一份真实形状的评审记录，要求值真的取到。
+    from skillverify import deliver as _deliver
+    trace_dir = Path(record["trace_dir"])
+    (trace_dir / "review").mkdir(parents=True, exist_ok=True)
+    (trace_dir / "review" / "dlv-skill.json").write_text(json.dumps({
+        "schema": "skillverify.review/1", "skill": "dlv-skill",
+        "reviewers": ["探针评委"], "tiers": ["pack"],
+        "collected_at": "2026-10-05T12:00:00+08:00", "verdict": "PASS",
+    }, ensure_ascii=False), encoding="utf-8", newline="")
+    got = _deliver._reviewers(trace_dir, ["dlv-skill"]).get("dlv-skill", {})
+    check(got.get("reviewer") and got.get("tier") and got.get("generated_at"),
+          f"A8：Judge 三项真的取到值（不是 None）——实得 {got}")
     check("workspaces" in record, "A7：交付记录里含每个技能的工作区迭代指纹")
 
     # A3：不带理由 → 直接拒绝
@@ -437,6 +450,52 @@ def run_examples(tmp: Path) -> None:
           f"两条运行记录都记成「会触发」（实得 {[r.get('loaded') for r in runs]}）")
 
 
+def run_run_inputs(tmp: Path) -> None:
+    """WS-006：执行轮次自证——做不到隔离必须写出来，那一轮只能算参考级证据。"""
+    print("[test_run_inputs]")
+    from skillverify import evalx
+
+    skill = make_skill(tmp / "ri" / ".agents" / "skills", "ri-skill")
+    (skill / "evals").mkdir(exist_ok=True)
+    (skill / "evals" / "evals.json").write_text(json.dumps({
+        "skill_name": "ri-skill",
+        "evals": [{"id": 1, "prompt": "p", "expected_output": "o", "assertions": ["x"]}],
+    }, ensure_ascii=False), encoding="utf-8", newline="")
+    ws = skill.parent / "ri-skill-workspace"
+
+    def build(iteration: int, run_inputs: dict | None) -> None:
+        for arm in ("with_skill", "without_skill"):
+            d = ws / f"iteration-{iteration}" / "eval-1" / arm
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "outputs").mkdir(exist_ok=True)
+            (d / "outputs" / "out.md").write_text("x\n", encoding="utf-8", newline="")
+        if run_inputs is not None:
+            (ws / f"iteration-{iteration}" / "run-inputs.json").write_text(
+                json.dumps(run_inputs, ensure_ascii=False), encoding="utf-8", newline="")
+
+    build(1, None)
+    row = next(r for r in evalx.check_evals(skill).results if r.rid == "WS-008")
+    check(row.status == "INFO" and "执行自证" in row.evidence,
+          f"完全没提供自证 → INFO（增强项，不阻断；实得 {row.status}）")
+
+    build(1, {"isolation": "隔离", "executor": "claude -p --disallowedTools Skill",
+              "input_hash": "sha256:aaa", "prompt_hashes": {"with_skill": "a",
+                                                            "without_skill": "b"}})
+    row = next(r for r in evalx.check_evals(skill).results if r.rid == "WS-008")
+    check(row.status == "PASS", f"字段齐备且真隔离 → PASS（实得 {row.status}）")
+
+    build(1, {"isolation": "降级", "executor": "同会话顺序执行", "input_hash": "sha256:aaa",
+              "prompt_hashes": {"with_skill": "a", "without_skill": "b"}})
+    row = next(r for r in evalx.check_evals(skill).results if r.rid == "WS-008")
+    check(row.status == "WARN" and "参考级证据" in row.evidence,
+          f"写明降级 → WARN 且点明「参考级证据」（实得 {row.status}）")
+
+    build(1, {"isolation": "隔离", "executor": "x"})
+    row = next(r for r in evalx.check_evals(skill).results if r.rid == "WS-008")
+    check(row.status == "WARN" and "缺字段" in row.evidence,
+          f"字段缺失 → WARN 并点名缺哪些（实得 {row.status}：{row.evidence[:60]}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -449,6 +508,7 @@ def main() -> int:
         run_discrimination(tmp)
         run_deliver_hardening(tmp)
         run_examples(tmp)
+        run_run_inputs(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)

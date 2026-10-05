@@ -253,7 +253,14 @@ def _reviewers(trace_dir: Path | None, skills: list[str]) -> dict:
         data, error = read_json(trace_dir / "review" / f"{skill}.json")
         if error or not isinstance(data, dict):
             continue
-        out[skill] = {key: data.get(key) for key in ("reviewer", "tier", "generated_at", "verdict")}
+        # 键名兼容：评审记录写的是复数（reviewers / tiers / collected_at），
+        # 早先这里只读单数键，于是交付记录里这三项**恒为 None**（而测试只断言键存在，没抓到）。
+        out[skill] = {
+            "reviewer": data.get("reviewer") or data.get("reviewers"),
+            "tier": data.get("tier") or data.get("tiers"),
+            "generated_at": data.get("generated_at") or data.get("collected_at"),
+            "verdict": data.get("verdict"),
+        }
     return out
 
 

@@ -45,6 +45,7 @@ USER_VISIBLE = (
     ("run_triggers.py", "触发集执行器样例"),
     ("badcase_to_evals.py", "bad case 回流样例"),
     ("run_evals.py", "评测执行器样例"),
+    ("run-inputs.json", "执行轮次自证（WS-008）"),
 )
 
 #: 面向使用者的文档（开发者向的 AGENTS/结构说明不在其列）

@@ -87,6 +87,14 @@ RUN_HINT = (
 MIN_ASSERTION_OBSERVATIONS = 3
 
 
+#: 执行轮次自证文件（放在每个 iteration 目录下）
+RUN_INPUTS_NAME = "run-inputs.json"
+
+#: 允许的隔离级别。**「降级」「未执行」不是失败，但必须写出来**——
+#: 那一轮的数据只能当「参考级证据」，不许被算成技能带来的增益。
+ISOLATION_LEVELS = ("隔离", "降级", "未执行")
+
+
 RULES: dict[str, Rule] = {
     # ---- evals/evals.json ----
     "EVAL-000": Rule(
@@ -303,6 +311,15 @@ RULES: dict[str, Rule] = {
         "旧体系 E-05（断言难度复核）的机械部分；官方规范未覆盖",
         "恒真的断言换成更具体的判定（把「输出是好的」写成「输出列出 3 个月份且带数值」）；"
         "恒假的先查判据是否写反或环境是否满足",
+    ),
+    "WS-008": Rule(
+        "WS-008",
+        "每轮要留执行自证（隔离方式 / 执行器 / 输入哈希 / 两臂提示词哈希）",
+        "HOUSE",
+        "旧体系 §7.2.4 的 run-inputs.md（双跑对照每轮必写，降级/未执行须如实标注并留档作废轮）",
+        f"在 iteration-N/ 下放一份 {RUN_INPUTS_NAME}（模板见 examples/）："
+        f"写清 isolation（{'/'.join(ISOLATION_LEVELS)}）、executor、input_hash、prompt_hashes。"
+        f"做不到隔离就如实写「降级」——那一轮只能当参考级证据，不许算增益",
     ),
 }
 
@@ -965,6 +982,73 @@ def _check_feedback(path: Path) -> Result:
                 f"{path.name}: 顶层应为对象（实为 {type(data).__name__}）")
 
 
+def _check_run_inputs(workspace: Path, iteration: int | None) -> Result:
+    """WS-006：本轮的执行自证（隔离方式 / 执行器 / 输入冻结哈希 / 两臂提示词哈希）。
+
+    来历：旧体系双跑对照要求每轮写 `run-inputs.md`，如实写明"两臂各派新进程、禁用 Skill 工具、
+    禁 resume"，或在做不到时写明"降级为同会话顺序执行""未执行"——**并把作废轮留档**。
+    我们只查"目录与文件在不在"，**完全不管这轮是不是真在隔离环境里跑的**：执行层不自研是对的，
+    但「无声地假装隔离过」必须被堵住，否则 delta 就是无源之水。
+
+    判定：
+    - 有 `run-inputs.json` 且 `isolation` 合法、字段齐 → PASS（降级/未执行 → WARN「参考级证据」）；
+    - 有迭代目录但一个自证文件都没有 → WARN（无法确认输入冻结与隔离方式）；
+    - 没有迭代目录 → INFO（不适用）。
+    """
+    iterations, _odd = _iterations(workspace)
+    if iteration is not None:
+        iterations = [item for item in iterations if item[0] == iteration]
+    if not iterations:
+        return _res(RULES["WS-008"], INFO, "不适用：没有 iteration 目录")
+
+    found: list[tuple[str, dict]] = []
+    bad: list[str] = []
+    degraded: list[str] = []
+    missing: list[str] = []
+    for number, path in iterations:
+        record = path / RUN_INPUTS_NAME
+        if not record.is_file():
+            missing.append(f"iteration-{number}")
+            continue
+        data, error = read_json(record)
+        if error or not isinstance(data, dict):
+            bad.append(f"iteration-{number}: 不可读（{error or '形状不符'}）")
+            continue
+        level = str(data.get("isolation", "")).strip()
+        fields = [key for key in ("isolation", "executor", "input_hash", "prompt_hashes")
+                  if not data.get(key)]
+        if level not in ISOLATION_LEVELS:
+            bad.append(f"iteration-{number}: isolation 取值应为 {'/'.join(ISOLATION_LEVELS)}"
+                       f"（实为 {level or '空'}）")
+            continue
+        if fields:
+            bad.append(f"iteration-{number}: 缺字段 {'、'.join(fields)}")
+            continue
+        found.append((f"iteration-{number}", data))
+        if level != "隔离":
+            degraded.append(f"iteration-{number}（{level}）")
+
+    if bad:
+        return _res(RULES["WS-008"], WARN,
+                    "执行自证有问题：" + "；".join(bad[:3])
+                    + f"（模板见 examples/{RUN_INPUTS_NAME}）")
+    if degraded:
+        return _res(RULES["WS-008"], WARN,
+                    f"本轮为**参考级证据**：{'、'.join(degraded)} 不是隔离环境跑的——"
+                    f"该轮的 delta 不得当作技能带来的增益（旧体系要求如实写明并在作废轮留档）")
+    if missing and not found:
+        # 记 INFO 而不是 WARN：执行自证是**增强项**（放了才检查），跟评委校准同一口径——
+        # 强制它会让人人恒返回 2，也会让"全绿基线"这类夹具无端变脏。
+        return _res(RULES["WS-008"], INFO,
+                    f"未提供执行自证（{'、'.join(missing[:3])}）：放了就会被检查"
+                    f"（模板见 examples/{RUN_INPUTS_NAME}）；没有它，这一轮的 delta "
+                    f"只能当参考级证据")
+    note = f"{len(found)} 轮执行自证齐备（隔离方式、执行器、输入哈希、两臂提示词哈希）"
+    if missing:
+        note += f"；另有 {len(missing)} 轮缺自证（{'、'.join(missing[:3])}）"
+    return _res(RULES["WS-008"], PASS if not missing else WARN, note)
+
+
 def _check_discrimination(workspace: Path, iteration: int | None) -> Result:
     """跨 iteration/arm 的**断言区分度**：恒真与恒假的断言都没有区分度。
 
@@ -1239,9 +1323,14 @@ def check_evals(
                                 f"（默认找并列目录 <技能名>{WORKSPACE_SUFFIX}/，可用 --workspace 指定）"))
         results.append(_res(RULES["EVAL-010"], INFO,
                             "不适用：未找到评测工作区（没有跨轮次观测，谈不上区分度）"))
+        results.append(_res(RULES["WS-008"], INFO,
+                            "不适用：未找到评测工作区（谈不上执行自证）"))
     else:
         results.extend(_check_workspace(skill_dir, ws, doc, iteration))
         results.append(_check_discrimination(ws, iteration))
+        # 幂等：某些路径（例如指定的 iteration 不存在）会先行产出 WS-008 的空结论
+        if not any(item.rid == "WS-008" for item in results):
+            results.append(_check_run_inputs(ws, iteration))
 
     for res in results:
         report.add(res)
