@@ -527,6 +527,9 @@ def run_destructive_scope(tmp: Path) -> None:
     row = next(r for r in lint_skill(skill).results if r.rid == "SCRIPT-005")
     check(row.status in ("FAIL", "WARN") and "assets/deploy.sh" in (row.evidence or ""),
           f"assets/deploy.sh 里的 rm -rf 被看见（实得 {row.status}：{(row.evidence or '')[:70]}）")
+    # 定位段落：证据要给出 file:行 + 原文（评审员不必自己去找那一行）
+    check("assets/deploy.sh:2" in (row.evidence or "") and "rm -rf" in (row.evidence or ""),
+          f"证据带 file:行 与原文（实得 {(row.evidence or '')[-90:]}）")
 
     guarded = make_skill(tmp / "ds2" / ".agents" / "skills", "ds2-skill", extra={
         "assets/deploy.sh": "#!/bin/sh\ncase \"$1\" in --dry-run) exit 0;; esac\nrm -rf build/\n"})

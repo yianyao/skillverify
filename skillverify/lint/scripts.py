@@ -22,7 +22,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import ast
 import re
@@ -356,6 +356,7 @@ class ScriptFacts:
     scripts: list[str]                          # scripts/ 下的脚本（相对路径）
     destructive: list[tuple[str, list[str]]]    # (脚本, 命中的破坏性/有状态操作类别)
     unguarded: list[str]                        # 有破坏性操作但未见防护旗标
+    destructive_sites: list[str] = field(default_factory=list)  # file:行（类别）：原文
 
 
 def _targets(ctx: LintContext) -> tuple[
@@ -412,6 +413,7 @@ def scan_destructive(
     """
     destructive: list[tuple[str, list[str]]] = []
     unguarded: list[str] = []
+    sites: list[str] = []
     for rec, _lang in static_targets:
         text = rec.text or ""
         kinds = [label for pattern, label in DESTRUCTIVE_RES if pattern.search(text)]
@@ -420,14 +422,23 @@ def scan_destructive(
         destructive.append((rec.rp, sorted(set(kinds))))
         if not _has_guard(rec):
             unguarded.append(rec.rp)
-    return destructive, unguarded
+        # 定位段落：**file:行（类别）+ 原文**。旧体系 kw_locator 的做法——
+        # 评审员不必自己去全文里找那一行（原先 W-08 只能写「S 缺位时评审员自定位」降级）。
+        lines = text.splitlines()
+        for pattern, label in DESTRUCTIVE_RES:
+            for match in pattern.finditer(text):
+                lineno = text[:match.start()].count("\n") + 1
+                raw = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else ""
+                sites.append(f"{rec.rp}:{lineno}（{label}）：{raw[:100]}")
+    return destructive, unguarded, sites
 
 
 def facts(ctx: LintContext) -> ScriptFacts:
     scripts, static_targets, _analyzable, _unanalyzed, _unavailable = _targets(ctx)
-    destructive, unguarded = scan_destructive(all_code_targets(ctx))
+    destructive, unguarded, sites = scan_destructive(all_code_targets(ctx))
     return ScriptFacts(scripts=[rec.rp for rec in scripts],
-                       destructive=destructive, unguarded=unguarded)
+                       destructive=destructive, unguarded=unguarded,
+                       destructive_sites=sites)
 
 
 #: dry-run 类旗标（试跑用：跑完**不得**改动技能目录）
@@ -584,7 +595,7 @@ def check(ctx: LintContext) -> list[Result]:
     # ---- SCRIPT-005：破坏性操作与防护旗标 ----
     # 扫**全包**代码文件，而不是只看 scripts/（assets/deploy.sh 里的 rm -rf 一样会毁数据）
     code_targets = all_code_targets(ctx)
-    scanned, unguarded = scan_destructive(code_targets)
+    scanned, unguarded, sites = scan_destructive(code_targets)
     destructive = [f"{rp}: {'、'.join(kinds)}" for rp, kinds in scanned]
     if not code_targets:
         out.append(res(RULES["SCRIPT-005"], INFO, "不适用：包内没有可判语言的代码文件"))
@@ -593,7 +604,8 @@ def check(ctx: LintContext) -> list[Result]:
     elif unguarded:
         out.append(res(RULES["SCRIPT-005"], WARN,
                        f"有破坏性操作但未见解析器声明的防护旗标: {summarize(unguarded)}"
-                       f"（命中: {summarize(destructive)}）"))
+                       f"（命中: {summarize(destructive)}）；"
+                       f"定位: {summarize(sites, limit=3)}"))
     else:
         out.append(res(RULES["SCRIPT-005"], PASS,
                        f"破坏性操作均有防护旗标（{len(destructive)} 个脚本）"))
