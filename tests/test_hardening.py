@@ -535,6 +535,45 @@ def run_destructive_scope(tmp: Path) -> None:
           f"带 --dry-run 防护的不再算「未防护」（实得 {row.status}）")
 
 
+def run_run_log(tmp: Path) -> None:
+    """AUDIT-006：运行台账——异常没处置 / 长期未更新都要说出来。"""
+    print("[test_run_log]")
+    from datetime import date, timedelta
+
+    from skillverify import audit
+
+    trace = tmp / "rl-trace"
+    trace.mkdir(parents=True, exist_ok=True)
+    check(audit.check_run_log(trace).status == "INFO",
+          "没有台账 → INFO（可选，不阻断）")
+
+    today = date.today().isoformat()
+    header = ("| 日期 | 技能 | 任务 | 触发正确? | 脚本失败? | 成本异常? | 异常观察 | 处置 |\n"
+              "| --- | --- | --- | --- | --- | --- | --- | --- |\n")
+    (trace / "run-log.md").write_text(
+        header
+        + f"| {today} | rl-skill | 汇总月度销售 | 是 | 否 | 否 | 可疑外部请求到 evil.example.net |  |\n",
+        encoding="utf-8", newline="")
+    row = audit.check_run_log(trace, "rl-skill")
+    check(row.status == "WARN" and "没处置" in row.evidence,
+          f"异常写了却没处置 → WARN（实得 {row.status}：{row.evidence[:70]}）")
+
+    old = (date.today() - timedelta(days=90)).isoformat()
+    (trace / "run-log.md").write_text(
+        header + f"| {today} | rl-skill | 汇总月度销售 | 是 | 否 | 否 | — | — |\n"
+        + f"| {old} | rl-skill | 旧记录 | 是 | 否 | 否 | — | — |\n",
+        encoding="utf-8", newline="")
+    row = audit.check_run_log(trace, "rl-skill")
+    check(row.status == "PASS", f"异常都处置了且有近期记录 → PASS（实得 {row.status}）")
+
+    (trace / "run-log.md").write_text(
+        header + f"| {old} | rl-skill | 旧记录 | 是 | 否 | 否 | — | — |\n",
+        encoding="utf-8", newline="")
+    row = audit.check_run_log(trace, "rl-skill")
+    check(row.status == "WARN" and "没更新" in row.evidence,
+          f"只有 90 天前的记录 → WARN 提醒观测停了（实得 {row.status}：{row.evidence[:70]}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -550,6 +589,7 @@ def main() -> int:
         run_run_inputs(tmp)
         run_endpoint_boundary(tmp)
         run_destructive_scope(tmp)
+        run_run_log(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)

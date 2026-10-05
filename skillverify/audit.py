@@ -35,6 +35,12 @@ _LEGACY = "旧体系《Agent-Skill 生命周期验证方案》v1.3（供应链�
 #: 审计单的落点（相对 trace_dir）
 AUDIT_DIR = "audit"
 
+#: 运行台账（可选）：人工记录运行期观测，替代自动遥测
+RUN_LOG_NAME = "run-log.md"
+#: 台账超过这么多天没更新就给个提醒（不是错误：技能可能就是不常用）
+RUN_LOG_STALE_DAYS = 30
+
+
 RULES: dict[str, Rule] = {
     "AUDIT-001": Rule(
         "AUDIT-001",
@@ -72,10 +78,87 @@ RULES: dict[str, Rule] = {
         "清单来自各族的**结构化扫描**；看到不认识的网络端点或破坏性操作就要人工确认。"
         "清单为空说明这是纯文档技能（记 INFO），而不是「已审过」",
     ),
+    "AUDIT-006": Rule(
+        "AUDIT-006",
+        f"运行台账里不许有「没处置的异常」且不许长期未更新（>{RUN_LOG_STALE_DAYS} 天）",
+        "HOUSE",
+        "旧体系 V9/V24 的个人版降级方案（人工 run-log.md 台账 + 每周回顾，不建自动埋点）",
+        f"把异常观察的处置写清楚（接受/整改 + 依据）；长期没更新就说明原因或恢复观测。"
+        f"台账模板见 examples/{RUN_LOG_NAME}，放在中央留痕目录而不是技能包里",
+    ),
 }
 
 #: 名字近似的判据：编辑距离不超过这个值，或去掉分隔符后完全相同
 MAX_NAME_DISTANCE = 1
+
+
+def check_run_log(trace_dir: Path, skill: str | None = None) -> Result:
+    """AUDIT-006：运行台账的机械部分——**异常有没有处置、台账是不是长期没更新**。
+
+    来历：运行期观测（触发误报/漏报、脚本失败率、异常外部请求）没法自动化，旧体系的答案是
+    「人工台账 + 每周回顾」。工具能做的只有一件事：**盯着这张表别变成摆设**——
+    异常观察写了却没人处置、或者几周没动过，都要说出来。
+    台账模板见 `examples/run-log.md`；放在中央留痕目录（不是技能包里）。
+    """
+    path = trace_dir / RUN_LOG_NAME
+    if not path.is_file():
+        return _res(RULES["AUDIT-006"], INFO,
+                    f"未提供运行台账（可选）：放一份 {RUN_LOG_NAME}（模板见 examples/）"
+                    f"就会检查「异常是否处置」与「是否长期未更新」")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return _res(RULES["AUDIT-006"], WARN, f"{RUN_LOG_NAME} 读不出来：{exc}")
+
+    rows: list[tuple[int, list[str]]] = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) < 8 or not cells[0] or set(cells[0]) <= set("-: "):
+            continue
+        if cells[0] == "日期":
+            continue
+        rows.append((lineno, cells))
+    if not rows:
+        return _res(RULES["AUDIT-006"], WARN,
+                    f"{RUN_LOG_NAME} 里没有可解析的台账行（表头见 examples/run-log.md）")
+
+    empty_marks = ("", "—", "-", "待定", "无")
+    unhandled: list[str] = []
+    newest = ""
+    parsed_rows = 0
+    for lineno, cells in rows:
+        date, row_skill, _task, trigger, _script, _cost, anomaly, action = cells[:8]
+        if skill and row_skill and skill not in row_skill:
+            continue
+        parsed_rows += 1
+        if date > newest:
+            newest = date
+        if anomaly not in empty_marks and action in empty_marks:
+            unhandled.append(f"{RUN_LOG_NAME}:{lineno}（异常观察没写处置）")
+        if ("误触发" in trigger or "漏触发" in trigger) and action in empty_marks:
+            unhandled.append(f"{RUN_LOG_NAME}:{lineno}（触发问题没写处置）")
+
+    stale = ""
+    try:
+        from datetime import date as _date
+        from datetime import datetime as _datetime
+
+        age = (_date.today() - _datetime.strptime(newest, "%Y-%m-%d").date()).days
+        if age > RUN_LOG_STALE_DAYS:
+            stale = f"最近一条是 {newest}（{age} 天前）"
+    except (ValueError, TypeError):
+        stale = ""
+
+    if unhandled:
+        return _res(RULES["AUDIT-006"], WARN, "台账里有没处置的条目：" + "；".join(unhandled[:4]))
+    if stale:
+        return _res(RULES["AUDIT-006"], WARN,
+                    f"运行台账 {stale}：超过 {RUN_LOG_STALE_DAYS} 天没更新——"
+                    f"要么技能没人用（可接受），要么观测停了（该恢复）")
+    return _res(RULES["AUDIT-006"], PASS, f"运行台账 {parsed_rows} 条，异常均已处置")
 
 
 def _res(rule: Rule, status: str, evidence: str = "") -> Result:
@@ -248,6 +331,8 @@ def audit_skill(skill_dir: Path, *, trace_dir: Path, others: list[str] | None = 
     name = doc.name or skill_dir.name
     digest = fingerprint(skill_dir)
     report.add(_res(RULES["AUDIT-001"], PASS, f"{name} 内容指纹 {digest[:16]}（完整值见记录）"))
+    # 运行台账的机械部分：异常有没有处置、台账是不是长期没更新（AUDIT-006）
+    report.add(check_run_log(trace_dir, name))
 
     previous = load_previous(trace_dir, name)
     if previous is None:
