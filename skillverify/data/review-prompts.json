@@ -86,7 +86,9 @@
       "official": "https://agentskills.io/specification#description-field",
       "overlaps": {
         "W-11": "都涉及 description/触发质量：本条判**描述本身**（做什么/何时用、人称、范围、连贯性）；W-11 判**场景覆盖与邻技能串扰**（触发面是否够、会不会抢别的技能的活）。先判本条，再判 W-11。"
-      }
+      },
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "W-03",
@@ -145,7 +147,9 @@
       "overlaps": {
         "W-10": "加载时机（何时读哪个 references 文件）由本条判定；W-10 只把它作为次要复核，避免同一条判两遍。",
         "W-06": "本条判**正文之外的引用与加载时机**；W-06 判**正文内部**的结构与详略。"
-      }
+      },
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "W-05",
@@ -172,7 +176,9 @@
       "blocking": false,
       "legacy_id": "W-05",
       "legacy_source": "§5.1.1–5.1.2、§5.1.7、§5.1.8",
-      "official": "https://agentskills.io/skill-creation/best-practices#add-what-the-agent-lacks-omit-what-it-knows"
+      "official": "https://agentskills.io/skill-creation/best-practices#add-what-the-agent-lacks-omit-what-it-knows",
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "W-06",
@@ -257,7 +263,9 @@
       "blocking": true,
       "legacy_id": "W-08",
       "legacy_source": "§5.3.4",
-      "official": ""
+      "official": "",
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "W-09",
@@ -455,7 +463,9 @@
       "blocking": true,
       "legacy_id": "W-15",
       "legacy_source": "§9.1、§9.2、§9.7–9.9",
-      "official": ""
+      "official": "",
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "W-16",
@@ -594,7 +604,9 @@
       "blocking": false,
       "legacy_id": "E-04",
       "legacy_source": "§7.5.1",
-      "official": "https://agentskills.io/skill-creation/evaluating-skills#grading-outputs"
+      "official": "https://agentskills.io/skill-creation/evaluating-skills#grading-outputs",
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "E-05",
@@ -649,7 +661,9 @@
       "blocking": false,
       "legacy_id": "E-06",
       "legacy_source": "§7.5.5",
-      "official": ""
+      "official": "",
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "E-07",
@@ -817,7 +831,9 @@
       "blocking": false,
       "legacy_id": "R-02",
       "legacy_source": "V26",
-      "official": "https://agentskills.io/skill-creation/best-practices#structure-large-skills-with-progressive-disclosure"
+      "official": "https://agentskills.io/skill-creation/best-practices#structure-large-skills-with-progressive-disclosure",
+      "dual": true,
+      "dual_reason": "旧体系标注 ⚑：这条的误判代价高（描述质量 / 脚本防护 / 安全审计 / 断言盲评），单评委不足以定案"
     },
     {
       "id": "W-17",

@@ -158,6 +158,14 @@ RULES: dict[str, Rule] = {
         "只有问题没有方向的 FAIL 会让使用者停在原地",
         "补一句可执行的 suggestion",
     ),
+    "REV-013": Rule(
+        "REV-013",
+        "标注 ⚑ 的提示词须有两条各自署名的独立结论",
+        "HOUSE",
+        "旧体系 L 类的 ⚑ 双评名单（8 项）；本项目改为机械判定署名，不靠自述",
+        "让第二个评委（另一个会话/另一个模型）独立跑一遍这条，并在回写里各自写 by 与 at；"
+        "两人结论不一致时按 REV-010 升级为待人工裁决",
+    ),
     "REV-012": Rule(
         "REV-012",
         "评委须先通过校准样本（判错则本轮结论不可用）",
@@ -405,6 +413,9 @@ def build_pack(
         "prompt_ids": [p.id for p in prompts],
         "results": [
             {"prompt_id": p.id,
+             # ⚑ 双评项要各自署名：两个评委各填一次（同一个人跑两遍不算）
+             "by": "",
+             "at": "",
              "verdict": "",
              "evidence": "",
              "finding": "" if p.blocking else "",
@@ -547,6 +558,62 @@ def check_calibration(data: dict, *, label: str = "") -> Result:
     return _res(RULES["REV-012"], PASS, f"{prefix}{len(expected)} 个校准样本全部判对")
 
 
+def check_dual_review(data: dict, catalog: list[Prompt], *, label: str = "") -> Result:
+    """REV-013：⚑ 项必须有**两条各自署名的独立结论**。
+
+    来历：旧体系硬列 8 项必须双评（W-02/04/05/08/15、E-04/06、R-02），但它的 A/B 任务包
+    **逐字相同、仅包号不同**——所谓独立全靠人工开两个会话，是"自证式独立"。
+    这里改成机械判定：同一条 ⚑ 提示词要出现 **≥2 条结果**，署名（`by`）互不相同，
+    每条都要有 `at`；同一个人跑两遍**不算**双评。
+
+    判定：齐备 → PASS；不齐 → WARN（流程问题，不是技能缺陷，不阻断交付——
+    但会在交付记录里留痕，可配合 `adjudications` 让人拍板）。
+    """
+    dual = [p for p in catalog if p.raw.get("dual")]
+    prefix = f"{label}: " if label else ""
+    if not dual:
+        return _res(RULES["REV-013"], INFO, f"{prefix}不适用：目录里没有标注 ⚑ 的提示词")
+
+    results = data.get("results") if isinstance(data, dict) else None
+    results = results if isinstance(results, list) else []
+    signatures: dict[str, set[str]] = {}
+    missing_at: list[str] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        pid = str(item.get("prompt_id"))
+        by = str(item.get("by") or "").strip()
+        at = str(item.get("at") or "").strip()
+        signatures.setdefault(pid, set())
+        if by:
+            signatures[pid].add(by)
+        elif pid in {p.id for p in dual}:
+            missing_at.append(f"{pid} 没写署名 by")
+        if pid in {p.id for p in dual} and by and not at:
+            missing_at.append(f"{pid} 的署名 {by} 没写时间 at")
+
+    # 一条署名都没写 → 说明这份回写**没启用**双评署名（旧记录、单人评审都属此类）。
+    # 与 REV-012 评委校准、WS-008 执行自证、AUDIT-006 台账同一口径：增强项不强制，
+    # 只在**启用之后**才机械判定——否则所有人恒返回 2，"全绿基线"这类夹具也会无端变脏。
+    if not any(sig for sig in signatures.values()):
+        return _res(RULES["REV-013"], INFO,
+                    f"{prefix}未启用双评署名（⚑ 项共 {len(dual)} 条）："
+                    f"想启用就在回写的每条结果里写 by（谁判的）与 at（何时）")
+
+    thin = [p.id for p in dual if len(signatures.get(p.id, set())) < 2]
+    if thin or missing_at:
+        detail = []
+        if thin:
+            detail.append("独立署名不足 2 条: " + "、".join(thin[:4]))
+        if missing_at:
+            detail.append("；".join(missing_at[:3]))
+        return _res(RULES["REV-013"], WARN,
+                    f"{prefix}⚑ 项需要两条各自署名的独立结论（同一个人跑两遍不算）："
+                    + "；".join(detail))
+    return _res(RULES["REV-013"], PASS,
+                f"{prefix}{len(dual)} 项 ⚑ 都是双评（各自署名 + 时间）")
+
+
 def validate_writeback(data: object, catalog: list[Prompt], *,
                        where: str = "") -> tuple[list[Result], dict]:
     """校验一份回写，返回 (结果列表, 归一化后的回写)。判定只看字段，不看措辞。"""
@@ -604,6 +671,7 @@ def validate_writeback(data: object, catalog: list[Prompt], *,
                     else f"{label}: verdict 取值合法"))
 
     out.append(check_calibration(data, label=label))
+    out.append(check_dual_review(data, catalog, label=label))
 
     thin: list[str] = []
     restated: list[str] = []

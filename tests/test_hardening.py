@@ -618,6 +618,66 @@ def run_adjudications(tmp: Path) -> None:
           f"缺理由/人/时间 → 视为未裁决（实得 {state['void'][:1]}）")
 
 
+def run_dual_review(tmp: Path) -> None:
+    """A：⚑ 项要两条各自署名的独立结论（同一人跑两遍不算）。"""
+    print("[test_dual_review]")
+    import copy
+
+    from skillverify import review
+
+    catalog = review.load_catalog()
+    dual = [p.id for p in catalog if p.raw.get("dual")]
+    check(len(dual) == 8, f"目录里标了 8 项 ⚑（实得 {len(dual)}：{dual}）")
+
+    base = {
+        "schema": review.WRITEBACK_SCHEMA, "skill": "dual-skill", "reviewer": "评审会话",
+        "tier": "pack", "generated_at": "2026-10-05T12:00:00+08:00",
+        "prompt_ids": [dual[0]],
+        "results": [{"prompt_id": dual[0], "verdict": "PASS",
+                     "evidence": "见 SKILL.md:2 的 description 字段，含两个触发词",
+                     "finding": "", "suggestion": ""}],
+    }
+
+    def status_of(payload: dict) -> tuple[str, str]:
+        results, _normalized = review.validate_writeback(payload, catalog)
+        row = next(r for r in results if r.rid == "REV-013")
+        return row.status, row.evidence
+
+    status, evidence = status_of(base)
+    check(status == "INFO" and "未启用" in evidence,
+          f"一条署名都没写 → INFO（未启用双评；实得 {status}）")
+
+    one = copy.deepcopy(base)
+    one["results"][0]["by"] = "张三"
+    one["results"][0]["at"] = "2026-10-05T12:00:00+08:00"
+    status, evidence = status_of(one)
+    check(status == "WARN" and "独立署名不足" in evidence,
+          f"只有一位评委会署名 → WARN（实得 {status}：{evidence[:60]}）")
+
+    two = copy.deepcopy(base)
+    two["prompt_ids"] = list(dual)          # ⚑ 项是"逐条"要求，得把 8 项都覆盖上
+    two["results"] = [
+        dict(base["results"][0], prompt_id=pid, by=who, at=when)
+        for pid in dual
+        for who, when in (("张三", "2026-10-05T12:00:00+08:00"),
+                          ("李四", "2026-10-05T13:00:00+08:00"))
+    ]
+    status, evidence = status_of(two)
+    check(status == "PASS", f"两位不同署名 → PASS（实得 {status}：{evidence[:60]}）")
+
+    same = copy.deepcopy(two)
+    same["results"][1]["by"] = "张三"
+    status, evidence = status_of(same)
+    check(status == "WARN",
+          f"同一个人跑两遍不算双评 → WARN（实得 {status}）")
+
+    no_time = copy.deepcopy(two)
+    no_time["results"][1]["at"] = ""
+    status, evidence = status_of(no_time)
+    check(status == "WARN" and "时间" in evidence,
+          f"署了名却没写时间 → WARN 并点明（实得 {status}：{evidence[:60]}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -635,6 +695,7 @@ def main() -> int:
         run_destructive_scope(tmp)
         run_run_log(tmp)
         run_adjudications(tmp)
+        run_dual_review(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)
