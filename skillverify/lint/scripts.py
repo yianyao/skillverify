@@ -386,6 +386,22 @@ def _targets(ctx: LintContext) -> tuple[
     return scripts, static_targets, analyzable, unanalyzed, unavailable
 
 
+def all_code_targets(ctx: LintContext) -> list[tuple[FileRec, str]]:
+    """**全包**可判语言的代码文件（不只是 `scripts/`）。
+
+    旧体系 V8-5 的教训：破坏性操作不该只在 `scripts/` 里找——
+    `assets/deploy.sh`、`references/sample.py` 里的 `rm -rf` 一样会毁数据。
+    """
+    out: list[tuple[FileRec, str]] = []
+    for rec in ctx.inventory.files:
+        if not rec.is_text:
+            continue
+        language = _language(rec)
+        if language is not None:
+            out.append((rec, language))
+    return out
+
+
 def scan_destructive(
         static_targets: list[tuple[FileRec, str]],
 ) -> tuple[list[tuple[str, list[str]]], list[str]]:
@@ -409,7 +425,7 @@ def scan_destructive(
 
 def facts(ctx: LintContext) -> ScriptFacts:
     scripts, static_targets, _analyzable, _unanalyzed, _unavailable = _targets(ctx)
-    destructive, unguarded = scan_destructive(static_targets)
+    destructive, unguarded = scan_destructive(all_code_targets(ctx))
     return ScriptFacts(scripts=[rec.rp for rec in scripts],
                        destructive=destructive, unguarded=unguarded)
 
@@ -566,10 +582,12 @@ def check(ctx: LintContext) -> list[Result]:
                        f"{len(static_targets)} 个脚本均可见 --help/参数解析线索"))
 
     # ---- SCRIPT-005：破坏性操作与防护旗标 ----
-    scanned, unguarded = scan_destructive(static_targets)
+    # 扫**全包**代码文件，而不是只看 scripts/（assets/deploy.sh 里的 rm -rf 一样会毁数据）
+    code_targets = all_code_targets(ctx)
+    scanned, unguarded = scan_destructive(code_targets)
     destructive = [f"{rp}: {'、'.join(kinds)}" for rp, kinds in scanned]
-    if not scripts:
-        out.append(res(RULES["SCRIPT-005"], INFO, "不适用：包内无 scripts/ 目录"))
+    if not code_targets:
+        out.append(res(RULES["SCRIPT-005"], INFO, "不适用：包内没有可判语言的代码文件"))
     elif not destructive:
         out.append(res(RULES["SCRIPT-005"], PASS, "未发现破坏性/有状态操作"))
     elif unguarded:

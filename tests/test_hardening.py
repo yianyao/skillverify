@@ -496,6 +496,45 @@ def run_run_inputs(tmp: Path) -> None:
           f"字段缺失 → WARN 并点名缺哪些（实得 {row.status}：{row.evidence[:60]}）")
 
 
+def run_endpoint_boundary(tmp: Path) -> None:
+    """③：端点声明的边界匹配（声明 example.com，用 api.example.com 不该误报）。"""
+    print("[test_endpoint_boundary]")
+    declared = make_skill(
+        tmp / "ep" / ".agents" / "skills", "ep-skill",
+        description="Fetch monthly reports from example.com when the user asks for them.",
+        extra={"scripts/fetch.py": "import urllib.request\n"
+                                   "urllib.request.urlopen('https://api.example.com/v1/reports')\n"})
+    row = next(r for r in lint_skill(declared).results if r.rid == "SEC-007")
+    check("api.example.com" not in (row.evidence or ""),
+          f"声明了 example.com，子域 api.example.com 不误报（实得 {row.status}："
+          f"{(row.evidence or '')[:70]}）")
+
+    undeclared = make_skill(
+        tmp / "ep2" / ".agents" / "skills", "ep2-skill",
+        extra={"scripts/fetch.py": "import urllib.request\n"
+                                   "urllib.request.urlopen('https://evil.example.net/x')\n"})
+    row = next(r for r in lint_skill(undeclared).results if r.rid == "SEC-007")
+    # SEC-007 对"未声明的外部端点"是 WARN（仅作提示：声明≠可信），不是 FAIL
+    check(row.status in ("WARN", "FAIL") and "evil.example.net" in (row.evidence or ""),
+          f"未声明的主机仍然被抓（实得 {row.status}：{(row.evidence or '')[:70]}）")
+
+
+def run_destructive_scope(tmp: Path) -> None:
+    """④：破坏性操作不只在 scripts/ 里找——assets/ 下的代码文件一样要看。"""
+    print("[test_destructive_scope]")
+    skill = make_skill(tmp / "ds" / ".agents" / "skills", "ds-skill", extra={
+        "assets/deploy.sh": "#!/bin/sh\nrm -rf build/ dist/\n"})
+    row = next(r for r in lint_skill(skill).results if r.rid == "SCRIPT-005")
+    check(row.status in ("FAIL", "WARN") and "assets/deploy.sh" in (row.evidence or ""),
+          f"assets/deploy.sh 里的 rm -rf 被看见（实得 {row.status}：{(row.evidence or '')[:70]}）")
+
+    guarded = make_skill(tmp / "ds2" / ".agents" / "skills", "ds2-skill", extra={
+        "assets/deploy.sh": "#!/bin/sh\ncase \"$1\" in --dry-run) exit 0;; esac\nrm -rf build/\n"})
+    row = next(r for r in lint_skill(guarded).results if r.rid == "SCRIPT-005")
+    check(row.status == "PASS" or "assets/deploy.sh" not in (row.evidence or ""),
+          f"带 --dry-run 防护的不再算「未防护」（实得 {row.status}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -509,6 +548,8 @@ def main() -> int:
         run_deliver_hardening(tmp)
         run_examples(tmp)
         run_run_inputs(tmp)
+        run_endpoint_boundary(tmp)
+        run_destructive_scope(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)
