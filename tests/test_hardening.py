@@ -700,6 +700,20 @@ def run_mount_control(tmp: Path) -> None:
           f"解析器见谁拒谁时 → SKIP（结论不可信），而不是 PASS（实得 {row.status}）")
 
 
+def run_w08_locator(tmp: Path) -> None:
+    """机械层能定位时，W-08 不许再要求评审员自定位（消掉那个降级口径）。"""
+    print("[test_w08_locator]")
+    from skillverify import review
+
+    prompt = next(p for p in review.load_catalog() if p.id == "W-08")
+    blob = f"{prompt.when}\n{prompt.prompt}"
+    check("SCRIPT-005" in blob, "W-08 指明优先用 SCRIPT-005 的定位段落（实得未提及）")
+    check("定位方式：SCRIPT-005 定位段落" in blob,
+          "W-08 要求注明定位方式为机械定位段落")
+    check("机械定位为空" in blob or "为空时" in blob,
+          "自定位被降级为「机械定位为空时」的兜底")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="A 组加固项的回归断言").parse_args()
@@ -719,6 +733,7 @@ def main() -> int:
         run_adjudications(tmp)
         run_dual_review(tmp)
         run_mount_control(tmp)
+        run_w08_locator(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     total = len(_passed) + len(_failed)
