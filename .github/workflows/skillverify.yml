@@ -53,11 +53,16 @@ jobs:
 
   # 只在开发**这个工具本身**时需要：跑 14 个回归套件（默认 13）
   self-test:
-    if: ${{ hashFiles('tests/run_all.py') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m tests.run_all
+      # hashFiles 只能在 step 级 if 中使用（作业级条件在 checkout 前求值，无工作区可哈希），
+      # 所以这里先探测文件、再按 step 输出决定是否跑回归
+      - name: 检测是否存在回归套件
+        id: has_tests
+        run: echo "ok=$(test -f tests/run_all.py && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.has_tests.outputs.ok == 'true'
+        run: python -m tests.run_all
