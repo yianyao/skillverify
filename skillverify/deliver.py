@@ -658,7 +658,11 @@ def install_hook(project: Path, *, force: bool = False, fail_closed: bool = Fals
             action = "已更新"
 
     checkout = Path(__file__).resolve().parent.parent
-    path.write_text(hook_content(sys.executable, checkout, fail_closed=fail_closed),
+    # 记录解析符号链接后的真实解释器路径：Linux 上 python3 常是符号链接，
+    # 不 resolve 的话 hook 内容与真实路径不一致（跨平台测试抓过这个）。
+    # 当场验证的兜底命令也用同一个路径，保证「写进去的」与「验过的」一致。
+    interpreter = str(Path(sys.executable).resolve())
+    path.write_text(hook_content(interpreter, checkout, fail_closed=fail_closed),
                     encoding="utf-8", newline="\n")
     try:  # POSIX 上需要可执行位
         path.chmod(path.stat().st_mode | 0o111)
@@ -667,7 +671,7 @@ def install_hook(project: Path, *, force: bool = False, fail_closed: bool = Fals
 
     # 装完**当场验一次兜底命令**：嵌入式/`._pth` 解释器上它可能压根导不进来，
     # 那时 hook 会静默空转（fail-open 是声明的取舍，但"装了就等于没装"必须当场说出来）。
-    ok, why = probe_hook_fallback(sys.executable, checkout, cwd=project)
+    ok, why = probe_hook_fallback(interpreter, checkout, cwd=project)
     if not ok:
         action += (f"；**注意**：兜底命令在这台机器上不可用（{why}）——"
                    f"若你的 PATH 里没有 skillverify，提交将不会被门禁检查")

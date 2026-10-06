@@ -146,6 +146,17 @@ def _exact_case(inv, ref: str) -> bool:
     return any(rec.rp == ref for rec in inv.files)
 
 
+def _case_variant(inv, ref: str) -> bool:
+    """包内是否存在**仅大小写不同**的同路径记录。
+
+    这类引用在大小写不敏感的磁盘上（Windows/macOS 默认）能打开，在 Linux 上是断链——
+    无论当前磁盘属于哪种，都该按「大小写不一致」警告，而不是按断链 FAIL：
+    修复动作是改大小写，不是补文件。
+    """
+    folded = ref.casefold()
+    return any(rec.rp != ref and rec.rp.casefold() == folded for rec in inv.files)
+
+
 def check(ctx: LintContext) -> list[Result]:
     out: list[Result] = []
     root = ctx.root
@@ -166,6 +177,11 @@ def check(ctx: LintContext) -> list[Result]:
             if _exists(root, ref):
                 if (root / ref).is_file() and not _exact_case(ctx.inventory, ref):
                     mismatch.append(f"{ref}（{ctx.skill_md_rel}:{lineno}）")
+                continue
+            if _case_variant(ctx.inventory, ref):
+                # 文件系统上打不开，但清单里有仅大小写不同的记录——
+                # 这是大小写不一致（可移植性隐患），不是断链；Linux 上尤其要走到这分支
+                mismatch.append(f"{ref}（{ctx.skill_md_rel}:{lineno}）")
                 continue
             broken.append(f"{ref}（{ctx.skill_md_rel}:{lineno}）")
         return broken, mismatch
