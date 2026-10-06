@@ -165,7 +165,7 @@ def run_numbers() -> None:
     # 引用**旧体系**那 29 条时，必须写成「旧体系 29」这种限定说法，避免读者以为工具只有 29 条。
     cov = read("覆盖对照-生命周期验证方案.md")
     bad_claims = [f"{name}:{n}" for name in ("覆盖对照-生命周期验证方案.md", "验证流程指南.md",
-                                             "仓库结构说明.md", "技能编写指南.md")
+                                             "仓库结构说明.md", "技能编写指南.md", "README.md")
                   for n, line in enumerate(read(name).splitlines(), 1)
                   if re.search(r"语义层（29 条提示词）|（29 条提示词）", line)
                   and "旧体系" not in line]

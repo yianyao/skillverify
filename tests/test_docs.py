@@ -141,6 +141,19 @@ def run_consistency() -> None:
     check("python -m skillverify.cli" in texts["验证流程指南.md"],
           "流程指南写了免安装直接跑 repo 的方式")
 
+    # README.md 是仓库落地页（2026-10-05 由 origin 带进来）：同样要自包含、不许出现盘符路径。
+    # 它不受"两份交付文档"的体量与官方链接要求约束（那是一屏总览，不是参考手册）。
+    readme = REPO / "README.md"
+    check(readme.is_file(), "README.md 存在（仓库落地页）")
+    if readme.is_file():
+        text = readme.read_text(encoding="utf-8")
+        leaks = [token for token in ("handoff/", "legacy/", "会话交接", "审计报告")
+                 if token in text]
+        check(not leaks, f"README.md 不引用内部/会话文档（命中: {leaks}）")
+        drives = re.findall(r"(?<![\w.])[A-Za-z]:[\\/]\w", text)
+        check(not drives, f"README.md 不含硬编码盘符路径（命中: {drives}）")
+        check("skillverify" in text, "README.md 点明了工具名")
+
     parser = cli.build_parser()
     subs = all_subcommands(parser)
     flags = all_option_strings(parser)

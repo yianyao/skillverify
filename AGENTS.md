@@ -135,7 +135,7 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
   交付物 = `pyproject.toml` + `skillverify/`（含 `data/`）+ 根目录 5 份文档：
   《技能编写指南.md》（作者向）、《验证流程指南.md》（流程/宿主向）、《操作手册.md》（新手向）、
   《迁移与部署指南.md》（新手向）、《仓库结构说明.md》（开发者向），
-  另有开发者向的《覆盖对照-生命周期验证方案.md》与本文件。
+  另有开发者向的《覆盖对照-生命周期验证方案.md》、`README.md`（仓库落地页）与本文件。
 - `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
 - 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
 - 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（14 个套件 = 默认 13 + 打包真装；具体断言数看输出，本文件不写死数字）。
