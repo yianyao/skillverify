@@ -317,6 +317,61 @@ def _command_count() -> int:
                               text, re.MULTILINE)))
 
 
+def cli_surface() -> tuple[list[str], list[str]]:
+    """CLI 的全部子命令与旗标，**从解析器里抠出来**（手抄一份必然漂移）。"""
+    import argparse as _ap
+
+    from skillverify.cli import build_parser
+
+    subs: list[str] = []
+    flags: list[str] = []
+
+    def walk(parser) -> None:
+        for action in parser._actions:  # noqa: SLF001 - 读自己的解析器
+            if isinstance(action, _ap._SubParsersAction):  # noqa: SLF001
+                for name, sub in action.choices.items():
+                    subs.append(name)
+                    walk(sub)
+            else:
+                flags.extend(action.option_strings)
+
+    walk(build_parser())
+    return sorted(set(subs)), sorted(set(flags))
+
+
+def run_cli_coverage() -> None:
+    """**正向**覆盖：实现了的每个子命令与旗标，至少在某份根文档里出现过一次。
+
+    已有的 `test_docs` 只查反方向（文档里不许出现不存在的命令/旗标），于是"实现了但没人写"
+    这一半从没被查过——实测一次就抓出 **14 个旗标在任何文档里都没有**
+    （`--iteration`、`--trace`、`--fail-closed`、`--blind-seed`…）。
+    口径是**出现过一次**，但要带词边界：`--blind-seed-X` 不算写了 `--blind-seed`
+    （第一次写这条守卫时用的裸子串匹配，反向探针一测就发现它太宽）。不要求逐条解释——
+    文档质量机器判不了。
+    """
+    print("[test_cli_coverage]")
+    text = "\n".join(read(name) for name in (
+        "技能编写指南.md", "验证流程指南.md", "操作手册.md", "迁移与部署指南.md",
+        "仓库结构说明.md", "覆盖对照-生命周期验证方案.md", "AGENTS.md"))
+
+    def mentioned(flag: str) -> bool:
+        # 尾巴上不许再跟字母/数字/短横线：`--iteration` 不能靠 `--iteration-x` 蒙过去
+        return re.search(re.escape(flag) + r"(?![\w-])", text) is not None
+
+    subs, flags = cli_surface()
+    # `-h` 是 argparse 自带的简写（文档写 `--help` 就够），不单独要求
+    flags = [f for f in flags if f != "-h"]
+    check(len(subs) >= 11 and len(flags) >= 40,
+          f"抠到 CLI 表面：{len(subs)} 个子命令 / {len(flags)} 个旗标")
+    missing_subs = [s for s in subs if s not in text]
+    missing_flags = [f for f in flags if not mentioned(f)]
+    check(not missing_subs, f"每个子命令都在文档里出现过（缺: {missing_subs}）")
+    check(not missing_flags, f"每个旗标都在文档里出现过（缺: {missing_flags}）")
+    # 反向自检：匹配不是恒真的——编一个没人写的旗标，必须被判为缺失
+    check(not mentioned("--definitely-not-a-real-flag"),
+          "这条守卫能失败（探针旗标被判为缺失）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="文档与代码一致性守卫").parse_args()
@@ -324,6 +379,7 @@ def main() -> int:
     run_coverage_math()
     run_capability_coverage()
     run_handoff()
+    run_cli_coverage()
     total = len(_passed) + len(_failed)
     print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
