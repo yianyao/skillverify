@@ -40,10 +40,12 @@ jobs:
         # --scripts 会**真的执行**技能自带脚本（以 --help 与一个非法参数调用）。
         # 技能仓库里开启是合适的；若你的脚本有副作用，去掉这个开关即可（相关规则会记"未覆盖"，
         # --strict 门禁会被拦——那正是提醒你：发行物里的脚本没有契约证据）。
+        # check 的退出码 2 = 无 FAIL 但有 WARN/SKIP——按工具哲学 WARN 留给人甄别、不阻断 CI，
+        # 客观的 FAIL 由下一步 deliver 门禁兜底（它对 FAIL 才返回 1）。
         run: |
           skillverify check --stages "$STAGES" --scripts \
             --root "$SKILLS_ROOT" --out check.json --json > /dev/null || true
-          skillverify check --stages "$STAGES" --scripts --root "$SKILLS_ROOT"
+          skillverify check --stages "$STAGES" --scripts --root "$SKILLS_ROOT" || [ $? -eq 2 ]
 
       - name: 交付门禁（--strict：连"未执行/未覆盖"也阻断）
         run: skillverify deliver --stages "$STAGES" --strict --scripts --root "$SKILLS_ROOT"
