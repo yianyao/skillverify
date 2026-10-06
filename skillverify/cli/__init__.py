@@ -266,6 +266,10 @@ def build_parser() -> _ArgParser:
                            default="all",
                            help="跑哪些阶段（默认 all = spec+lint+evals+review：交付要考虑"
                                 "该技能已有的全部资产与评审结论；both = spec+lint）")
+    p_deliver.add_argument("--scripts", action="store_true",
+                           help="实测脚本契约（与 check 的 --scripts 同义：以 --help 等调用"
+                                "技能自带脚本）。不开启时 SCRIPT 族规则记「未执行」，"
+                                "--strict 门禁会被它们拦住")
     p_deliver.add_argument("--workspace", metavar="目录",
                            help="评测工作区（默认找并列的 <技能名>-workspace/）")
     p_deliver.add_argument("--iteration", type=int, metavar="N",

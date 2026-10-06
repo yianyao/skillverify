@@ -40,8 +40,13 @@ def force_utf8_stdio() -> None:
 
 
 def read_text(path: Path) -> str:
-    """按 UTF-8 读取文本；BOM 由调用方决定是否保留（此处不剥除）。"""
-    return path.read_text(encoding=ENCODING, newline="")
+    """按 UTF-8 读取文本；BOM 由调用方决定是否保留（此处不剥除）。
+
+    用 Path.open 而非 Path.read_text：read_text 的 newline 参数是 Python 3.13 才有的，
+    本项目承诺 3.10+；open 的 newline 自古就有，语义相同（禁用换行翻译，保留 \r\n 原样）。
+    """
+    with path.open("r", encoding=ENCODING, newline="") as handle:
+        return handle.read()
 
 
 def read_json(path: Path) -> tuple[object | None, str | None]:
@@ -68,6 +73,10 @@ def read_json(path: Path) -> tuple[object | None, str | None]:
 
 
 def write_text(path: Path, text: str) -> None:
-    """以 UTF-8 + LF 写入文本，必要时创建父目录。"""
+    """以 UTF-8 + LF 写入文本，必要时创建父目录。
+
+    同 read_text：write_text 的 newline 参数 3.13 才有，用 open 保持 3.10+ 兼容。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding=ENCODING, newline="\n")
+    with path.open("w", encoding=ENCODING, newline="\n") as handle:
+        handle.write(text)

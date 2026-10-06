@@ -125,16 +125,18 @@ def check_fail_loud(skill_name: str) -> Result:
         # "未修改的合法样本**必须先被接受**"。没有这一步，一个"见谁拒谁"的解析器
         # 也能通过全部注入断言——这种"恒过的自测"等于没测（本项目在 EVAL-010 里
         # 正是把"恒真/恒假"当缺陷看）。对照不通过就转 SKIP：结论不可信，别装成通过。
-        (probe_root / "SKILL.md").write_text(
-            f"---\nname: {skill_name}\ndescription: 未修改的对照样本，必须被接受。\n---\n\n# 对照\n",
-            encoding="utf-8", newline="")
+        # Path.write_text 的 newline 参数是 Python 3.13 才有的；用 open 保持 3.10+ 兼容
+        with (probe_root / "SKILL.md").open("w", encoding="utf-8", newline="") as _h:
+            _h.write(
+                f"---\nname: {skill_name}\ndescription: 未修改的对照样本，必须被接受。\n---\n\n# 对照\n")
         control_name, _control_desc, control_error = _readable(probe_root)
         if not (control_name and not control_error):
             return _res(RULES["MOUNT-004"], SKIP,
                         f"对照未通过：未修改的合法样本都没被接受（name={control_name!r}，"
                         f"error={control_error!r}）——此时注入断言恒过，结论不可信，本项未执行")
         for label, filename, content in PROBES:
-            (probe_root / filename).write_text(content, encoding="utf-8", newline="")
+            with (probe_root / filename).open("w", encoding="utf-8", newline="") as _h:
+                _h.write(content)
             name, _desc, error = _readable(probe_root)
             accepted = bool(name) and not error
             if accepted:
