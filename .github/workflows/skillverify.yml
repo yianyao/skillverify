@@ -16,8 +16,14 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     env:
-      # 技能根（本工具默认按官方跨宿主约定找 <项目>/.agents/skills/；这里显式写出来更清楚）
-      SKILLS_ROOT: .agents/skills
+      # 技能根：本仓库的技能（evals-skill/）直接放在仓库根，所以这里用 . ；
+      # 抄到你的技能仓库时，改成你的技能根（官方跨宿主约定是 .agents/skills）
+      SKILLS_ROOT: .
+      # 每推必守的阶段：spec+lint（纯机械判定，可离线复核）。
+      # evals/review 依赖人工/模型评审产物（评审记录、trigger-runs.json 等），
+      # 其「未执行」SKIP 在 --strict 下同样阻断——那是里程碑把关的事：
+      # 发版前单独跑一次 `skillverify deliver --stages all --strict --scripts` 即可
+      STAGES: both
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,16 +36,17 @@ jobs:
       - name: 安装
         run: python -m pip install -e .
 
-      - name: 机械层 + 评测资产 + 语义评审记录
+      - name: 机械层（spec+lint）+ 脚本契约实测
         # --scripts 会**真的执行**技能自带脚本（以 --help 与一个非法参数调用）。
-        # 技能仓库里开启是合适的；若你的脚本有副作用，去掉这个开关即可（相关规则会记"未覆盖"）。
+        # 技能仓库里开启是合适的；若你的脚本有副作用，去掉这个开关即可（相关规则会记"未覆盖"，
+        # --strict 门禁会被拦——那正是提醒你：发行物里的脚本没有契约证据）。
         run: |
-          skillverify check --stages all --scripts \
+          skillverify check --stages "$STAGES" --scripts \
             --root "$SKILLS_ROOT" --out check.json --json > /dev/null || true
-          skillverify check --stages all --scripts --root "$SKILLS_ROOT"
+          skillverify check --stages "$STAGES" --scripts --root "$SKILLS_ROOT"
 
       - name: 交付门禁（--strict：连"未执行/未覆盖"也阻断）
-        run: skillverify deliver --root "$SKILLS_ROOT" --strict
+        run: skillverify deliver --stages "$STAGES" --strict --scripts --root "$SKILLS_ROOT"
 
       - name: 上传报告（无论成败都留痕）
         if: always()
@@ -58,7 +65,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # 回归套件的测试夹具用了 3.13 的 Path.read_text/write_text(newline=)
+          # （生产代码已改用 open() 保持 3.10+ 兼容；夹具属开发环境资产，对齐本地开发版本）
+          python-version: "3.13"
       # hashFiles 只能在 step 级 if 中使用（作业级条件在 checkout 前求值，无工作区可哈希），
       # 所以这里先探测文件、再按 step 输出决定是否跑回归
       - name: 检测是否存在回归套件
