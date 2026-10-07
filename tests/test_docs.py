@@ -662,6 +662,20 @@ def run_new_docs() -> None:
             check(not a_unknown, f"action.yml 用到的旗标都真实存在（凭空出现的: {a_unknown}）")
             check("deliver" in atext and "--json" in atext, "action.yml 跑 deliver 并取 JSON 报告")
             check("GITHUB_STEP_SUMMARY" in atext, "action.yml 把判定写进 job summary")
+
+        # release.yml 同样在扫描范围内：它也会调用 skillverify 的子命令与旗标。
+        # （`--version` 这类"旗标长得像子命令"的情况用 flags 过滤掉，别让它误报。）
+        release = REPO / ".github" / "workflows" / "release.yml"
+        if release.is_file():
+            rtext = release.read_text(encoding="utf-8")
+            r_used = {t for t in SUBCOMMAND_RE.findall(rtext) if f"--{t}" not in flags}
+            r_unknown = sorted(r_used - subs)
+            check(not r_unknown, f"release.yml 提到的子命令都真实存在（凭空出现的: {r_unknown}）")
+            r_flags = {f for ln in rtext.splitlines() if "skillverify" in ln
+                       for f in FLAG_RE.findall(ln)}
+            r_unknown_flags = sorted(f for f in r_flags if f not in flags | external_flags)
+            check(not r_unknown_flags,
+                  f"release.yml 提到的旗标都真实存在（凭空出现的: {r_unknown_flags}）")
         # 作业级 if 与 step 级 if 是两种方言：`hashFiles()` 只能用在 **step 级**
         # （作业级条件在 checkout 之前求值，那时工作区还是空的，无文件可哈希）。
         # 实测代价：workflow 一诞生就带这个 bug，CI 连挂 5 次、每次 0 个 job

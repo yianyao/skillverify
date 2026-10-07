@@ -77,3 +77,22 @@ jobs:
         run: echo "ok=$(test -f tests/run_all.py && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.has_tests.outputs.ok == 'true'
         run: python -m tests.run_all
+
+  # 验证仓库根那份 composite Action（`action.yml`）真的能用。
+  # 为什么需要：本地没有 YAML 解析器（标准库不含），所以 `action.yml` 的**语法**
+  # 只有在这里才会被验证一次；顺带验证 composite 步骤、inputs 传递与退出码语义。
+  # `strict: "false"` 是刻意的：本仓库自身存在 WARN/「未执行」项，不该因此把这个 job 打红
+  # ——这本身就是"退出码 2 不等于失败"的一次实测。
+  action-selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./
+        with:
+          skills-root: "."
+          stages: both
+          scripts: "false"
+          strict: "false"
+          upload-record: "false"

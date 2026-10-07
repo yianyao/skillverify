@@ -29,10 +29,10 @@ inputs:
     description: 是否让 WARN 也失败。默认 false（本工具的立场：WARN = 人工甄别，不阻断）
     required: false
     default: "false"
-  ref:
-    description: 安装哪个版本的 skillverify。留空 = 本 Action 被引用的那个 ref（推荐，天然与 Action 同版本）
+  version:
+    description: 安装哪个版本的 skillverify（默认 pin 到本 Action 对应的发布版本；改工具版本时同步这里）
     required: false
-    default: ""
+    default: "0.1.0"
   python-version:
     description: 运行门禁的 Python 版本（discover/check/deliver/hook 需要 >=3.11）
     required: false
@@ -57,14 +57,15 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    # PyPI 上线前用 git+ 安装；ref 留空时用 Action 自身的 ref（调用方写 @v1，就装 v1）。
+    # 从 PyPI 安装（0.1.0 起已发布）。**默认 pin 版本**：门禁工具的版本变化不该悄悄改变判定口径；
+    # 想跟最新就显式传 version: latest（不推荐——"昨天还绿今天就红"最难查）。
     - name: 安装 skillverify
       shell: bash
       env:
-        REF: ${{ inputs.ref != '' && inputs.ref || github.action_ref }}
+        VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        python -m pip install --quiet --upgrade "skillverify @ git+https://github.com/yianyao/skillverify@${REF}"
+        python -m pip install --quiet --upgrade "skillverify==${VERSION}"
         skillverify --version
 
     - name: 跑交付门禁
