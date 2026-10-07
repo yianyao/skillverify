@@ -308,6 +308,42 @@ def _validate_frontmatter(doc: SkillDocument) -> list[Result]:
                 )
             )
 
+    # 官方校验器（strictyaml）比我们**严**的两处：行内流式写法与重复键。
+    # 我们是刻意放宽（手写解析器支持 `metadata: {a: b}`、重复键后者覆盖前者），
+    # 但**必须说出来**：否则用这种写法的技能在我们这儿全绿、到官方校验器或严格宿主上
+    # 却加载不了——正是本项目声称要拦的"本机能跑、宿主不加载"。判定是 INFO（不阻断）：
+    # 工具不替宿主做兼容性判决，但要点名。用 SPEC-TEXT 承载（它本就是"口径差异提示"）。
+    fm_raw = doc.frontmatter.raw if doc.frontmatter is not None else ""
+    top_keys: list[str] = []
+    flow_keys: list[str] = []
+    for line in fm_raw.splitlines():
+        if not line or line[:1] in (" ", "\t", "#"):
+            continue
+        key, sep, rest = line.partition(":")
+        key = key.strip()
+        if not sep or not key or " " in key:
+            continue
+        top_keys.append(key)
+        if rest.strip()[:1] in ("{", "["):
+            flow_keys.append(key)
+    for key in sorted(set(flow_keys)):
+        results.append(
+            Result(
+                "SPEC-TEXT", RULES["SPEC-TEXT"].title, INFO, RULES["SPEC-TEXT"].level,
+                f"`{key}:` 用了行内流式写法（`{{...}}` / `[...]`）；我们刻意支持，"
+                f"但官方校验器（strictyaml）不接受——跨宿主请改成块状缩进写法",
+            )
+        )
+    duplicated = sorted({k for k in top_keys if top_keys.count(k) > 1})
+    if duplicated:
+        results.append(
+            Result(
+                "SPEC-TEXT", RULES["SPEC-TEXT"].title, INFO, RULES["SPEC-TEXT"].level,
+                f"frontmatter 有重复键 {duplicated}：解析时**后者静默覆盖前者**，"
+                f"官方校验器则会直接报错——请删掉多余的那份",
+            )
+        )
+
     # compatibility 细则
     compat_raw = data.get("compatibility")
     if compat_raw is not None:
