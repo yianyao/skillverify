@@ -1,0 +1,132 @@
+name: skillverify deliver
+description: >
+  在 CI 里跑 skillverify 的交付门禁：机械层 + 评测资产 + 语义评审记录 → 汇总判定。
+  WARN 不阻断、SKIP（未执行）默认也不阻断——门禁口径由输入决定，不由本 Action 替你改。
+author: yianyao
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  skills-root:
+    description: 技能根目录（相对仓库根）。技能仓库通常填 .
+    required: false
+    default: "."
+  stages:
+    description: 检查阶段，逗号分隔（spec,lint,evals,review）或 all
+    required: false
+    default: "all"
+  scripts:
+    description: 是否真的执行技能自带脚本（--help / 非法参数 / 幂等 / 输出量）。有副作用的技能请留 false
+    required: false
+    default: "false"
+  strict:
+    description: 严格模式：把「未执行（SKIP）」也算阻断
+    required: false
+    default: "true"
+  fail-on-warn:
+    description: 是否让 WARN 也失败。默认 false（本工具的立场：WARN = 人工甄别，不阻断）
+    required: false
+    default: "false"
+  ref:
+    description: 安装哪个版本的 skillverify。留空 = 本 Action 被引用的那个 ref（推荐，天然与 Action 同版本）
+    required: false
+    default: ""
+  python-version:
+    description: 运行门禁的 Python 版本（discover/check/deliver/hook 需要 >=3.11）
+    required: false
+    default: "3.12"
+  upload-record:
+    description: 是否把交付记录（.agents/skillverify/）传成 artifact
+    required: false
+    default: "true"
+
+outputs:
+  result:
+    description: pass 或 fail
+    value: ${{ steps.gate.outputs.result }}
+  report:
+    description: deliver 的 JSON 报告路径
+    value: ${{ steps.gate.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # PyPI 上线前用 git+ 安装；ref 留空时用 Action 自身的 ref（调用方写 @v1，就装 v1）。
+    - name: 安装 skillverify
+      shell: bash
+      env:
+        REF: ${{ inputs.ref != '' && inputs.ref || github.action_ref }}
+      run: |
+        set -euo pipefail
+        python -m pip install --quiet --upgrade "skillverify @ git+https://github.com/yianyao/skillverify@${REF}"
+        skillverify --version
+
+    - name: 跑交付门禁
+      id: gate
+      shell: bash
+      env:
+        SKILLS_ROOT: ${{ inputs.skills-root }}
+        STAGES: ${{ inputs.stages }}
+        SCRIPTS: ${{ inputs.scripts }}
+        STRICT: ${{ inputs.strict }}
+        FAIL_ON_WARN: ${{ inputs.fail-on-warn }}
+      run: |
+        set -uo pipefail
+        args=(deliver --root "$SKILLS_ROOT" --stages "$STAGES" --json)
+        [ "$SCRIPTS" = "true" ] && args+=(--scripts)
+        [ "$STRICT" = "true" ] && args+=(--strict)
+        set +e
+        skillverify "${args[@]}" > deliver.json
+        code=$?
+        set -e
+        # 退出码语义（本工具的判定分级）：0=通过 ｜ 1=有 FAIL ｜ 2=有「未执行」项
+        echo "deliver 退出码: $code"
+        case "$code" in
+          0) result=pass ;;
+          2) if [ "$STRICT" = "true" ]; then result=fail; else result=pass; fi ;;
+          *) result=fail ;;
+        esac
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+        echo "report=deliver.json" >> "$GITHUB_OUTPUT"
+        # job summary：把判定与阻断项写到 Actions 运行页，别让人去翻日志
+        python - "$result" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+        import json, sys
+        result = sys.argv[1]
+        try:
+            data = json.load(open("deliver.json", encoding="utf-8"))
+        except Exception as exc:                      # 报告没产出时也要留下痕迹
+            print(f"## skillverify deliver: {result}\n\n报告读不出来：{exc}")
+            raise SystemExit(0)
+        gate = data.get("gate", {})
+        print(f"## skillverify deliver: **{result}**\n")
+        print(f"- 检查技能数：{gate.get('checked_skills', '?')}")
+        for label, key in (("阻断项 (FAIL)", "blockers"),
+                           ("未覆盖 (SKIP)", "uncovered"),
+                           ("待甄别 (WARN)", "warnings"),
+                           ("已豁免", "waivers")):
+            items = gate.get(key) or []
+            if items:
+                print(f"\n<details><summary>{label}：{len(items)}</summary>\n")
+                print("\n".join(f"- {i}" for i in items[:50]))
+                print("\n</details>")
+        PY
+        if [ "$FAIL_ON_WARN" = "true" ] && [ -n "$(python -c "import json;print(json.load(open('deliver.json',encoding='utf-8')).get('gate',{}).get('warnings') or '')")" ]; then
+          echo "::error::存在 WARN 且 fail-on-warn=true"
+          exit 1
+        fi
+        [ "$result" = "pass" ] || exit 1
+
+    - uses: actions/upload-artifact@v4
+      if: inputs.upload-record == 'true' && always()
+      with:
+        name: skillverify-record
+        path: |
+          deliver.json
+          .agents/skillverify/
+        if-no-files-found: ignore
