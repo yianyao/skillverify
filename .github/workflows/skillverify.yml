@@ -148,3 +148,42 @@ jobs:
         run: |
           echo "::error::fail-on-warn=true 时该失败却没失败（outcome=${{ steps.b.outcome }}）"
           exit 1
+
+  # 验证 Action 的**豁免通道**（`accept` + `because`）透传真的起作用——同样是 A/B 一对：
+  # A 步同夹具**不带**豁免 ⇒ 必须失败；B 步同夹具**带**豁免 ⇒ 必须通过。
+  # 只差这两个输入，所以"豁免把阻断项变成已豁免"这件事被真正隔离出来验证了。
+  # 夹具：写一个未知 frontmatter 字段（`version:`）→ SKILL-004 记 FAIL（只跑 spec 阶段）。
+  action-selftest-accept:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 造 FAIL 夹具（无 BOM 的 UTF-8）
+        run: |
+          mkdir -p /tmp/fail-root/fail-skill
+          printf -- '---\nname: fail-skill\ndescription: 夹具：刻意写未知字段 version，触发 SKILL-004 FAIL。\nversion: "1.0"\n---\n\n# F\n' \
+            > /tmp/fail-root/fail-skill/SKILL.md
+      # A：不带豁免 —— 有 FAIL 就必须失败
+      - id: a
+        continue-on-error: true
+        uses: ./
+        with:
+          skills-root: /tmp/fail-root
+          stages: spec
+          strict: "false"
+          upload-record: "false"
+      - name: 断言有 FAIL 时门禁失败
+        if: steps.a.outcome != 'failure'
+        run: |
+          echo "::error::夹具含 FAIL 但门禁没失败（outcome=${{ steps.a.outcome }}）——夹具或门禁有问题"
+          exit 1
+      # B：同一夹具 + 豁免（accept 必须与 because 成对）—— 必须真的通过，否则这个 job 自己会红
+      - uses: ./
+        with:
+          skills-root: /tmp/fail-root
+          stages: spec
+          strict: "false"
+          accept: "SKILL-004"
+          because: "夹具：故意用未知字段，用来验证 Action 的豁免透传（本地/CI 都只对这份夹具生效）"
+          upload-record: "false"
