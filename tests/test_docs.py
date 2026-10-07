@@ -627,7 +627,7 @@ def run_new_docs() -> None:
     parser = cli.build_parser()
     subs = all_subcommands(parser)
     flags = all_option_strings(parser)
-    external_flags = {"--no-verify"}          # git 自己的旗标
+    external_flags = {"--no-verify", "--python"}   # git / uv 的旗标
     docs = (DOC_MANUAL, DOC_MIGRATION, DOC_STRUCTURE, DOC_COVERAGE)
     for doc in docs:
         text = doc.read_text(encoding="utf-8")
