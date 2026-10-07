@@ -104,3 +104,47 @@ jobs:
           strict: "false"
           # 刻意用 true：`upload-record` 这条分支要真跑过一次，否则它是"写了但从没执行"的代码
           upload-record: "true"
+
+  # 验证 `fail-on-warn` 真的起作用——**A/B 一对，缺一不可**。
+  # 为什么必须成对：若夹具里有 FAIL，那么无论 fail-on-warn 是 true 还是 false 都会失败，
+  # 断言"它失败了"就是**恒真**的假断言。所以 A 步（fail-on-warn=false）必须真的成功，
+  # 用来证明"夹具只有 WARN、没有 FAIL"；B 步才断言失败。
+  # 夹具本地实测过：只跑 lint 阶段 → result=pass、FAIL=0、WARN=1（HYG-007 声明了 license
+  # 却没有随包许可文件）。**必须无 BOM**：带 BOM 会额外触发 ENC-003，测试就变成在量 BOM。
+  action-selftest-warn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 造 WARN 夹具（无 BOM 的 UTF-8）
+        run: |
+          mkdir -p /tmp/warn-root/warn-skill
+          printf -- '---\nname: warn-skill\ndescription: 夹具：声明了 license 但没有随包许可文件。\nlicense: MIT\n---\n\n# W\n' \
+            > /tmp/warn-root/warn-skill/SKILL.md
+      # A 步：不加 continue-on-error——它必须真的通过，否则说明夹具含 FAIL、后面那条断言无意义
+      - id: a
+        uses: ./
+        with:
+          skills-root: /tmp/warn-root
+          stages: lint
+          scripts: "false"
+          strict: "false"
+          fail-on-warn: "false"
+          upload-record: "false"
+      # B 步：必须接住失败，才能拿到 outcome 再断言
+      - id: b
+        continue-on-error: true
+        uses: ./
+        with:
+          skills-root: /tmp/warn-root
+          stages: lint
+          scripts: "false"
+          strict: "false"
+          fail-on-warn: "true"
+          upload-record: "false"
+      - name: 断言 fail-on-warn=true 时门禁真的失败
+        if: steps.b.outcome != 'failure'
+        run: |
+          echo "::error::fail-on-warn=true 时该失败却没失败（outcome=${{ steps.b.outcome }}）"
+          exit 1
