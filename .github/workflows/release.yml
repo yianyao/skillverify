@@ -89,13 +89,13 @@ jobs:
     environment: pypi          # 与 PyPI 上配的 Environment name 必须一致
     permissions:
       id-token: write          # OIDC：拿短期令牌，不需要任何 secret
+      attestations: write      # PEP 740：把来源证明发到 GitHub 的 attestations API
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # 关掉 PEP 740 attestations（可选）。注意：这个输入**不**代表 dry-run——
-          # 走到这一步就是真发布。要只验证不发布，就别给标签、用 workflow_dispatch 且 publish=false。
-          attestations: false
+        # PEP 740 来源证明：默认开启（attestations: true），把证明发到 GitHub 的 attestations API，
+        # 所以 publish 作业要 `attestations: write`（已加）。注意这个开关**不代表 dry-run**：
+        # 走到这一步就是真发布；只想验证不发布就别给标签、用 workflow_dispatch 且 publish=false。

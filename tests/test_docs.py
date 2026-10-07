@@ -662,6 +662,20 @@ def run_new_docs() -> None:
             check(not a_unknown, f"action.yml 用到的旗标都真实存在（凭空出现的: {a_unknown}）")
             check("deliver" in atext and "--json" in atext, "action.yml 跑 deliver 并取 JSON 报告")
             check("GITHUB_STEP_SUMMARY" in atext, "action.yml 把判定写进 job summary")
+            # 版本号也是"人写的数字"：action.yml 的 version 默认值必须等于包内 __version__，
+            # 否则发新版本后 Action 仍去装旧版（本会话已因同类漂移栽过两次）。
+            from skillverify import __version__ as _pkg_version
+            a_lines = atext.splitlines()
+            a_idx = next((i for i, ln in enumerate(a_lines) if ln.strip() == "version:"), None)
+            declared = None
+            if a_idx is not None:
+                for ln in a_lines[a_idx + 1: a_idx + 6]:
+                    if ln.strip().startswith("default:"):
+                        declared = ln.split(":", 1)[1].strip().strip('"')
+                        break
+            check(declared == _pkg_version,
+                  f"action.yml 的 version 默认值 == 包版本"
+                  f"（action.yml={declared} / 包={_pkg_version}）")
 
         # release.yml 同样在扫描范围内：它也会调用 skillverify 的子命令与旗标。
         # （`--version` 这类"旗标长得像子命令"的情况用 flags 过滤掉，别让它误报。）

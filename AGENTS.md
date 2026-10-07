@@ -146,6 +146,12 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
     ① 补丁脚本末尾必须 `ast.parse()` 自检语法；② 跑完立刻单跑受影响的套件；
     ③ 一旦报错就 `git checkout -- <文件>` 还原，**改用手工逐处 edit**（5 处以内手工更快更稳）。
     单行语句用脚本批量替换是安全的；**跨行语句别用脚本**。
+18. **`pip install` 进 venv ≠ 命令在 PATH 上**：CI 里 `pip install <包>` 到 `/tmp/smoke` 之后直接敲
+    `skillverify` 会 `command not found`（exit 127）——venv 的 `bin/` 只有在**激活**后才进 PATH，
+    而 `pip install` 不会替你激活。本仓库第一次发版就栽在这（Release run #1 红在"冒烟"那一步）。
+    → CI 里调 console script 一律用**绝对路径**（`/tmp/smoke/bin/skillverify`），或显式 `source .../activate`。
+    **同一类**：CI 的报错只告诉你"哪个 step 红了"，不告诉你是哪条命令——所以冒烟/校验类步骤要**逐条打印命令与退出码**，
+    别依赖 `set -e` 的静默中断。
 
 ## 六、迁移/分发这个项目时要留意
 

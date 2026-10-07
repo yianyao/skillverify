@@ -15,6 +15,13 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # 兼容性承诺要有实测：pyproject 写的是 requires-python >=3.10，而此前 CI 只跑过 3.12/3.13。
+    # 3.11 是 discover/check/watch/deliver/hook 的实际下限（tomllib 解析 hosts.toml）——
+    # 最低也要把 3.11 跑上，否则"支持 3.10+"这句话没有任何证据。
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
     env:
       # 技能根：本仓库的技能（evals-skill/）直接放在仓库根，所以这里用 . ；
       # 抄到你的技能仓库时，改成你的技能根（官方跨宿主约定是 .agents/skills）
@@ -31,7 +38,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"   # 3.11+ 才有 discover/check/watch/deliver/hook（tomllib）
+          python-version: ${{ matrix.python-version }}
 
       - name: 安装
         run: python -m pip install -e .
@@ -54,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: skillverify-report
+          name: skillverify-report-${{ matrix.python-version }}
           path: |
             check.json
             .agents/skillverify/deliver/latest.json
