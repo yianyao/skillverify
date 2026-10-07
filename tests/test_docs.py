@@ -648,6 +648,20 @@ def run_new_docs() -> None:
         check(not unknown_wf, f"CI 样例提到的旗标都真实存在（凭空出现的: {unknown_wf}）")
         check("deliver" in used and "--strict" in wf, "CI 样例跑交付门禁且用 --strict")
         check("tests.run_all" in wf, "CI 样例包含工具自身的回归套件 job")
+
+        # action.yml（composite Action）也是"别人会照抄的东西"：它引用的旗标必须真实存在，
+        # 否则调用方的 CI 会在**他们**仓库里红。标准库没有 YAML 解析器（本地没法校验 YAML 语法），
+        # 所以这条扫描是本地唯一能兜住的检查——语法层面只能靠 GitHub 首跑。
+        action = REPO / "action.yml"
+        check(action.is_file(), "composite Action 存在（action.yml）")
+        if action.is_file():
+            atext = action.read_text(encoding="utf-8")
+            foreign = {"--upgrade", "--no-input"}      # 文件里出现的非本项目旗标（pip 等）
+            a_flags = set(re.findall(r"(?<![\w-])--[A-Za-z][\w-]*", atext))
+            a_unknown = sorted(a_flags - flags - foreign)
+            check(not a_unknown, f"action.yml 用到的旗标都真实存在（凭空出现的: {a_unknown}）")
+            check("deliver" in atext and "--json" in atext, "action.yml 跑 deliver 并取 JSON 报告")
+            check("GITHUB_STEP_SUMMARY" in atext, "action.yml 把判定写进 job summary")
         # 作业级 if 与 step 级 if 是两种方言：`hashFiles()` 只能用在 **step 级**
         # （作业级条件在 checkout 之前求值，那时工作区还是空的，无文件可哈希）。
         # 实测代价：workflow 一诞生就带这个 bug，CI 连挂 5 次、每次 0 个 job
