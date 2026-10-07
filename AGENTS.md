@@ -128,6 +128,17 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
     ① 全文只允许 §〇 一处「现状/待办」标题；② §〇 的结构数字（套件/命令/规则/提示词）必须与代码一致。
     教训：**"人写的状态"必须与"机器知道的事实"对账，否则它比没有更糟**——它会让下一个会话
     以为自己有地图。（同一条也适用于"照旧实现的形状改代码"：先确认那个形状在你的语境下成立。）
+15. **包代码禁用 3.13-only API**：`Path.read_text()/write_text(..., newline=)` 的 `newline` 参数是
+    **Python 3.13** 才有的（`open()` 的 `newline` 从 Python 3 就有）。本机只有 3.13，**本地永远
+    复现不了**：CI 的 3.12 一加载 `SKILL.md` 就 `TypeError`，而 `pyproject` 写着 `requires-python >=3.10`。
+    → 要禁用换行翻译就写 `path.open("w", encoding="utf-8", newline="")`。测试夹具里同类写法
+    **有意保留**（开发资产对齐本地），所以不要一刀切禁 `newline=`。
+16. **`except 自定义异常` 前先确认它已导入**——本仓库唯一一处"实锤"缺陷就是这样：`mount.py` 的
+    `except ConfigError` 从未导入 `ConfigError`，异常处理子句自己抛 `NameError`，把一句写好的
+    友好提示（"未知宿主档…可用：…"）盖成 traceback；测试没抓到，是因为夹具只用**合法**档名。
+    现在 `tests/test_selfcheck.py` 的**「未定义名」守卫**（纯 AST、零依赖）把它机械化了：
+    包代码里 Load 语境出现从未绑定的名字即红，带三条反向自检；**注解也算**
+    （`lint/budget.py` 的 `Result` 就是这么被抓出来的）。
 
 ## 六、迁移/分发这个项目时要留意
 

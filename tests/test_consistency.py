@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 from skillverify import (  # noqa: E402
-    audit, discover, evalx, library, material, mount, review, runner, spec, trigger,
+    audit, discover, evalx, library, material, mount, review, runner, trigger,
 )
 from skillverify.encoding import force_utf8_stdio  # noqa: E402
 from skillverify.lint import RULES as LINT_RULES  # noqa: E402

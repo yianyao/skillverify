@@ -338,7 +338,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         if args.out:
             targets.append((Path(args.out), text))
         if args.trace:
-            assert discovery.trace_dir is not None
+            if discovery.trace_dir is None:
+                raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
             targets.append((discovery.trace_dir / (f"check{'.json' if args.json else '.md'}"), text))
             if not args.json:
                 targets.append((discovery.trace_dir / "check.json", library.to_json()))
@@ -397,7 +398,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
     except ConfigError as exc:
         print(f"配置错误: {exc}", file=sys.stderr)
         return 1
-    assert discovery.profile is not None
+    if discovery.profile is None:
+        raise RuntimeError("内部不变量被破坏：discovery.profile 为 None（前置检查应已拦住）")
     try:
         return run_watch(
             Path(args.project).expanduser(),
@@ -496,7 +498,8 @@ def cmd_deliver(args: argparse.Namespace) -> int:
     if args.no_record:
         return 0 if gate.passed else 1
 
-    assert discovery.trace_dir is not None
+    if discovery.trace_dir is None:
+        raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
     if args.out:
         write_text(Path(args.out), text if text.endswith("\n") else text + "\n")
         print(f"报告已落盘: {args.out}", file=sys.stderr)
@@ -652,7 +655,8 @@ def cmd_review(args: argparse.Namespace) -> int:
             print(text if text.endswith("\n") else text + "\n")
 
         if not args.no_store:
-            assert discovery.trace_dir is not None
+            if discovery.trace_dir is None:
+                raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
             latest = write_review_record(discovery.trace_dir / "review", record)
             print(f"评审记录: {latest}", file=sys.stderr)
         print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
@@ -711,7 +715,8 @@ def cmd_review(args: argparse.Namespace) -> int:
             for res in collect_report.results:
                 report.add(res)
             discovery, _config = _load_discovery(args)
-            assert discovery.trace_dir is not None
+            if discovery.trace_dir is None:
+                raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
             latest = write_review_record(discovery.trace_dir / "review", record)
             print(f"评审记录: {latest}", file=sys.stderr)
             print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
@@ -755,7 +760,8 @@ def cmd_review(args: argparse.Namespace) -> int:
         except ConfigError as exc:
             print(f"配置错误: {exc}", file=sys.stderr)
             return 1
-        assert discovery.trace_dir is not None
+        if discovery.trace_dir is None:
+            raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
         text = review_status(discovery.trace_dir,
                              [(ref.name, ref.path) for ref in discovery.skills])
         if args.out:

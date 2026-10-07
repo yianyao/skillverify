@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -647,6 +648,19 @@ def run_new_docs() -> None:
         check(not unknown_wf, f"CI 样例提到的旗标都真实存在（凭空出现的: {unknown_wf}）")
         check("deliver" in used and "--strict" in wf, "CI 样例跑交付门禁且用 --strict")
         check("tests.run_all" in wf, "CI 样例包含工具自身的回归套件 job")
+        # 作业级 if 与 step 级 if 是两种方言：`hashFiles()` 只能用在 **step 级**
+        # （作业级条件在 checkout 之前求值，那时工作区还是空的，无文件可哈希）。
+        # 实测代价：workflow 一诞生就带这个 bug，CI 连挂 5 次、每次 0 个 job
+        # （startup_failure），本地守卫却全绿——因为它只查内容语义，不查 GitHub 表达式方言。
+        # 这条是最小可机械化的替代：hashFiles 只能出现在比 job 更深的缩进里。
+        offenders = [ln.strip() for ln in wf.splitlines()
+                     if "hashFiles(" in ln and ln.startswith("    if:")]
+        check(not offenders,
+              f"hashFiles() 不许用在作业级 if（found: {offenders}）")
+        # 反向自检：这条守卫能失败吗？拿一行作业级 hashFiles 问它
+        probe = "    if: ${{ hashFiles('tests/run_all.py') != '' }}"
+        check(bool([ln for ln in [probe] if "hashFiles(" in ln and ln.startswith("    if:")]),
+              "这条守卫能失败（作业级 hashFiles 探针被认出）")
 
     for doc in (DOC_MANUAL, DOC_MIGRATION):
         text = doc.read_text(encoding="utf-8")

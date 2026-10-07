@@ -225,7 +225,8 @@ def load_skill(path: Path) -> SkillDocument:
 def _validate_frontmatter(doc: SkillDocument) -> list[Result]:
     """字段级校验；顺序与官方 validator 一致。"""
     fm = doc.frontmatter
-    assert fm is not None
+    if fm is None:
+        raise RuntimeError("内部不变量被破坏：fm 为 None（前置检查应已拦住）")
     results: list[Result] = []
     data = fm.data
 

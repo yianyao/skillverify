@@ -54,7 +54,9 @@ def _context_from(
     script_budget_s: float,
 ) -> LintContext:
     """从已解析的技能文档构造 lint 上下文（前置检查已通过）。"""
-    assert doc.skill_md is not None  # 前置通过则必然有 SKILL.md
+    if doc.skill_md is None:
+        # 前置：前置通过则必然有 SKILL.md
+        raise RuntimeError("内部不变量被破坏：doc.skill_md 为 None（前置检查应已拦住）")
     text = read_text(doc.skill_md)
     # 内部一律用**绝对路径**：脚本实测的 cwd 是技能根目录，若这里存相对路径，
     # 子进程会把"相对技能根目录的脚本路径"再拼一次 cwd，导致 --help 报"找不到文件"。
