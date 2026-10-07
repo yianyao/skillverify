@@ -146,6 +146,24 @@ def run_semantics(tmp: Path) -> None:
     else:
         fail(f"i18n name 处理异常: status={info[0].status if info else None} exit={rep2.exit_code()}")
 
+    # 2b. 官方校验器（strictyaml）比我们**严**的两处：行内流式写法与重复键。
+    #     我们刻意接受（手写解析器支持、重复键后者覆盖前者），但必须记 INFO 点名——
+    #     否则用这种写法的技能在我们这儿全绿、到官方校验器或严格宿主上加载不了。
+    #     （这条断言是补的：先前的实现只做了一次临时实测，没有守卫。）
+    d2b = tmp / "sem_spec_text" / "my-skill"
+    d2b.mkdir(parents=True)
+    (d2b / "SKILL.md").write_text(
+        "---\nname: my-skill\ndescription: x\nmetadata: {a: b}\n"
+        "license: MIT\nlicense: Apache-2.0\n---\n\n# D\n",
+        encoding="utf-8", newline="")
+    _, rep2b = check_spec(d2b)
+    infos = [r for r in rep2b.results if r.rid == "SPEC-TEXT" and r.status == "INFO"]
+    flow = [r for r in infos if "流式" in r.evidence]
+    dup = [r for r in infos if "重复键" in r.evidence]
+    check(bool(flow) and bool(dup) and rep2b.exit_code() == 0,
+          f"流式写法与重复键各记一条 SPEC-TEXT INFO 且不阻断"
+          f"（流式 {len(flow)} / 重复键 {len(dup)} / exit={rep2b.exit_code()}）")
+
     # 3. 前置短路时后续规则必须记 SKIP，而不是假装 PASS
     d3 = tmp / "sem_short" / "my-skill"
     d3.mkdir(parents=True)
