@@ -102,4 +102,5 @@ jobs:
           stages: both
           scripts: "false"
           strict: "false"
-          upload-record: "false"
+          # 刻意用 true：`upload-record` 这条分支要真跑过一次，否则它是"写了但从没执行"的代码
+          upload-record: "true"

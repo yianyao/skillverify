@@ -41,6 +41,10 @@ skillverify deliver                 ← ⑤ 门禁与留痕（含评审记录新
 **字段映射**（AgentV 官方转换规则，照抄备查）：`prompt→input`、`expected_output→criteria + llm-rubric`、
 `assertions[] / expectations[]→llm-rubric criteria`、`files[]→input_files`、`skill_name→tags.skill`、`id→字符串`。
 
+> **升级时同步**：本文的版本号（`4.42.4`）与上面这张字段映射表都是照着 AgentV 当时的文档写的。
+> 升级 AgentV 时要重看一次 <https://agentv.dev/docs/integrations/agent-skills-evals>：
+> 映射变了 → 本表要改；CLI 形状变了 → 上面的命令要改。**别只改版本号了事。**
+
 ## 三、照抄命令
 
 ```bash
