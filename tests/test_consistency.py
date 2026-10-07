@@ -297,7 +297,8 @@ def run_handoff() -> None:
         "命令": _command_count(),
         "机械规则": len(SPEC_RULES) + len(LINT_RULES) + len(evalx.RULES) + len(trigger.RULES)
                   + len(review.RULES) + len(material.RULES) + len(runner.RULES)
-                  + len(library.RULES) + len(mount.RULES) + len(audit.RULES),
+                  + len(library.RULES) + len(mount.RULES) + len(audit.RULES)
+                  + len(discover.RULES),
         "语义提示词": len(review.load_catalog()),
     }
     # 只认一种写法（`套件 **14**`）：§〇 的格式由本守卫固定，省得"对上了但没人看得懂"
