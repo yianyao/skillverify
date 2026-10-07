@@ -524,6 +524,19 @@ def run_mount_check(tmp: Path) -> None:
     check(code2 == 1 and st2["MOUNT-001"] == FAIL and st2["MOUNT-002"] == SKIP,
           f"技能没放进声明目录 → MOUNT-001 FAIL 且后续 SKIP（实得 {st2}）")
 
+    # ②b 宿主档名敲错：必须报"未知宿主档 + 可用清单"，**不许崩 traceback**。
+    #     这条用例是补的——正因为没人测过非法档名，`mount.py` 里 `except ConfigError`
+    #     漏导入 `ConfigError` 才活了很久：异常处理子句自己抛 NameError，
+    #     把一句早已写好的友好提示盖成了 traceback。（守卫见 test_selfcheck 的未定义名检查。）
+    code2b, out2b, err2b = run_cli(["mount", *common, "--host", "no-such-host", "--json"])
+    check(code2b == 1, f"非法宿主档 → 退出码 1（实得 {code2b}）")
+    check("NameError" not in out2b + err2b and "Traceback" not in out2b + err2b,
+          f"非法宿主档不许崩 traceback（stderr 首行：{(err2b or out2b).strip().splitlines()[:1]}）")
+    check("未知宿主档" in out2b + err2b and "可用" in out2b + err2b,
+          f"非法宿主档要给出可用清单（实得 {(err2b or out2b).strip()[:120]}）")
+    check("no-such-host" in out2b + err2b,
+          "报错里点名用户敲的那个档名（便于对照拼写）")
+
     # ③ description 为空 → 宿主会跳过该技能 → MOUNT-002 FAIL
     empty = write_skill(proj / "another-root", "empty-desc")
     (empty / "SKILL.md").write_text(

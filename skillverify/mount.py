@@ -24,7 +24,7 @@ from __future__ import annotations
 from contextlib import ExitStack
 from pathlib import Path
 
-from .discover import Config, Discovery, discover_skills, load_config
+from .discover import Config, ConfigError, Discovery, discover_skills, load_config
 from .encoding import read_text
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .spec import find_skill_md, skill_md_case_mismatch

@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from ..report import FAIL, INFO, PASS, WARN, Rule
+from ..report import FAIL, INFO, PASS, WARN, Result, Rule
 from .shared import (
     LintContext,
     cjk_ratio,

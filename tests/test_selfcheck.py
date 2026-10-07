@@ -208,6 +208,81 @@ def forbidden_tempfile_calls(tree: ast.AST) -> list[int]:
     return sorted(hits)
 
 
+def undefined_names(tree: ast.AST) -> list[str]:
+    """Load 语境里**从未被绑定过**的名字（= 用了没定义/没导入）。
+
+    为什么需要：本仓库唯一的实锤缺陷就是这一类——`mount.py` 的 `except ConfigError`
+    从未导入 `ConfigError`，于是 CLI 敲错宿主档名时，异常处理子句自己抛 `NameError`，
+    用户看到一大段 traceback，而不是那句早已写好的"未知宿主档…可用：…"。
+    现有自检只查死代码与过期措辞，**不查未定义名**；ruff 能查，但本套件必须纯标准库、
+    离线，不能引 ruff 当依赖——所以用 AST 自己查。
+
+    口径（宁缺勿滥）：绑定来源含 import / 赋值与 walrus / def·class / 函数与 lambda 参数 /
+    推导目标 / except-as / with-as / global·nonlocal / match 捕获 / 内置名 / 模块隐式全局；
+    有 `from x import *` 的文件整体跳过。**注解也参与**——`from __future__ import annotations`
+    让注解不求值，但"注解里写了个没导入的名字"仍是隐患（`get_type_hints`、或哪天去掉 future
+    import 就炸），实测这条正是靠它抓到 `budget.py` 的 `Result`。
+    """
+    import builtins as _b
+
+    implicit = {"__file__", "__name__", "__doc__", "__package__", "__spec__",
+                "__loader__", "__builtins__", "__debug__"}
+    bound: set[str] = set(implicit) | set(dir(_b))
+    star = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            bound |= {a.asname or a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    star = True
+                else:
+                    bound.add(alias.asname or alias.name)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(node.name)
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bound.add(node.id)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound |= set(node.names)
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+            bound.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            bound.add(node.rest)
+    if star:
+        return []
+    used = {node.id for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
+    return sorted(used - bound)
+
+
+def run_undefined_names(trees: dict[Path, ast.AST]) -> None:
+    """包代码里不许有未定义名（测试夹具不查：它们可以依赖别处的约定）。"""
+    print("[test_undefined_names]")
+    offenders: list[str] = []
+    for path, tree in trees.items():
+        if "tests" in path.parts:
+            continue
+        rel = path.relative_to(REPO).as_posix() if path.is_relative_to(REPO) else path.name
+        offenders += [f"{rel}:{name}" for name in undefined_names(tree)]
+    check(not offenders,
+          "包代码没有未定义名（用了没导入/没赋值）" if not offenders
+          else f"包代码里发现未定义名（发现 {len(offenders)} 处）:\n         "
+               + "\n         ".join(offenders[:8]))
+    # 反向自检（两个方向都测，否则"恒真/恒假"都看不出来）：
+    bad = ast.parse("try:\n    pass\nexcept FooError:\n    pass\n")
+    good = ast.parse("class FooError(Exception):\n    pass\n\n\ntry:\n    pass\n"
+                     "except FooError:\n    pass\n")
+    check(undefined_names(bad) == ["FooError"],
+          f"能抓到「except 未导入的异常」（实得 {undefined_names(bad)}）")
+    check(not undefined_names(good), f"定义过之后不再报（实得 {undefined_names(good)}）")
+    star = ast.parse("from os import *\n\nprint(anything_at_all)\n")
+    check(undefined_names(star) == [], "有 `import *` 的文件整体跳过（宁漏勿误报）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="skillverify 自检（死代码 / 过期措辞）").parse_args()
@@ -254,6 +329,8 @@ def main() -> int:
         check(TEMP_DIR_MODE == 0o700, f"POSIX 上临时目录用 0700（实得 {oct(TEMP_DIR_MODE)}）")
     else:
         check(TEMP_DIR_MODE is None, "Windows 上不传 mode（继承父目录 DACL，沙箱才可用）")
+
+    run_undefined_names(trees)
 
     # 反向自检：这套检查**能失败**吗？故意造一处死代码与一句过期话术，验证会被抓到
     print("[test_selfcheck_can_fail]")
