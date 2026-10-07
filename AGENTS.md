@@ -152,6 +152,12 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
     → CI 里调 console script 一律用**绝对路径**（`/tmp/smoke/bin/skillverify`），或显式 `source .../activate`。
     **同一类**：CI 的报错只告诉你"哪个 step 红了"，不告诉你是哪条命令——所以冒烟/校验类步骤要**逐条打印命令与退出码**，
     别依赖 `set -e` 的静默中断。
+19. **写测试夹具要用 .NET 写无 BOM 的 UTF-8——本机 PowerShell 没有 `utf8NoBOM`**：本机是
+    Windows PowerShell 5.1，`Set-Content -Encoding utf8NoBOM` 会**参数绑定失败**（枚举里没这个值），
+    而且失败是**静默的**：夹具目录空了，被测命令对空目录报 `pass / 0 WARN`——**看起来像验证通过**。
+    → 用 `[System.IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding($false)))`。
+    **而且夹具必须真的无 BOM**：带 BOM 会额外触发 `ENC-003`（记 WARN），断言就变成在量 BOM 而不是
+    在量被测项——"测试测错东西"的典型形态（我差点把一个恒真测试写进 CI）。
 
 ## 六、迁移/分发这个项目时要留意
 
