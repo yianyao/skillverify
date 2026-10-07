@@ -539,15 +539,13 @@ def write_record(trace_dir: Path, record: dict, markdown: str) -> list[Path]:
         record["previous"] = compare_with_previous(latest_json, record)
 
     latest_json = deliver_dir / "latest.json"
-    latest_json.write_text(
-        json.dumps(record, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8", newline="\n",
-    )
+    with latest_json.open("w", encoding="utf-8", newline="\n") as _h:
+        _h.write(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=False) + "\n")
     written.append(latest_json)
 
     latest_md = deliver_dir / "latest.md"
-    latest_md.write_text(markdown if markdown.endswith("\n") else markdown + "\n",
-                         encoding="utf-8", newline="\n")
+    with latest_md.open("w", encoding="utf-8", newline="\n") as _h:
+        _h.write(markdown if markdown.endswith("\n") else markdown + "\n")
     written.append(latest_md)
 
     history = deliver_dir / "history.jsonl"
@@ -662,8 +660,8 @@ def install_hook(project: Path, *, force: bool = False, fail_closed: bool = Fals
     # 不 resolve 的话 hook 内容与真实路径不一致（跨平台测试抓过这个）。
     # 当场验证的兜底命令也用同一个路径，保证「写进去的」与「验过的」一致。
     interpreter = str(Path(sys.executable).resolve())
-    path.write_text(hook_content(interpreter, checkout, fail_closed=fail_closed),
-                    encoding="utf-8", newline="\n")
+    with path.open("w", encoding="utf-8", newline="\n") as _h:
+        _h.write(hook_content(interpreter, checkout, fail_closed=fail_closed))
     try:  # POSIX 上需要可执行位
         path.chmod(path.stat().st_mode | 0o111)
     except OSError:

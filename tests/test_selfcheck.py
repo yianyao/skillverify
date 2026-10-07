@@ -283,6 +283,26 @@ def run_undefined_names(trees: dict[Path, ast.AST]) -> None:
     check(undefined_names(star) == [], "有 `import *` 的文件整体跳过（宁漏勿误报）")
 
 
+def forbidden_newline_kwarg(tree: ast.AST) -> list[int]:
+    """包代码里不许给 `Path.read_text()/write_text()` 传 `newline=`——那是 **Python 3.13** 才有的参数。
+
+    踩过（CI run#6 揪出，本机永远复现不了）：本地只有 3.13，所以一直"正常"；CI 的 3.12 一加载
+    `SKILL.md` 就 `TypeError: Path.read_text() got an unexpected keyword argument 'newline'`，
+    而 `pyproject` 写着 `requires-python >=3.10`。要禁用换行翻译就写
+    `path.open("w", encoding="utf-8", newline="")`——`open()` 的 `newline` 从 Python 3 就有。
+    测试夹具里同类写法**有意保留**（开发资产对齐本地），所以这条**只扫包代码**。
+    """
+    hits: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if (isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text")
+                and any(kw.arg == "newline" for kw in node.keywords)):
+            hits.append(node.lineno)
+    return hits
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="skillverify 自检（死代码 / 过期措辞）").parse_args()
@@ -331,6 +351,26 @@ def main() -> int:
         check(TEMP_DIR_MODE is None, "Windows 上不传 mode（继承父目录 DACL，沙箱才可用）")
 
     run_undefined_names(trees)
+
+    print("[test_forbidden_newline]")
+    nl_offenders: list[str] = []
+    for path, tree in trees.items():
+        if "tests" in path.parts:
+            continue
+        rel = path.relative_to(REPO).as_posix() if path.is_relative_to(REPO) else path.name
+        nl_offenders += [f"{rel}:{ln}" for ln in forbidden_newline_kwarg(tree)]
+    check(not nl_offenders,
+          "包代码不用 3.13-only 的 `newline=`（要禁用换行翻译请用 open(..., newline=...)）"
+          if not nl_offenders
+          else f"包代码里出现 3.13-only 的 `Path.read_text/write_text(newline=)`"
+               f"（发现 {len(nl_offenders)} 处）:\n         " + "\n         ".join(nl_offenders[:6]))
+    # 反向自检：两个方向都测（禁用写法必须被抓；正确写法必须不报）
+    probe_bad = ast.parse("from pathlib import Path\nPath('x').read_text(newline='')\n")
+    probe_ok = ast.parse("from pathlib import Path\nPath('x').open('w', newline='')\n")
+    check(forbidden_newline_kwarg(probe_bad) == [2],
+          f"能抓到 `read_text(newline=)`（实得 {forbidden_newline_kwarg(probe_bad)}）")
+    check(forbidden_newline_kwarg(probe_ok) == [],
+          "`open(..., newline=)` 的正确写法不报（不误伤）")
 
     # 反向自检：这套检查**能失败**吗？故意造一处死代码与一句过期话术，验证会被抓到
     print("[test_selfcheck_can_fail]")

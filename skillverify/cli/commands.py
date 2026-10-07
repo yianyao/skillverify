@@ -691,8 +691,8 @@ def cmd_review(args: argparse.Namespace) -> int:
         if out_dir is not None:
             out_dir.mkdir(parents=True, exist_ok=True)
             target = out_dir / f"{skill_dir.name}-review-cli.json"
-            target.write_text(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n",
-                              encoding="utf-8", newline="")
+            with target.open("w", encoding="utf-8", newline="") as _h:
+                _h.write(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n")
             print(f"已生成: {target}", file=sys.stderr)
 
         if args.collect:
@@ -707,8 +707,8 @@ def cmd_review(args: argparse.Namespace) -> int:
                               file=sys.stderr)
                         return 1
                     target = scratch / f"{skill_dir.name}-review-cli.json"
-                    target.write_text(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n",
-                                      encoding="utf-8", newline="")
+                    with target.open("w", encoding="utf-8", newline="") as _h:
+                        _h.write(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n")
                 collect_report, record = collect_reviews(
                     [target], load_catalog(), skill_dir=skill_dir,
                     expected_ids=writeback.get("prompt_ids"))
