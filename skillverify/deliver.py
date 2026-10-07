@@ -538,7 +538,6 @@ def write_record(trace_dir: Path, record: dict, markdown: str) -> list[Path]:
     if "previous" not in record:          # 调用方已算过就不重复算
         record["previous"] = compare_with_previous(latest_json, record)
 
-    latest_json = deliver_dir / "latest.json"
     with latest_json.open("w", encoding="utf-8", newline="\n") as _h:
         _h.write(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=False) + "\n")
     written.append(latest_json)

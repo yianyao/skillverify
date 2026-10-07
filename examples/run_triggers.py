@@ -38,9 +38,16 @@ def description_of(skill: Path) -> str:
 
 
 def ask(cmd: str, description: str, query: str) -> tuple[bool | None, str]:
-    """返回 (是否触发, 证据)。命令输出里第一个 yes/no 决定结果。"""
+    """返回 (是否触发, 证据)。命令输出里第一个 yes/no 决定结果。
+
+    **边界（照抄前先读）**：`--cmd` 是**你自己提供的**命令串，这里交给 shell 执行，
+    且 `{description}` / `{query}` 是**直接插值**、不做转义。所以：只喂你信任的命令串，
+    别把外部输入拼进 `--cmd`。它是样例模板、不是沙箱——脚本内容有副作用也一样会执行。
+    """
     command = (cmd.replace("{description}", description).replace("{query}", query)
                .replace("{skill_dir}", str(skill_dir)))
+    # shell=True 是刻意的：要支持使用者给的任意命令行（含管道/重定向）。
+    # 代价见上面 docstring 的边界说明。
     proc = subprocess.run(command, shell=True, capture_output=True, text=True,
                           encoding="utf-8", errors="replace")
     out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
