@@ -139,6 +139,13 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
     现在 `tests/test_selfcheck.py` 的**「未定义名」守卫**（纯 AST、零依赖）把它机械化了：
     包代码里 Load 语境出现从未绑定的名字即红，带三条反向自检；**注解也算**
     （`lint/budget.py` 的 `Result` 就是这么被抓出来的）。
+17. **补丁脚本改多行语句会破坏缩进**：AST 位置替换（按 `lineno/end_lineno` 切片）碰上
+    **跨行的调用**时，插回的 `with ...:` 块与后续原语句的缩进对不上——
+    现象是 `IndentationError: unindent does not match any outer indentation level`。
+    我按坑 1 的纪律写了 `.py` 补丁仍然踩到。**正确做法（三层兜底，都实测有效）**：
+    ① 补丁脚本末尾必须 `ast.parse()` 自检语法；② 跑完立刻单跑受影响的套件；
+    ③ 一旦报错就 `git checkout -- <文件>` 还原，**改用手工逐处 edit**（5 处以内手工更快更稳）。
+    单行语句用脚本批量替换是安全的；**跨行语句别用脚本**。
 
 ## 六、迁移/分发这个项目时要留意
 

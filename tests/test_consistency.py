@@ -372,6 +372,35 @@ def run_cli_coverage() -> None:
           "这条守卫能失败（探针旗标被判为缺失）")
 
 
+def run_agents_counts() -> None:
+    """《仓库结构说明》里写死的 AGENTS 条目数，必须与 AGENTS.md 的真实条目数一致。
+
+    为什么单独立一条：同一个数字**在本会话里漂移了两次**（加坑 15/16 后还写 14；加了 17 又漏改 16）。
+    "人写的数字"与"机器知道的事实"对账，正是这个项目反复强调的那条——那就别靠自觉。
+    """
+    print("[test_agents_counts]")
+    agents = read("AGENTS.md")
+    struct = read("仓库结构说明.md")
+
+    def count_between(start: str, end: str) -> int:
+        body = agents.split(start)[1].split(end)[0]
+        return len(re.findall(r"^\d+\. \*\*", body, re.MULTILINE))
+
+    pitfalls = count_between("## 五、", "## 六、")
+    invariants = count_between("## 三、", "## 四、")
+    hit = re.search(r"(\d+) 个已踩过的坑", struct)
+    check(hit is not None, "《仓库结构说明》写了 AGENTS 的坑计数")
+    if hit:
+        check(int(hit.group(1)) == pitfalls,
+              f"坑计数与 AGENTS 实际一致（结构说明写 {hit.group(1)}，实际 {pitfalls} 条）")
+    hit2 = re.search(r"(\d+) 条不许破坏的不变量", struct)
+    if hit2:
+        check(int(hit2.group(1)) == invariants,
+              f"不变量计数一致（结构说明写 {hit2.group(1)}，实际 {invariants} 条）")
+    check(pitfalls >= 17 and invariants >= 11,
+          f"抠到的条目数合理（坑 {pitfalls} / 不变量 {invariants}）")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="文档与代码一致性守卫").parse_args()
@@ -380,6 +409,7 @@ def main() -> int:
     run_capability_coverage()
     run_handoff()
     run_cli_coverage()
+    run_agents_counts()
     total = len(_passed) + len(_failed)
     print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
