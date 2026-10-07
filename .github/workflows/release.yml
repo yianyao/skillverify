@@ -56,15 +56,25 @@ jobs:
 
       # 发布物必须**离开源码树**也能用：运行时数据（hosts.toml / review-prompts.json）
       # 漏进 package-data 时，只有"装 wheel 再从别的目录跑"才看得出来。
+      # 踩过：装进 venv 但**没激活**，`skillverify` 不在 PATH 上 → 这条步骤红在 command not found。
+      # 所以一律用 venv 里的**绝对路径**调用，并逐条打印退出码（CI 上只看得到步骤红不红，
+      # 看不到是哪条命令），失败时连输出一起打出来。
       - name: 用干净 venv 装 wheel 并冒烟
         run: |
+          set -uo pipefail
           python -m venv /tmp/smoke
-          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/pip install --quiet dist/*.whl || { echo "::error::装 wheel 失败"; exit 1; }
           cd /tmp
-          skillverify --version
-          skillverify review prompts --json > /tmp/prompts.json
-          python -c "import json;print('提示词条数:',len(json.load(open('/tmp/prompts.json'))['prompts']))"
-          skillverify discover --show-config | head -3
+          echo "--- skillverify --version"
+          /tmp/smoke/bin/skillverify --version || { echo "::error::--version 失败"; exit 1; }
+          echo "--- review prompts --json"
+          /tmp/smoke/bin/skillverify review prompts --json > /tmp/prompts.json \
+            || { echo "::error::review prompts 失败"; cat /tmp/prompts.json | head -20; exit 1; }
+          /tmp/smoke/bin/python -c "import json;d=json.load(open('/tmp/prompts.json'));print('提示词条数:',len(d['prompts']))" \
+            || { echo "::error::提示词 JSON 解析失败"; head -20 /tmp/prompts.json; exit 1; }
+          echo "--- discover --show-config"
+          /tmp/smoke/bin/skillverify discover --show-config | head -3 \
+            || { echo "::error::discover 失败"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
