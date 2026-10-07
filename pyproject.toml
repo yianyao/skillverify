@@ -8,12 +8,16 @@ dynamic = ["version"]
 description = "Agent Skill 生命周期验证套件（个人小团队版，宿主无关）"
 readme = "验证流程指南.md"
 requires-python = ">=3.10"
+# 许可证：字段宜简短（本项目自己的 HYG-006），声明了就必须随包有许可文件（HYG-007）——
+# 所以仓库根有 LICENSE，且 `[tool.setuptools]` 把它带进 sdist/wheel。
+license = { text = "MIT" }
 keywords = ["agent", "skill", "validation", "lint", "review"]
 dependencies = []          # 纯标准库：不引入任何第三方运行时依赖
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
