@@ -29,6 +29,14 @@ inputs:
     description: 是否让 WARN 也失败。默认 false（本工具的立场：WARN = 人工甄别，不阻断）
     required: false
     default: "false"
+  accept:
+    description: 要豁免的规则 ID（逗号分隔，如 REF-005,SEC-008）。与 because 必须成对：缺理由会被工具直接拒
+    required: false
+    default: ""
+  because:
+    description: 豁免理由（写了 accept 就必须给）。豁免是留痕、不是静默放过——请写清为什么可以接受
+    required: false
+    default: ""
   version:
     description: 安装哪个版本的 skillverify（默认 pin 到本 Action 对应的发布版本；改工具版本时同步这里）
     required: false
@@ -77,11 +85,17 @@ runs:
         SCRIPTS: ${{ inputs.scripts }}
         STRICT: ${{ inputs.strict }}
         FAIL_ON_WARN: ${{ inputs.fail-on-warn }}
+        ACCEPT: ${{ inputs.accept }}
+        BECAUSE: ${{ inputs.because }}
       run: |
         set -uo pipefail
         args=(deliver --root "$SKILLS_ROOT" --stages "$STAGES" --json)
         [ "$SCRIPTS" = "true" ] && args+=(--scripts)
         [ "$STRICT" = "true" ] && args+=(--strict)
+        # 豁免通道：Action 只做透传，不替使用者决定豁免什么。工具的规矩是**显式 + 有理由**，
+        # 缺理由会被它自己拒绝（所以这里不校验、也不兜底）。
+        [ -n "$ACCEPT" ] && args+=(--accept "$ACCEPT")
+        [ -n "$BECAUSE" ] && args+=(--because "$BECAUSE")
         set +e
         skillverify "${args[@]}" > deliver.json
         code=$?
