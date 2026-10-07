@@ -1,0 +1,91 @@
+name: Release
+
+# 发布到 PyPI —— 用 **Trusted Publishing（OIDC）**，仓库里不放任何令牌。
+#
+# 触发：推一个与版本号一致的标签（如 v0.1.0），或手工 workflow_dispatch（默认只做 dry-run：
+# 构建 + 校验 + 把产物传成 artifact，**不发布**）。
+#
+# 前置（一次性，在 PyPI 网页上做，不在仓库里）：
+#   PyPI → Your projects → Publishing → Add a new pending publisher
+#     PyPI Project Name : skillverify
+#     Owner             : yianyao
+#     Repository name   : skillverify
+#     Workflow name     : release.yml
+#     Environment name  : pypi
+#   配好后本工作流的 publish 作业才能拿到 OIDC 令牌。**不要**建 API token 存进仓库。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "真的发布到 PyPI（默认只 dry-run：构建+校验+传产物）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 构建 + 校验（标签必须与版本号一致）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # 版本号唯一真源是 skillverify/__init__.py；标签与它不一致就让这条红，
+      # 免得发出一个"标签写 v0.2.0、包内是 0.1.0"的版本（发出去改不回来）。
+      - name: 标签与包内版本号一致
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver="$(python -c "import skillverify; print(skillverify.__version__)")"
+          echo "tag=$tag package=$ver"
+          [ "$tag" = "$ver" ] || { echo "::error::标签 $GITHUB_REF_NAME 与包内版本号 $ver 不一致"; exit 1; }
+
+      - name: 构建 sdist 与 wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+
+      # 发布物必须**离开源码树**也能用：运行时数据（hosts.toml / review-prompts.json）
+      # 漏进 package-data 时，只有"装 wheel 再从别的目录跑"才看得出来。
+      - name: 用干净 venv 装 wheel 并冒烟
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          cd /tmp
+          skillverify --version
+          skillverify review prompts --json > /tmp/prompts.json
+          python -c "import json;print('提示词条数:',len(json.load(open('/tmp/prompts.json'))['prompts']))"
+          skillverify discover --show-config | head -3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: 发布到 PyPI
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || inputs.publish
+    runs-on: ubuntu-latest
+    environment: pypi          # 与 PyPI 上配的 Environment name 必须一致
+    permissions:
+      id-token: write          # OIDC：拿短期令牌，不需要任何 secret
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # 关掉 PEP 740 attestations（可选）。注意：这个输入**不**代表 dry-run——
+          # 走到这一步就是真发布。要只验证不发布，就别给标签、用 workflow_dispatch 且 publish=false。
+          attestations: false
