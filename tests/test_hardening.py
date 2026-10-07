@@ -762,9 +762,11 @@ def run_w08_locator(tmp: Path) -> None:
 
     prompt = next(p for p in review.load_catalog() if p.id == "W-08")
     blob = f"{prompt.when}\n{prompt.prompt}"
-    check("SCRIPT-005" in blob, "W-08 指明优先用 SCRIPT-005 的定位段落（实得未提及）")
-    check("定位方式：SCRIPT-005 定位段落" in blob,
-          "W-08 要求注明定位方式为机械定位段落")
+    check("SCRIPT-005" not in blob,
+          "W-08 不点名机械层的规则号（数据文件不引用实现细节：改了规则名或输出格式，" 
+          "这条提示词就成了过时描述）")
+    check("机械层已给出破坏性操作的定位结果" in blob and "定位方式：机械层定位结果" in blob,
+          "W-08 仍要求「优先用机械层的定位结果」并注明定位方式——解耦的是措辞，不是这条设计意图")
     check("机械定位为空" in blob or "为空时" in blob,
           "自定位被降级为「机械定位为空时」的兜底")
 
