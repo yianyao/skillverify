@@ -1,7 +1,8 @@
 """review 回归测试（M5）。
 
 **本文件守的是"评审到底有没有用"这件事**：
-- 目录侧：29 条提示词必须条条带 PASS/FAIL 判据与证据要求（否则又回到"只有提示词"的旧状态）；
+- 目录侧：每条提示词（旧体系 29 条 + 本项目新增条目）都必须带 PASS/FAIL 判据与证据要求
+  （否则又回到"只有提示词"的旧状态）；
 - 回写侧：只给结论、复述判据、FAIL 不写问题、NA 不写理由——全部要被拦下；
 - 链路侧：任务包 → （模拟任意 LLM 填写）→ collect → 中央记录 → `deliver` 门禁读到结论。
   这条链路不依赖任何宿主：任务包是 Markdown + JSON，回写是同一个 JSON。
@@ -62,6 +63,11 @@ DESC = "A demo skill used by the semantic-review regression suite."
 
 EXPECTED_IDS = (["D-01"] + [f"W-{i:02d}" for i in range(1, 17)]
                 + [f"E-{i:02d}" for i in range(1, 11)] + ["R-01", "R-02"])
+
+#: 本项目在旧体系之外**新增**的条目（`legacy_id` 为空，来历写在各自的 `legacy_source`）。
+#: 加一条就加在这里：目录条数、家族分布都由它派生，免得"加了一条提示词、
+#: 数字散落在文档与测试四处各写一遍"（本项目为这种散落返工过多次，见 AGENTS 坑 14）。
+NEW_IDS = ("W-17", "E-11", "R-03")
 
 
 def write_skill(root: Path, name: str = "demo-skill", body: str = "# Demo\n") -> Path:
@@ -126,24 +132,31 @@ def run_catalog(tmp: Path) -> None:
     catalog = review.load_catalog()
     ids = [p.id for p in catalog]
     # 旧体系 29 条**一条不少、编号不改**（M0 的约定）；但"只能有 29 条"不是约束：
-    # 本项目允许新增（如 W-17 指令注入），前提是新增条目自己声明来历。
+    # 本项目允许新增（W-17 指令注入 / R-03 bad case 回流 / E-11 跨宿主差异归因），
+    # 前提是新增条目自己声明来历——条数与家族分布都从 EXPECTED_IDS + NEW_IDS 派生，不写死数字。
     legacy = [p.id for p in catalog if p.legacy_id]
     check(sorted(legacy) == sorted(EXPECTED_IDS),
-          f"旧体系 29 条一一对应（缺: {sorted(set(EXPECTED_IDS) - set(legacy))}；"
+          f"旧体系 {len(EXPECTED_IDS)} 条一一对应（缺: {sorted(set(EXPECTED_IDS) - set(legacy))}；"
           f"多: {sorted(set(legacy) - set(EXPECTED_IDS))}）")
-    check(len(catalog) >= 29, f"目录至少含旧体系 29 条（实得 {len(catalog)}）")
+    check(len(catalog) == len(EXPECTED_IDS) + len(NEW_IDS),
+          f"目录 = 旧体系 {len(EXPECTED_IDS)} 条 + 本项目新增 {len(NEW_IDS)} 条"
+          f"（实得 {len(catalog)}）")
     check(len(set(ids)) == len(ids), "id 无重复")
 
-    added = [p for p in catalog if not p.legacy_id]
-    bad_added = [p.id for p in added
-                 if not p.legacy_source or "新增" not in p.legacy_source]
+    added = sorted(p.id for p in catalog if not p.legacy_id)
+    check(added == sorted(NEW_IDS), f"本项目新增的就是这些（实得 {added}）")
+    bad_added = [p.id for p in catalog if not p.legacy_id
+                 and (not p.legacy_source or "新增" not in p.legacy_source)]
     check(not bad_added,
           f"新增条目必须自己声明来历（缺说明: {bad_added}）——"
-          f"当前新增 {len(added)} 条: {', '.join(p.id for p in added)}")
+          f"当前新增 {len(added)} 条: {', '.join(added)}")
 
+    expect = {f: 0 for f in review.FAMILY_ORDER}
+    for pid in list(EXPECTED_IDS) + list(NEW_IDS):
+        expect[pid.split("-")[0]] += 1
     counts = {f: sum(1 for p in catalog if p.family == f) for f in review.FAMILY_ORDER}
-    check(counts == {"D": 1, "W": 17, "E": 10, "R": 2},
-          f"家族分布 = 旧体系 + 新增 W-17（实得 {counts}）")
+    check(counts == expect,
+          f"家族分布 = 旧体系 + 本项目新增（期望 {expect}，实得 {counts}）")
 
     thin = [p.id for p in catalog if len(p.prompt) < 40]
     check(not thin, f"每条提示词都有实质指令（过于简短的: {thin}）")
@@ -181,7 +194,9 @@ def run_catalog(tmp: Path) -> None:
 
     # 选择器
     check(len(review.select_prompts(catalog, "W-01,W-13")) == 2, "--prompts 按 id 选择")
-    check(len(review.select_prompts(catalog, None, ["W"])) == 17, "--family 按家族选择")
+    w_family = sum(1 for p in catalog if p.family == "W")
+    check(len(review.select_prompts(catalog, None, ["W"])) == w_family,
+          f"--family 按家族选择（W 族 {w_family} 条）")
     try:
         review.select_prompts(catalog, "W-99")
         fail("未知 id 未报错")

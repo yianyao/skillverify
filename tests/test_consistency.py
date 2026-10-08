@@ -53,6 +53,8 @@ USER_VISIBLE = (
     ("adjacency.md", "相邻技能边界清单（review material，W-11 的材料）"),
     ("adjudications.json", "WARN 的人工裁决留痕"),
     ("REV-013", "⚑ 逐条双评（署名判定）"),
+    ("R-03", "bad case 回流为评测用例（本项目新增提示词）"),
+    ("E-11", "跨宿主/模型差异归因（本项目新增提示词）"),
 )
 
 #: 面向使用者的文档（开发者向的 AGENTS/结构说明不在其列）
@@ -161,17 +163,12 @@ def run_numbers() -> None:
     samples = len(review.load_calibration())
     check(samples >= 4, f"校准样本随包分发（{samples} 个）")
 
-    # #2 口径统一：凡"指本工具"的提示词条数都必须是 30（旧 29 + 新增 W-17）；
-    # 引用**旧体系**那 29 条时，必须写成「旧体系 29」这种限定说法，避免读者以为工具只有 29 条。
+    # #2 口径统一：凡"指本工具"的提示词条数都必须等于目录事实；引用**旧体系**那 29 条时，
+    # 必须写成「旧体系 29」这种限定说法。**说法的每个变体都由 run_prompt_counts 对账**
+    # （此前只查「N 条提示词」一种写法，换个说法就绕过守卫）。
     cov = read("覆盖对照-生命周期验证方案.md")
-    bad_claims = [f"{name}:{n}" for name in ("覆盖对照-生命周期验证方案.md", "验证流程指南.md",
-                                             "仓库结构说明.md", "技能编写指南.md", "README.md")
-                  for n, line in enumerate(read(name).splitlines(), 1)
-                  if re.search(r"语义层（29 条提示词）|（29 条提示词）", line)
-                  and "旧体系" not in line]
-    check(not bad_claims, f"没有「指本工具却写 29 条提示词」的说法（问题行: {bad_claims[:3]}）")
-    check(f"{catalog_n} 条提示词" in cov or "30 条提示词" in cov,
-          "覆盖对照写明了本工具的提示词条数（30）")
+    check(f"{catalog_n} 条提示词" in cov,
+          f"覆盖对照写明了本工具的提示词条数（{catalog_n}）")
 
     # 逐族规则数：《覆盖对照》里那两处「机械层（N 条规则：spec a / lint b / 评测 c / …）」
     # 此前一直没人查，于是长期写着 评测 29 / 评审 13 / 库级·挂载·审计 15（合计对、分项全错）。
@@ -204,6 +201,105 @@ def run_numbers() -> None:
     all_rules = sum(families.values())
     check(all_rules == 143,
           f"规则总数 = 143（全仓 RULES 之和，实得 {all_rules}）——加规则时要同步文档")
+
+
+# --------------------------------------------------------------------------- #
+# 守卫 1b：「本工具有几条提示词」的说法变体全覆盖
+# --------------------------------------------------------------------------- #
+#: 总数说法的写法（每条 = 数字在第几组）。此前只认「N 条提示词」，
+#: 于是同一件事换个说法就绕过守卫——实测加 W-17 之后这 6 处一直写着旧数字：
+#: 「看全部 29 条」「默认 29 条」「（29 条，每条带…）」「29 条带判据的提示词」「W 组 16 条」。
+_PROMPT_TOTAL_RES = (
+    r"(\d+)\s*条(?:语义评审|评审|带判据的)?提示词",        # 32 条提示词 / 32 条带判据的提示词
+    r"提示词(?:目录|清单)[^\n]{0,6}?[（(]\s*(\d+)\s*条",   # 提示词目录（32 条
+    r"(?:全部|默认)\s*(\d+)\s*条",                          # 看全部 32 条 / 默认 32 条
+    r"(\d+)\s*条[，,]\s*每条带",                            # 32 条，每条带 PASS/FAIL
+)
+#: 只在**提示词语境**里判「全部/默认 N 条」——否则「全部 143 条规则」会被当成提示词条数
+_PROMPT_SCOPE_RE = re.compile(r"提示词|语义评审|review\s+prompts|review\s+pack|--family")
+#: 家族说法的写法：(正则, 家族字母/阶段名所在组, 数字所在组)
+_FAMILY_COUNT_RES = (
+    (r"([DWER])\s*组\s*(\d+)\s*条", 1, 2),                          # W 组 16 条提示词
+    (r"--family\s+([DWER])[^\n]{0,24}?(\d+)\s*条", 1, 2),            # --family W 只看编写期 17 条
+    (r"只看(编写期|测试期|运行期|设计期)[^\d]{0,8}(\d+)\s*条", 1, 2),  # 只看编写期那 17 条
+)
+_STAGE_TO_FAMILY = {stage: fam for fam, stage in review.FAMILY_STAGE.items()}
+#: 限定语：写了它说明这个数字讲的是**历史来源**（旧体系 / 合并 / 本项目新增），不是当前总口径
+_SCOPE_RE = re.compile(r"旧体系|旧方案|legacy|合并为|合并成|本项目新增|另有")
+
+
+def _scoped(line: str, m: re.Match, *, before_only: bool) -> bool:
+    """这个数字有没有被显式限定为历史来源（旧体系/合并/新增）。
+
+    两类说法的窗口方向不同：总数说法的限定语写在数字**前**（「旧体系 29 条」「合并为 16 条」），
+    家族说法的限定语跟在数字**后**（「E 组 10 条旧体系提示词」）——所以分别处理，
+    而不是"整行出现旧体系就放过"（那会让「30 条提示词（旧体系 29 + 新增 W-17）」这种
+    最常见的句子整句豁免，而它恰恰是最该查的一句）。
+    """
+    left = line[max(0, m.start() - 12):m.start()]
+    right = "" if before_only else line[m.end():m.end() + 12]
+    return _SCOPE_RE.search(left + right) is not None
+
+
+def prompt_count_drift(name: str, lineno: int, line: str, total: int,
+                       families: dict[str, int], added: int) -> list[str]:
+    """一行文本里「提示词条数」写错的地方（空列表 = 这一行没问题）。
+
+    抽成纯函数是为了**能被反向自检**：守卫自己也得能红——喂几行旧数字必须报出来，
+    否则"永远不会失败的守卫"和没有守卫一样（本项目反复踩过这条）。
+    """
+    out: list[str] = []
+    if _PROMPT_SCOPE_RE.search(line):
+        for pattern in _PROMPT_TOTAL_RES:
+            for m in re.finditer(pattern, line):
+                if int(m.group(1)) != total and not _scoped(line, m, before_only=True):
+                    out.append(f"{name}:{lineno}「{m.group(0)}」应为 {total}")
+    for m in re.finditer(r"本项目(?:在[^\n]{0,24}?)?新增(?:了)?\s*(\d+)\s*条", line):
+        if int(m.group(1)) != added:
+            out.append(f"{name}:{lineno}「{m.group(0)}」应为 {added}")
+    for pattern, letter_group, num_group in _FAMILY_COUNT_RES:
+        for m in re.finditer(pattern, line):
+            key = m.group(letter_group)
+            letter = _STAGE_TO_FAMILY.get(key, key)
+            want = families.get(letter)
+            if want is not None and int(m.group(num_group)) != want \
+                    and not _scoped(line, m, before_only=False):
+                out.append(f"{name}:{lineno}「{m.group(0)}」应为 {want}（{letter} 族）")
+    return out
+
+
+def run_prompt_counts() -> None:
+    """守卫：凡「本工具有几条提示词」的说法都要与目录对账，**说法变体全覆盖**。"""
+    print("[test_prompt_counts]")
+    catalog = review.load_catalog()
+    total = len(catalog)
+    families = {f: sum(1 for p in catalog if p.family == f) for f in review.FAMILY_ORDER}
+    added = len([p for p in catalog if not p.legacy_id])
+    drift: list[str] = []
+    for name in sorted(p.name for p in REPO.glob("*.md")):
+        for lineno, line in enumerate(read(name).splitlines(), 1):
+            drift += prompt_count_drift(name, lineno, line, total, families, added)
+    check(not drift,
+          f"全部根文档的提示词条数说法 = 目录事实（共 {total} 条，家族 {families}；"
+          f"漂移 {len(drift)} 处: {drift[:6]}）")
+
+    # 反向自检：探针必须**真的会红**，豁免项必须真的不红（用当前真实数字，不写死 29/30）
+    stale = total - 1
+    w = families["W"]
+    probes = (
+        (f"那部分由 {stale} 条语义评审提示词负责", True),
+        (f"skillverify review prompts                 # 看全部 {stale} 条", True),
+        (f"skillverify review pack <技能目录>   # 生成任务包（默认 {stale} 条）", True),
+        (f"skillverify review prompts --family W      # 只看编写期那 {w - 1} 条", True),
+        (f"本项目新增 {added + 1} 条", True),
+        ("由旧体系 29 条提示词逐条改写而来", False),
+        ("31（合并为 W 组 16 条提示词）", False),
+        (f"由 {total} 条语义评审提示词负责（旧体系 29 条 + 本项目新增 {added} 条）", False),
+        (f"E 组 10 条旧体系提示词，另有本项目新增的 E-11", False),
+    )
+    bad = [text for text, want in probes
+           if bool(prompt_count_drift("_probe.md", 1, text, total, families, added)) != want]
+    check(not bad, f"反向自检：探针行的判定与预期一致（不符 {len(bad)} 条: {bad[:3]}）")
 
 
 # --------------------------------------------------------------------------- #
@@ -406,6 +502,7 @@ def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="文档与代码一致性守卫").parse_args()
     run_numbers()
+    run_prompt_counts()
     run_coverage_math()
     run_capability_coverage()
     run_handoff()
