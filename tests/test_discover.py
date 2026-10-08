@@ -384,6 +384,13 @@ def run_check_command(tmp: Path) -> None:
     check(code == 1 and "未发现任何技能" in err,
           f"未发现技能时 exit=1 并说明原因（实得 {code}）")
 
+    # 顺序也是判据的一部分：**不许先打印一份"正常"报告再说不算数**。
+    # 旧写法正是报告在前、FAIL 在后（不加 --quiet 时 stdout 会有一份空报告），
+    # 读日志的人只看前半段就会以为检查过了——所以这里断言 stdout 干净。
+    code, out, err = run_cli(["check", "--project", str(empty), "--user-home", str(home)])
+    check(code == 1 and "未发现任何技能" in err and not out.strip(),
+          f"空库先判后打印：exit={code}、stdout 不留报告（实得 stdout {len(out)} 字符）")
+
     # --trace 写入配置的留痕目录（md + json）
     trace_project = tmp / "chk" / "trace"
     write_skill(trace_project / ".agents" / "skills", "good-skill")

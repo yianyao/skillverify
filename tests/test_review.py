@@ -18,6 +18,7 @@ import argparse
 import contextlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -188,6 +189,21 @@ def run_catalog(tmp: Path) -> None:
           "本项目新增条目的出处标签不写成「旧体系出处」")
     legacy_md = review.render_prompts_md([p for p in catalog if p.legacy_id])
     check("旧体系出处" in legacy_md, "旧体系条目仍标「旧体系出处」")
+
+    # 文案风格：中文正文用「」，ASCII 直引号只许出现在反引号代码片段里。
+    # 实测教训：W-13 的 prompt 改成「」之后，同一条的 fail_criteria 还留着 ASCII 引号——
+    # 靠人眼"通读全文件看风格"扫不干净，所以机械化（反引号里的 `"verdict": "PASS"` 仍合法）。
+    def stray_quotes(obj) -> list[str]:
+        if isinstance(obj, dict):
+            return [s for v in obj.values() for s in stray_quotes(v)]
+        if isinstance(obj, list):
+            return [s for v in obj for s in stray_quotes(v)]
+        if isinstance(obj, str):
+            return [obj] if '"' in re.sub(r"`[^`]*`", "", obj) else []
+        return []
+
+    stray = [(p.id, s[:40]) for p in catalog for s in stray_quotes(p.raw)]
+    check(not stray, f"中文正文不含 ASCII 直引号（反引号代码除外；越界: {stray[:3]}）")
 
     # runner 的指令模板必须与校验器同口径：早先它写 PASS|FAIL|NA|WARN，
     # 而 VERDICTS 只认三个——照文档填 WARN 的 runner 会被 REV-005 判 FAIL，
@@ -541,7 +557,8 @@ def run_cli_chain(tmp: Path) -> None:
           "`review prompts --json` 输出与目录一致")
 
     code, out, _err = run_cli(["review", "prompts", "--family", "W"])
-    check(code == 0 and out.count("### W-") == 17, "`--family W` 只渲染 W 组 17 条")
+    w_n = len([p for p in review.load_catalog() if p.family == "W"])
+    check(code == 0 and out.count("### W-") == w_n, f"`--family W` 只渲染 W 组 {w_n} 条")
 
     # ① 任务包
     pack_dir = root / "packout"

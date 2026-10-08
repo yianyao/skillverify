@@ -331,6 +331,17 @@ def cmd_check(args: argparse.Namespace) -> int:
             LibraryEntry(skill=ref.name, scope=ref.scope, path=str(ref.path), report=merged)
         )
 
+    # 空库先判、先返回：什么都没发现 ≠ 通过。**必须在打印报告与落盘之前**——
+    # 旧写法是先出报告、再在 stderr 说它不算数，读日志的人容易只看前半段就当成检查过了；
+    # 而且"一个技能都没发现"时也不该留下"检查过"的留痕。
+    if not discovery.skills:
+        print(
+            f"FAIL: 未发现任何技能——没有任何东西被检查。"
+            f"用 `{PROG} discover --show-config` 核对根列表，或用 `--root <目录>` 指定技能根。",
+            file=sys.stderr,
+        )
+        return 1
+
     text = library.to_json() if args.json else library.to_markdown()
 
     if args.trace or args.out:
@@ -349,14 +360,6 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     if not args.quiet:
         print(text if text.endswith("\n") else text + "\n")
-
-    if not discovery.skills:
-        print(
-            f"FAIL: 未发现任何技能——没有任何东西被检查。"
-            f"用 `{PROG} discover --show-config` 核对根列表，或用 `--root <目录>` 指定技能根。",
-            file=sys.stderr,
-        )
-        return 1
 
     if not args.quiet:
         summary = library.skill_verdicts()
