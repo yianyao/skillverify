@@ -303,6 +303,60 @@ def run_prompt_counts() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 守卫 1c：根文档里的**仓库内路径引用**不能是死链
+# --------------------------------------------------------------------------- #
+#: 只认这些仓库目录前缀——`evals/evals.json` 这类是**技能里的示例路径**（教学用），
+#: 不在仓库里，上一版扫描把它们全报成"死引用"，是典型的误报。
+_DOC_PATH_PREFIXES = ("skillverify/", "tests/", "examples/", ".github/", "handoff/", "legacy/",
+                      "data/")
+
+
+def doc_path_drift(name: str, lineno: int, line: str) -> list[str]:
+    """一行文档里指向仓库内、却**不存在**的文件引用（空列表 = 没问题）。
+
+    为什么要有这条：实测抓到过《覆盖对照》开头引 `legacy/归档冻结说明.md`——旧语料早已移出仓库，
+    那个文件哪儿都不存在，读者照着找只会扑空（同类还有代码侧 `legacy/<路径>`，那条早有守卫）。
+    抽成纯函数是为了能反向自检；通配符（`skillverify/lint/*.py`）与 `data/`（写成
+    `skillverify/data/` 的简写）按下面的规则处理，不靠"看起来像"。
+    """
+    out: list[str] = []
+    for m in re.finditer(r"`([^`\n]+)`", line):
+        tok = m.group(1).strip().rstrip("/")
+        if not tok.startswith(_DOC_PATH_PREFIXES) or "*" in tok:
+            continue
+        if not re.search(r"\.[A-Za-z0-9]{1,6}$", tok):
+            continue
+        candidate = REPO / tok
+        if not candidate.exists() and tok.startswith("data/"):
+            candidate = REPO / "skillverify" / tok     # 文档里常把 data/ 当 skillverify/data/
+        if not candidate.exists():
+            out.append(f"{name}:{lineno}「{tok}」")
+    return out
+
+
+def run_doc_paths() -> None:
+    """守卫：根文档不许引用仓库里不存在的文件（死链会浪费读者的时间，也没人会回头发现）。"""
+    print("[test_doc_paths]")
+    drift: list[str] = []
+    for name in sorted(p.name for p in REPO.glob("*.md")):
+        for lineno, line in enumerate(read(name).splitlines(), 1):
+            drift += doc_path_drift(name, lineno, line)
+    check(not drift, f"根文档引用的仓库内文件都真实存在（死引用: {drift[:5]}）")
+
+    # 反向自检：探针必须一个抓得住、一个放得过（否则这条守卫要么恒真、要么全是误报）
+    probes = (
+        ("见 `tests/definitely-missing.py`", True),
+        ("见 `legacy/归档冻结说明.md`", True),
+        ("见 `skillverify/lint/*.py`", False),      # 通配符：不是可解析的具体文件
+        ("见 `evals/evals.json`", False),           # 技能里的示例路径，不在仓库里
+        ("见 `data/hosts.toml`", False),            # data/ 是 skillverify/data/ 的简写
+    )
+    bad = [text for text, want in probes
+           if bool(doc_path_drift("_probe.md", 1, text)) != want]
+    check(not bad, f"反向自检：探针判定与预期一致（不符: {bad[:3]}）")
+
+
+# --------------------------------------------------------------------------- #
 # 守卫 2：《覆盖对照》的算术自洽
 # --------------------------------------------------------------------------- #
 def run_coverage_math() -> None:
@@ -503,6 +557,7 @@ def main() -> int:
     argparse.ArgumentParser(description="文档与代码一致性守卫").parse_args()
     run_numbers()
     run_prompt_counts()
+    run_doc_paths()
     run_coverage_math()
     run_capability_coverage()
     run_handoff()
