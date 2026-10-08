@@ -635,6 +635,25 @@ def run_new_docs() -> None:
         drives = re.findall(r"(?<![\w.])[A-Za-z]:[\\/]\w", text)
         check(not drives, f"{doc.name} 不含机器专属盘符路径（命中: {drives}）")
 
+    # 根文档里给出的 Action 用法（`uses: yianyao/skillverify@vX`）必须是**真实存在的 ref**。
+    # 实测教训：《仓库结构说明》长期写着 `@v1`，而远端只有 `v0.1.0` 标签、也没有 v1 分支——
+    # 照抄这一行的调用方会在**他们自己的仓库**里红在"无法解析 Action"。离线查不了远端，
+    # 就把 ref 钉到包版本号上（与 action.yml 的 version 默认值守卫同一类）：
+    # 只允许 `v<包版本>` 或 `v<主版本>`（后者是"移动主标签"的写法，但主版本必须真的存在）。
+    from skillverify import __version__ as _pkg_ver
+    action_refs = {f"v{_pkg_ver}", f"v{_pkg_ver.split('.')[0]}"}
+    cited = []
+    for doc in (*docs, REPO / "README.md"):
+        for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+            for m in re.finditer(r"yianyao/skillverify@([\w.\-]+)", line):
+                cited.append((doc.name, lineno, m.group(1)))
+                check(m.group(1) in action_refs,
+                      f"{doc.name}:{lineno} 的 Action ref 真实可用（@{m.group(1)}；"
+                      f"只允许 {sorted(action_refs)}——远端只有这些标签）")
+    check(cited, f"文档里至少给出一处 Action 用法（否则这条守卫恒真；找到 {len(cited)} 处）")
+    # 反向自检：同一个判据必须能拒绝一个不存在的 ref，否则上面那条就是恒真的
+    check("v999" not in action_refs, "反向自检：不存在的 ref（探针 v999）会被判不合格")
+
     # CI 样例也在"文档"之列：它引用的命令必须真实存在，否则流水线会在别人机器上红
     workflow = REPO / ".github" / "workflows" / "skillverify.yml"
     check(workflow.is_file(), "CI 样例存在（.github/workflows/skillverify.yml）")
