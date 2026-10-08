@@ -181,6 +181,14 @@ def run_catalog(tmp: Path) -> None:
     check("PASS 判据" in md and "FAIL 判据" in md and "证据要求" in md,
           "Markdown 渲染含判据与证据要求小节")
 
+    # 新增条目的 legacy_source 值本身以「本项目新增」开头，标签就不能再写「旧体系出处」
+    # （实测渲染成「旧体系出处：本项目新增：…」，自己打自己脸）。
+    added_md = review.render_prompts_md([p for p in catalog if not p.legacy_id])
+    check("旧体系出处" not in added_md and "**出处**" in added_md,
+          "本项目新增条目的出处标签不写成「旧体系出处」")
+    legacy_md = review.render_prompts_md([p for p in catalog if p.legacy_id])
+    check("旧体系出处" in legacy_md, "旧体系条目仍标「旧体系出处」")
+
     # runner 的指令模板必须与校验器同口径：早先它写 PASS|FAIL|NA|WARN，
     # 而 VERDICTS 只认三个——照文档填 WARN 的 runner 会被 REV-005 判 FAIL，
     # 档 1 流水线必然报错（"按文档写就会错"的硬伤）。

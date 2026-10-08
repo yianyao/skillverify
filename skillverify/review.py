@@ -319,7 +319,10 @@ def render_prompts_md(prompts: list[Prompt]) -> str:
             f"- **材料**：{', '.join(f'`{i}`' for i in prompt.inputs)}",
         ]
         if prompt.legacy_source:
-            lines.append(f"- **旧体系出处**：{prompt.legacy_source}")
+            # 旧体系条目写「旧体系出处」；本项目新增条目的 legacy_source 以「本项目新增」开头，
+            # 再用「旧体系出处」当标签就自相矛盾（实测渲染成「旧体系出处：本项目新增：…」）
+            label = "旧体系出处" if prompt.legacy_id else "出处"
+            lines.append(f"- **{label}**：{prompt.legacy_source}")
         if prompt.official:
             lines.append(f"- **官方条款**：{prompt.official}")
         lines += ["", prompt.prompt, "", "**PASS 判据**", ""]
