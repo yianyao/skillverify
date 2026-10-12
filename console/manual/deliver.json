@@ -1,0 +1,169 @@
+{
+  "summary": "交付门禁（合流点）：比 check 严——FAIL 阻断；WARN 不阻断但逐条记入交付记录；SKIP 里属「未开启的可选批次/环境能力不足」的记未覆盖项（默认不阻断，--strict 时阻断），其余 SKIP 一律阻断。通过或未通过都会写交付记录到中央留痕目录。--stages all 时评测线（check_evals/check_trigger 消费工作区产物）与评审线（REV-000 消费中央记录）两线结论在此合流。",
+  "ref": "语义评审流程指南 §三.步骤5/§7.1；skillverify deliver --help",
+  "effects": {
+    "text": "通过与否都会把交付记录写入中央留痕目录（--no-record 关闭）；--accept 豁免会留痕可审计",
+    "ref": "语义评审流程指南 §三.步骤5"
+  },
+  "inputs": [
+    {
+      "name": "语义评审中央记录",
+      "from": ".agents/skillverify/review/<技能名>.json（经 hosts.toml 发现机制定位）",
+      "shape": "REV-000 按当前内容指纹五态判定"
+    },
+    {
+      "name": "评测工作区产物（--stages all 时）",
+      "from": "<技能名>-workspace/iteration-N/",
+      "shape": "evals/trigger 资产与逐轮产物"
+    },
+    {
+      "name": "WARN 裁决（可选）",
+      "from": "<留痕目录>/adjudications.json",
+      "shape": "{\"adjudications\":[{skill,rid,evidence_hash,decision:accept|fix,...}]}，绑定证据指纹"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "交付报告",
+      "path": "stdout 或 --out 落盘（.md / 按 --json 出 .json）",
+      "schema": "门禁结论 + WARN 记账 + 未覆盖项清单",
+      "consumers": [
+        "使用者",
+        "CI",
+        "git hook（deliver --staged）"
+      ]
+    },
+    {
+      "name": "交付记录",
+      "path": "中央留痕目录（latest.json/md + history.jsonl 追加；--no-record 不写）",
+      "schema": "交付记录本身（--json 输出它）",
+      "consumers": [
+        "审计/复盘"
+      ]
+    }
+  ],
+  "consumers": [
+    "交付决策（人/CI/pre-commit hook）"
+  ],
+  "params": {
+    "staged": {
+      "effects": "只检查 git 暂存内容涉及的技能（pre-commit hook 用）",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "strict": {
+      "effects": "连「未覆盖项」也阻断（发行前跑一次）",
+      "pitfall": "未实测脚本契约（--scripts 未开）、未跑评测等都会成为未覆盖项——日常 CI 开 --strict 会被大量拦下，按需使用",
+      "ref": "skillverify deliver --help/语义评审流程指南 §六"
+    },
+    "accept": {
+      "effects": "把该规则的阻断项记为「已豁免」（可重复）",
+      "pitfall": "必须配 --because 写明理由；豁免会写进交付记录，绝不静默放过",
+      "ref": "skillverify deliver --help"
+    },
+    "because": {
+      "effects": "豁免理由（与 --accept 同用）",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "stages": {
+      "effects": "跑哪些阶段：all = spec+lint+evals+review（默认：交付要考虑全部资产）；both = spec+lint",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "scripts": {
+      "effects": "实测脚本契约（以 --help 等调用技能自带脚本）",
+      "pitfall": "不开启时 SCRIPT 族规则记「未执行」——--strict 门禁会被它们拦住",
+      "ref": "skillverify deliver --help"
+    },
+    "workspace": {
+      "effects": "显式指定评测工作区（默认找并列的 <技能名>-workspace/）",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "iteration": {
+      "effects": "只校验 iteration-N（默认全部）",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "script_timeout": {
+      "effects": "单个脚本的超时上限（默认 10 秒）",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "no_record": {
+      "effects": "不写交付记录（--json 仍会输出记录内容）",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "skip_review": {
+      "effects": "跳过语义评审记录检查",
+      "pitfall": "显式跳过会留痕为未覆盖项——--strict 时阻断，平时记未覆盖",
+      "ref": "语义评审流程指南 §三.步骤5"
+    },
+    "verbose": {
+      "effects": "把未覆盖项与待甄别项也逐条打到 stderr",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "json": {
+      "effects": "输出交付记录本身（含门禁结论）而非人读报告",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "out": {
+      "effects": "报告落盘路径",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    },
+    "quiet": {
+      "effects": "不打印报告正文",
+      "pitfall": null,
+      "ref": "skillverify deliver --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "REV-000 五态判定：显式 --skip-review → SKIP；无记录 → SKIP（未覆盖，提示先跑 pack → collect）；技能评审后改过（指纹不一致）→ WARN 须重评；有阻断项 FAIL → 技能不得交付；覆盖不完整/有非阻断问题 → WARN；全部干净 → PASS",
+      "ref": "语义评审流程指南 §三.步骤5"
+    },
+    {
+      "text": "WARN 裁决走 <留痕目录>/adjudications.json 人工拍板（decision: accept|fix），裁决绑定证据指纹——换证据须重新裁决",
+      "ref": "语义评审流程指南 §三.步骤5"
+    },
+    {
+      "text": "改了技能没重评 → REV-000 WARN「指纹不一致」，deliver 拦下；review status 可提前看到「已改」",
+      "ref": "语义评审流程指南 §六.7"
+    },
+    {
+      "text": "两条流程在交付门禁处合流：任一阻断项 FAIL 即不得交付；--strict 下未覆盖项也拦",
+      "ref": "语义评审流程指南 §7.1"
+    }
+  ],
+  "compose_rules": [
+    {
+      "rule": "confirm",
+      "param": "strict",
+      "message": "--strict 连未覆盖项也阻断：发行前跑一次用；确认你已备齐脚本实测（--scripts）、评测资产与语义评审记录",
+      "ref": "设计文档 §6 confirm 实例"
+    },
+    {
+      "rule": "requires",
+      "when": "accept",
+      "require": "because",
+      "message": "--accept 必须配 --because 写明豁免理由（会写进交付记录）",
+      "ref": "skillverify deliver --help"
+    },
+    {
+      "rule": "confirm",
+      "param": "accept",
+      "message": "豁免是显式留痕动作：规则 ID + 理由会写入交付记录，绝不静默放过",
+      "ref": "skillverify deliver --help"
+    }
+  ],
+  "execution": {
+    "timeout_s": 1800,
+    "class": "mutating",
+    "history": "central"
+  }
+}

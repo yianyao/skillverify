@@ -1,0 +1,70 @@
+{
+  "summary": "库级发现：按 hosts.toml 宿主档找到全部技能并出报告（发现清单/同名冲突/描述总量预算/描述重叠提示）；--show-config 只打印合并后的有效配置（含来源顺序）——本操作台的「hosts 档位」面板数据就来自它。",
+  "ref": "验证流程指南 §三/§二",
+  "inputs": [
+    {
+      "name": "宿主配置",
+      "from": "内置 hosts.toml + 用户级/项目级配置（--config 可覆盖）",
+      "shape": "宿主档列表（defaults + hosts.*）"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "发现报告",
+      "path": "stdout 或 --out 落盘",
+      "schema": "逐宿主档的技能清单 + 同名冲突 + 预算/重叠提示",
+      "consumers": [
+        "人",
+        "audit（按名定位技能）",
+        "mount（同根校验）"
+      ]
+    },
+    {
+      "name": "有效配置",
+      "path": "--show-config 的 stdout",
+      "schema": "TOML 风格文本（defaults + hosts.* 逐档）",
+      "consumers": [
+        "人",
+        "本操作台 hosts 档位面板"
+      ]
+    }
+  ],
+  "consumers": [
+    "mount（上宿主前置）",
+    "audit（按名定位）",
+    "人（库内全貌）"
+  ],
+  "effects": {
+    "text": "纯只读：不做发现之外的任何写操作",
+    "ref": "验证流程指南 §三"
+  },
+  "params": {
+    "show_config": {
+      "effects": "只打印合并后的有效配置（含来源顺序），不做发现",
+      "pitfall": null,
+      "ref": "skillverify discover --help"
+    },
+    "metadata_budget": {
+      "effects": "库内所有技能 name+description 的总量预算（默认 8000）——本项目约定、非官方硬线，按宿主实测上限改",
+      "pitfall": null,
+      "ref": "验证流程指南 §三"
+    },
+    "desc_overlap": {
+      "effects": "描述词面重叠的告警阈值（默认 0.5）——只提示不阻断",
+      "pitfall": null,
+      "ref": "skillverify discover --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "metadata-budget 是本项目约定不是官方硬线：宿主有更低上限时按实测改",
+      "ref": "验证流程指南 §三"
+    }
+  ],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 60,
+    "class": "read-only",
+    "history": "audit"
+  }
+}

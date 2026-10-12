@@ -25,6 +25,7 @@ from ..deliver import (
     is_git_repo,
     write_record,
 )
+from ..describe import build_surface, render_text
 from ..discover import Config, ConfigError, Discovery, render_config
 from ..encoding import write_text
 from ..evalx import check_evals
@@ -803,3 +804,16 @@ def cmd_hook(args: argparse.Namespace) -> int:
           "临时跳过用 `git commit --no-verify`。")
     return 0
 
+
+
+def cmd_describe(args: argparse.Namespace) -> int:
+    """命令面自描述：人读命令树（默认）或机读契约（--json）。"""
+    surface = build_surface()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if args.json:
+        json.dump(surface, sys.stdout, ensure_ascii=False, indent=2)
+        sys.stdout.write("\n")
+    else:
+        sys.stdout.write(render_text(surface))
+    return 0

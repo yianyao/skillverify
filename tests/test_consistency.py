@@ -55,6 +55,7 @@ USER_VISIBLE = (
     ("REV-013", "⚑ 逐条双评（署名判定）"),
     ("R-03", "bad case 回流为评测用例（本项目新增提示词）"),
     ("E-11", "跨宿主/模型差异归因（本项目新增提示词）"),
+    ("describe", "命令面自描述（机读契约）"),
 )
 
 #: 面向使用者的文档（开发者向的 AGENTS/结构说明不在其列）
@@ -458,7 +459,7 @@ def run_handoff() -> None:
 
 
 def _command_count() -> int:
-    """CLI 顶层子命令数（11 个）：只数 `sub.add_parser(` 那一层。
+    """CLI 顶层子命令数（12 个）：只数 `sub.add_parser(` 那一层。
 
     **别用 `add_parser` 的裸计数**：`hook`/`review` 还有自己的二级子解析器
     （`hook_sub` / `review_sub`），裸计数会得到 18。
@@ -523,6 +524,51 @@ def run_cli_coverage() -> None:
           "这条守卫能失败（探针旗标被判为缺失）")
 
 
+def run_describe() -> None:
+    """describe --json 契约与解析器表面一致（EVOL-01）。
+
+    describe 是对外承诺（console 内省脚本已切到它当首选数据源），命令面
+    漂移 = 外部工具静默拿到旧数据。三条：schema 标记合法、命令集合与
+    解析器一致、契约确定性（两次构建逐字段相同）。
+    """
+    print("[test_describe]")
+    import json as _json
+
+    from skillverify import __version__ as _version
+    from skillverify.cli import build_parser
+    from skillverify.describe import SCHEMA, build_surface
+
+    def _full_paths(parser: object, prefix: str = "") -> list[str]:
+        """解析器全部子命令的**全路径**（describe 的命令键口径；cli_surface
+        收集的是各级裸名，不在这里复用）。"""
+        import argparse as _ap
+
+        out: list[str] = []
+        for action in parser._actions:  # noqa: SLF001 - 读自己的解析器
+            if isinstance(action, _ap._SubParsersAction):  # noqa: SLF001
+                for name, sub in action.choices.items():
+                    path = f"{prefix} {name}".strip()
+                    out.append(path)
+                    out.extend(_full_paths(sub, path))
+        return out
+
+    surface = build_surface()
+    check(surface.get("schema") == SCHEMA and SCHEMA.endswith("/1"),
+          "describe 载荷带 schema 版本标记（skillverify.describe/1）")
+    check(surface.get("tool") == "skillverify" and surface.get("version") == _version,
+          "describe 载荷的 tool/version 与包事实一致")
+    described = sorted(p for p in surface["commands"] if p)
+    expected = sorted(_full_paths(build_parser()))
+    check(described == expected,
+          f"describe 的命令集合与解析器子命令一致"
+          f"（describe 多 {sorted(set(described) - set(expected))} / "
+          f"少 {sorted(set(expected) - set(described))}）"
+          if described != expected else f"describe 覆盖全部 {len(expected)} 个子命令路径")
+    again = _json.dumps(build_surface(), ensure_ascii=False, sort_keys=True)
+    check(again == _json.dumps(surface, ensure_ascii=False, sort_keys=True),
+          "describe 契约确定性（两次构建逐字段相同）")
+
+
 def run_agents_counts() -> None:
     """《仓库结构说明》里写死的 AGENTS 条目数，必须与 AGENTS.md 的真实条目数一致。
 
@@ -562,6 +608,7 @@ def main() -> int:
     run_capability_coverage()
     run_handoff()
     run_cli_coverage()
+    run_describe()
     run_agents_counts()
     total = len(_passed) + len(_failed)
     print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} SKIP={len(_skipped)} 合计={total}")

@@ -1,0 +1,53 @@
+{
+  "domain": {
+    "id": "evals",
+    "title": "评测",
+    "description": "skillverify 是验收员不是厨师：校验评测资产（evals.json / trigger-queryset.json）的形状与口径（EVAL-*/TRIG-*），可选 --run-with 把执行层命令接进来代跑并自动复校；WS/GRAD/BENCH/TIME 全族复校工作区产物，BENCH-004 拿聚合值重算对账。工具自己不出题、不监考、不打分。",
+    "ref": "评测流程指南 §〇"
+  },
+  "nodes": [
+    "evals",
+    "check"
+  ],
+  "pipelines": [
+    {
+      "id": "evals-main",
+      "domain": "evals",
+      "title": "评测主线（五步：准备 → 校验 → 真跑 → 复校 → 门禁）",
+      "steps": [
+        {
+          "node": "evals",
+          "note": "步骤 2 资产校验（方式 A）：花钱跑评测前先拦形状/口径错误；此时 trigger-runs 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败",
+          "ref": "评测流程指南 §二.步骤2"
+        },
+        {
+          "node": "evals",
+          "note": "步骤 3+4 委托执行（--run-with，同节点第二段用法）：B/C 管用例、D 管触发集——完整一轮需（B 或 C）且 D；成功后自动复校（≡ 方式 A）。不经委托直接跑脚本时，跑完必须单独再跑一次 evals 复校",
+          "ref": "评测流程指南 §二.步骤3/§三.3.2"
+        },
+        {
+          "node": "check",
+          "note": "步骤 5 总检查：--stages all 全族复校（WS-001..008/GRAD/BENCH-004 对账/TIME）。评测工作区同时是语义评审 material 的数据源——交汇方向单向（评测 → 评审），标准顺序评测跑完再排评审",
+          "ref": "评测流程指南 §二.步骤4；语义评审流程指南 §7.1/§六.9"
+        },
+        {
+          "node": "deliver",
+          "note": "门禁合流（决策层交汇）：评测线（check_evals/check_trigger 消费工作区产物）与语义评审线（REV-000 消费中央记录）的结论共同决定能否交付；改版回归靠 deliver --strict + rules_hash 拦「悄悄退步」",
+          "ref": "语义评审流程指南 §7.2；评测流程指南 §七.3"
+        }
+      ],
+      "presets": [
+        {
+          "id": "ci-min",
+          "title": "CI 最小集",
+          "description": "check --stages all --json 产机读报告（进 CI artifact）；deliver --stages all --strict --json 出交付记录（--strict 需显式确认，会拦未覆盖项）",
+          "values": {
+            "check": {"stages": "all", "json": true},
+            "deliver": {"stages": "all", "strict": true, "json": true}
+          },
+          "ref": "评测流程指南 §二.步骤5/§七.3"
+        }
+      ]
+    }
+  ]
+}

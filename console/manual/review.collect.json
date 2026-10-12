@@ -1,0 +1,121 @@
+{
+  "summary": "三档共用验收层：校验回写（REV-001..013 逐条机械执行）、写中央记录、盖内容指纹。多份回写（双评场景）一起收，冲突由 REV-010 记 WARN 转人工裁决。结论三态：pass / warn（有非阻断问题或未覆盖）/ fail（有阻断项 FAIL）；存在 FAIL → 非零退出码。",
+  "ref": "语义评审流程指南 §1.3/§2.5/§三.步骤4/§4.6",
+  "effects": {
+    "text": "汇总评审结果并写入语义评审中央记录（REV-000 交付门禁的唯一数据源）——技能改过没重评会在这里被指纹比对发现",
+    "ref": "语义评审流程指南 §2.5"
+  },
+  "inputs": [
+    {
+      "name": "回写 JSON（可多份）",
+      "from": "位置参数 files，或 --dir 目录下的全部 *.json",
+      "shape": "skillverify.review/1（三档执行器同 schema：档 1 run 自动组装 / 档 2 会话填 template / 档 3 手写）"
+    },
+    {
+      "name": "被评审技能目录",
+      "from": "--skill-dir",
+      "shape": "含 SKILL.md 的目录（给了它 collect 才算当前内容指纹并写进记录）"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "REV 校验报告",
+      "path": "stdout 或 --out 落盘",
+      "schema": "Markdown 或 --json 机读",
+      "consumers": [
+        "使用者",
+        "CI"
+      ]
+    },
+    {
+      "name": "中央记录",
+      "path": ".agents/skillverify/review/<技能名>.json（latest）+ history.jsonl 追加一行（--no-store 除外）",
+      "schema": "latest + history.jsonl 追加",
+      "consumers": [
+        "check / deliver 的 REV-000",
+        "review status"
+      ]
+    }
+  ],
+  "consumers": [
+    "deliver REV-000（门禁）",
+    "review status（状态表）"
+  ],
+  "params": {
+    "files": {
+      "effects": "回写 JSON 文件（可多个；双评场景多份一起交）",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.5"
+    },
+    "dir": {
+      "effects": "汇总该目录下的全部 *.json（与 files 二选一或并用）",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.5"
+    },
+    "skill_dir": {
+      "effects": "被评审的技能目录：算当前内容指纹写进记录，并对账 manifest 的 prompt_ids",
+      "pitfall": "漏掉它 → 记录里没有当前指纹，REV-000 的新鲜度检查失效（技能改过也不会 WARN）——务必带（常见坑第 2 条）",
+      "type": {
+        "must_exist": true,
+        "must_be_dir": true
+      },
+      "note": "argparse 层非必填，但组合语义上必带：由 compose_rules requires 强制",
+      "ref": "语义评审流程指南 §2.5/§六.2"
+    },
+    "no_store": {
+      "effects": "只校验，不写中央记录（试验回写时用）",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.5"
+    },
+    "json": {
+      "effects": "输出机读 JSON",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.5"
+    },
+    "out": {
+      "effects": "报告落盘路径",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.5"
+    },
+    "quiet": {
+      "effects": "不打印报告正文",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.5"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "必带 --skill-dir：漏了 → 记录无当前指纹，REV-000 新鲜度检查失效（技能改过也不会 WARN）",
+      "ref": "语义评审流程指南 §六.2"
+    },
+    {
+      "text": "证据写「符合要求」→ REV-006 FAIL（不可定位）；写 SKILL.md:42、引用原文、给具体计数；把判据换个说法当证据 → REV-006 WARN「疑似复述判据」（旧体系 29 条回写的通病）",
+      "ref": "语义评审流程指南 §六.3/§六.4/§1.3"
+    },
+    {
+      "text": "FAIL 必须写清问题（finding ≥8 字，REV-007）；NA 必须写理由（REV-008）；覆盖不完整显式留痕（REV-009 WARN）——未覆盖不等于通过",
+      "ref": "语义评审流程指南 §1.3/§4.6"
+    },
+    {
+      "text": "双评结论冲突 → REV-010 WARN：写 <留痕目录>/adjudications.json 由人裁决，裁决绑定证据指纹（换证据须重新裁决）",
+      "ref": "语义评审流程指南 §4.6/§三.步骤5"
+    },
+    {
+      "text": "校准样本判错 → REV-012 FAIL（本轮全部结论不可用）；没判全 WARN；完全没做 INFO（校准是增强项不是仪式）",
+      "ref": "语义评审流程指南 §三.步骤0/§4.6"
+    }
+  ],
+  "compose_rules": [
+    {
+      "rule": "requires",
+      "require": "skill_dir",
+      "message": "review collect 必带 --skill-dir：否则中央记录没有当前内容指纹，REV-000 的新鲜度检查失效",
+      "ref": "设计文档 §6 requires 实例；语义评审流程指南 §六.2"
+    }
+  ],
+  "execution": {
+    "timeout_s": 600,
+    "class": "mutating",
+    "history": "central"
+  }
+}

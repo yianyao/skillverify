@@ -1,0 +1,74 @@
+{
+  "summary": "开发期即时反馈：盯住技能根，文件一变就自动重跑 spec+lint（--stages both 默认）并打印每轮汇总——改代码时挂着它就不用反复手动跑。默认无限轮询，操作台执行务必带 --once 或 --cycles。",
+  "ref": "验证流程指南 §4.6；skillverify watch --help",
+  "inputs": [
+    {
+      "name": "监视的技能根",
+      "from": "--root（可重复）或 hosts.toml 配置根列表",
+      "shape": "技能包目录树"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "每轮检查汇总",
+      "path": "stdout（--json 时每轮一行 JSON）",
+      "schema": "逐轮 spec+lint 结论摘要",
+      "consumers": [
+        "开发者",
+        "管道消费（--json）"
+      ]
+    }
+  ],
+  "consumers": [
+    "开发者（开发期循环）"
+  ],
+  "effects": {
+    "text": "纯只读监视：不写任何记录/文件",
+    "ref": "验证流程指南 §4.6"
+  },
+  "params": {
+    "stages": {
+      "effects": "跑哪些阶段（both/spec/lint；默认 both）——评测资产不随敲代码变化，要看评测请用 check --stages evals",
+      "pitfall": null,
+      "ref": "skillverify watch --help"
+    },
+    "cycles": {
+      "effects": "跑 N 轮后退出（默认不限轮数）",
+      "pitfall": null,
+      "ref": "skillverify watch --help"
+    },
+    "once": {
+      "effects": "等价于 --cycles 1——跑一轮就退出",
+      "pitfall": null,
+      "ref": "skillverify watch --help"
+    },
+    "interval": {
+      "effects": "轮询间隔（默认 1 秒，最小 0.01）",
+      "pitfall": null,
+      "ref": "skillverify watch --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "默认无限轮询——操作台/桥上执行必须带 --once 或 --cycles N，否则会被超时强杀（timeout 记 timed_out）",
+      "ref": "skillverify watch --help"
+    },
+    {
+      "text": "--stages 默认 both（spec+lint）：评测资产不会因为改代码而变化，别指望 watch 帮你盯评测",
+      "ref": "skillverify watch --help"
+    }
+  ],
+  "compose_rules": [
+    {
+      "rule": "suggest",
+      "param": "once",
+      "message": "操作台执行建议带 --once（或 --cycles N）——watch 是长驻循环，不带会挂到超时",
+      "ref": "skillverify watch --help"
+    }
+  ],
+  "execution": {
+    "timeout_s": 60,
+    "class": "read-only",
+    "history": "audit"
+  }
+}

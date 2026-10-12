@@ -1,0 +1,342 @@
+{
+  "summary": "机械补检（官方完全不查的部分）：引用完整性、上下文预算、目录卫生、脚本契约、依赖钉版本、安全扫描、编码规范。七族 47 条规则见下方目录；默认只做静态检查，--scripts 才实测脚本契约。产出报告走 stdout 或 --out 落盘。",
+  "ref": "验证流程指南 §4.1/§二；skillverify/lint/ 各模块 RULES 源码",
+  "inputs": [
+    {
+      "name": "被检技能目录",
+      "from": "位置参数 path（含 SKILL.md）",
+      "shape": "技能包目录树"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "lint 报告",
+      "path": "stdout 或 --out 落盘（.md / 按 --json 出 .json）",
+      "schema": "逐条 Result（rid/级别/判定/证据）",
+      "consumers": [
+        "人",
+        "check --stages lint",
+        "audit（判定明细原样带入）",
+        "watch（每轮汇总）"
+      ]
+    }
+  ],
+  "consumers": [
+    "check（--stages both/all 的 lint 阶段）",
+    "audit（把 lint 结论带进审计单）",
+    "watch（开发期循环）"
+  ],
+  "params": {
+    "scripts": {
+      "effects": "实测脚本契约四项（--help/非法参数/幂等/dry-run 不改目录）——会以你的权限执行技能自带脚本",
+      "pitfall": "审计外来技能时尤其慎用；不开则 SCRIPT 实测族记「未执行」、audit 退出码为 2（口径一致，不是失败）",
+      "ref": "验证流程指南 §4.5/§十一"
+    },
+    "script_timeout": {
+      "effects": "单个脚本的超时上限（默认 10 秒）",
+      "pitfall": null,
+      "ref": "skillverify lint --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "47 条 = MUST 1 条（脚本不得阻塞交互输入）+ SHOULD 16 条（官方建议）+ HOUSE 30 条（本项目硬线/约定）——HOUSE 是本仓库自己的治理标准，带出仓库时注意口径差异",
+      "ref": "skillverify/lint/ 源码 _FAMILIES 与各 RULES"
+    },
+    {
+      "text": "lint 只对单个技能目录负责；整库批量与库级检查用 discover/check 的库级面",
+      "ref": "验证流程指南 §4.1/§4.4"
+    }
+  ],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 300,
+    "class": "read-only",
+    "history": "audit"
+  },
+  "rules_note": "规则目录为构建时从 skillverify.lint.RULES 导出的静态快照；源码加规则后重跑 console/build.py 并过守卫（tests/test_console_consistency.py 会核对规则 id 集合）",
+  "rules": [
+    {
+      "rid": "BODY-001",
+      "level": "HOUSE",
+      "title": "SKILL.md 正文非空",
+      "remediation": "补写正文：分步指令、输入输出示例、常见边界情况"
+    },
+    {
+      "rid": "BUDGET-001",
+      "level": "SHOULD",
+      "title": "SKILL.md 总行数 ≤500（官方建议）",
+      "remediation": "把细节外移到 references/ 或 assets/，正文留核心步骤（目标 <500 行）"
+    },
+    {
+      "rid": "BUDGET-002",
+      "level": "SHOULD",
+      "title": "SKILL.md 正文 token 估算 ≤5000（官方建议）",
+      "remediation": "精简正文；估算口径为 ceil(字符数/4)，仅作量级参考"
+    },
+    {
+      "rid": "BUDGET-003",
+      "level": "HOUSE",
+      "title": "SKILL.md 总行数 ≤800（本项目硬线）",
+      "remediation": "拆分：把成段内容移入 references/，并在 SKILL.md 写明何时加载哪个文件"
+    },
+    {
+      "rid": "BUDGET-004",
+      "level": "HOUSE",
+      "title": "references//assets/ 单个文本文件 ≤500 行（本项目）",
+      "remediation": "按主题拆分引用文件；引用文件是按需加载的，拆分不会增加常态上下文成本"
+    },
+    {
+      "rid": "COV-001",
+      "level": "HOUSE",
+      "title": "扫描覆盖完整（无读取失败/超限跳过）",
+      "remediation": "修正文件权限或体积后复跑；覆盖有洞时本报告的 PASS 不代表该项已通过"
+    },
+    {
+      "rid": "DEP-001",
+      "level": "SHOULD",
+      "title": "一次性命令/包调用须钉版本",
+      "remediation": "补版本：`npx eslint@9.0.0`、`uvx ruff@0.8.0`、`pip install 'black==24.10.0'`；代码里必须精确钉住，文档里的示例至少不要用 latest"
+    },
+    {
+      "rid": "DEP-002",
+      "level": "SHOULD",
+      "title": "脚本的第三方依赖须内联声明或在文档中说明",
+      "remediation": "在脚本头部加 PEP 723 块（`# /// script` … `# ///`，含 dependencies），或在 SKILL.md 写明需要预先安装哪些包"
+    },
+    {
+      "rid": "DEP-003",
+      "level": "SHOULD",
+      "title": "包内不得出现独立依赖清单（会引入安装步骤）",
+      "remediation": "把依赖移入脚本的 PEP 723 块并删除清单；技能应能被单条命令直接跑起来"
+    },
+    {
+      "rid": "DEP-004",
+      "level": "SHOULD",
+      "title": "内联声明的依赖须钉版本并声明 requires-python",
+      "remediation": "把 `\"pkg\"` 改为 `\"pkg>=1.2,<2\"`，并补 `requires-python = \">=3.10\"`"
+    },
+    {
+      "rid": "DEP-005",
+      "level": "HOUSE",
+      "title": "非 Python 脚本的内联依赖（只认明确形态）也要钉版本",
+      "remediation": "Deno：写 `npm:pkg@1.2.3` / `jsr:@scope/pkg@1.2.3`，别只写 `npm:pkg`；Bun 等把版本写进 import 说明符的写法：`\"pkg@1.2.3\"`；Ruby 的 `bundler/inline`：`gem \"名字\", \"1.2.3\"`，别只写 `gem \"名字\"`"
+    },
+    {
+      "rid": "ENC-001",
+      "level": "HOUSE",
+      "title": "shell 脚本必须 LF 换行",
+      "remediation": "转换为 LF；在 .gitattributes 写 `*.sh text eol=lf` 防止复发"
+    },
+    {
+      "rid": "ENC-002",
+      "level": "HOUSE",
+      "title": "文本文件统一 LF 换行",
+      "remediation": "转换为 LF；在 .gitattributes 写 `* text=auto eol=lf` 防止复发"
+    },
+    {
+      "rid": "ENC-003",
+      "level": "HOUSE",
+      "title": "文本文件不得带 BOM",
+      "remediation": "以 UTF-8（无 BOM）重新保存"
+    },
+    {
+      "rid": "ENC-004",
+      "level": "HOUSE",
+      "title": "文本文件必须能以 UTF-8 解码",
+      "remediation": "以 UTF-8 重新保存该文件"
+    },
+    {
+      "rid": "HYG-001",
+      "level": "HOUSE",
+      "title": "目录命名宜用官方约定的承载目录（scripts//references//assets/）",
+      "remediation": "改用 references/ 或 assets/；同义变体目录名会让使用者在多个技能间失去一致性预期"
+    },
+    {
+      "rid": "HYG-002",
+      "level": "HOUSE",
+      "title": "包内不得残留缓存/临时/备份文件",
+      "remediation": "删除该文件，并把相应模式加入 .gitignore，避免再次误提交"
+    },
+    {
+      "rid": "HYG-003",
+      "level": "HOUSE",
+      "title": "文件扩展名在已知集合内",
+      "remediation": "确认该文件确属技能内容（是则归入 assets/ 或补全扩展名，否则删除）"
+    },
+    {
+      "rid": "HYG-004",
+      "level": "HOUSE",
+      "title": "单个文件 ≤1MB",
+      "remediation": "把大文件移出技能包（技能包会被整份复制/加载），或改为按需下载并说明来源"
+    },
+    {
+      "rid": "HYG-005",
+      "level": "HOUSE",
+      "title": "素材类文件应归置 assets/",
+      "remediation": "把模板/图片/数据等静态资源移到 assets/，SKILL.md 用相对路径引用"
+    },
+    {
+      "rid": "HYG-006",
+      "level": "HOUSE",
+      "title": "license 字段宜简短（≤200 字符、单行）",
+      "remediation": "把完整条款放进随包文件（LICENSE/COPYING），frontmatter 里只写许可名或一句指引——frontmatter 是每次加载都要读的元数据，塞长文本会挤占上下文预算"
+    },
+    {
+      "rid": "HYG-007",
+      "level": "HOUSE",
+      "title": "声明了 license 就应有随包许可文件",
+      "remediation": "在技能根放一份 LICENSE（或 COPYING/NOTICE）：对外交付时收件人要能核对条款全文"
+    },
+    {
+      "rid": "I18N-001",
+      "level": "HOUSE",
+      "title": "代码块内的命令行不得混入中文/全角字符",
+      "remediation": "命令保持原文，中文说明另起一行或写在 `#` 注释里"
+    },
+    {
+      "rid": "REF-001",
+      "level": "SHOULD",
+      "title": "正文引用的包内文件必须存在（代码块外）",
+      "remediation": "修正路径或补上被引用的文件；相对技能根目录书写"
+    },
+    {
+      "rid": "REF-002",
+      "level": "HOUSE",
+      "title": "代码块内引用的路径须存在（可能是占位示例）",
+      "remediation": "示例性引用改为不含真实承载目录的占位写法（如 `scripts/<name>.py`）或补上文件"
+    },
+    {
+      "rid": "REF-003",
+      "level": "SHOULD",
+      "title": "不得使用宿主绝对路径（~/、$HOME、盘符）",
+      "remediation": "改为相对技能根目录的路径；技能要跨宿主可用，不能绑定某一台机器"
+    },
+    {
+      "rid": "REF-004",
+      "level": "HOUSE",
+      "title": "指向本包文件的引用应写相对路径（禁绝对路径与 `..` 上跳）",
+      "remediation": "把绝对路径/上跳写法改成相对技能根目录的写法"
+    },
+    {
+      "rid": "REF-005",
+      "level": "SHOULD",
+      "title": "引用深度 ≤1 层（避免深层引用链）",
+      "remediation": "把二级引用改为直接从 SKILL.md 引用，或把内容合并进一层文件"
+    },
+    {
+      "rid": "REF-006",
+      "level": "SHOULD",
+      "title": "避免笼统指引（须点名具体文件）",
+      "remediation": "写成「读 references/api-errors.md（API 返回非 200 时）」，点名文件并给出加载时机"
+    },
+    {
+      "rid": "REF-007",
+      "level": "SHOULD",
+      "title": "scripts/ 下的脚本须在 SKILL.md 中被列出",
+      "remediation": "在 SKILL.md 的「可用脚本」清单里加上该脚本及其用途，否则 Agent 不知道它存在"
+    },
+    {
+      "rid": "SCRIPT-001",
+      "level": "HOUSE",
+      "title": "Python 脚本可通过语法解析",
+      "remediation": "修掉语法错误（若是 Python 2 脚本，请移植到 Python 3）"
+    },
+    {
+      "rid": "SCRIPT-002",
+      "level": "MUST",
+      "title": "脚本不得阻塞在交互式输入上",
+      "remediation": "改为命令行旗标/环境变量/stdin 读入；缺参数时打印明确错误与用法后非零退出"
+    },
+    {
+      "rid": "SCRIPT-003",
+      "level": "SHOULD",
+      "title": "脚本应提供 --help（静态可见的参数解析）",
+      "remediation": "用 argparse/click/typer 等提供 `--help`，或至少实现 `-h` 分支打印用法"
+    },
+    {
+      "rid": "SCRIPT-004",
+      "level": "SHOULD",
+      "title": "实测 `--help` 可用（退出 0、有输出、含用法）",
+      "remediation": "实现 `--help`：打印用途、参数、示例；退出码 0；输出走 stdout"
+    },
+    {
+      "rid": "SCRIPT-005",
+      "level": "SHOULD",
+      "title": "破坏性/有状态操作须有防护旗标（--dry-run 或 --confirm/--force）",
+      "remediation": "为破坏性操作加 `--dry-run`（预览）或 `--confirm/--force`（显式确认），并在 `--help` 中说明"
+    },
+    {
+      "rid": "SCRIPT-006",
+      "level": "SHOULD",
+      "title": "实测非法参数：非零退出且错误信息走 stderr",
+      "remediation": "未知参数时向 stderr 打印可诊断的错误（含期望值与收到值）并非零退出"
+    },
+    {
+      "rid": "SCRIPT-007",
+      "level": "SHOULD",
+      "title": "实测重复调用行为一致（幂等）",
+      "remediation": "消除输出中的时间戳/随机序；同一输入应得到同一结果"
+    },
+    {
+      "rid": "SCRIPT-008",
+      "level": "HOUSE",
+      "title": "`--help` 输出简洁（≤4000 字符）",
+      "remediation": "精简 `--help`：保留用途、参数、1–2 条示例"
+    },
+    {
+      "rid": "SCRIPT-009",
+      "level": "HOUSE",
+      "title": "dry-run 类旗标试跑后不得改动技能目录",
+      "remediation": "让 dry-run 真的只预览：把写操作挪到 `if not args.dry_run:` 之后，或先算后写（先产出计划再统一落盘）"
+    },
+    {
+      "rid": "SEC-001",
+      "level": "HOUSE",
+      "title": "不得包含真实密钥/私钥",
+      "remediation": "移除密钥并改用环境变量；如已提交过，务必作废并轮换该凭据"
+    },
+    {
+      "rid": "SEC-002",
+      "level": "HOUSE",
+      "title": "赋值形式的疑似凭据须人工确认",
+      "remediation": "确认是否为真实凭据；示例值请写成 <YOUR_API_KEY> 这类占位形态"
+    },
+    {
+      "rid": "SEC-003",
+      "level": "HOUSE",
+      "title": "高熵字符串须人工确认（可能是密钥）",
+      "remediation": "确认该串用途；若是密钥请移入环境变量，若是样例请改为明显占位形态"
+    },
+    {
+      "rid": "SEC-004",
+      "level": "HOUSE",
+      "title": "禁止「下载即执行」链",
+      "remediation": "改为先下载到文件、校验哈希、再执行；或直接内置该脚本"
+    },
+    {
+      "rid": "SEC-005",
+      "level": "HOUSE",
+      "title": "禁止混淆式动态执行（base64 + eval/exec）",
+      "remediation": "改为明文代码；确需动态执行时写明来源与校验方式"
+    },
+    {
+      "rid": "SEC-006",
+      "level": "HOUSE",
+      "title": "URL 中不得携带凭据（query 参数或 userinfo）",
+      "remediation": "凭据改走请求头或环境变量，不要放在 URL 里（URL 会进日志与浏览器历史）"
+    },
+    {
+      "rid": "SEC-007",
+      "level": "HOUSE",
+      "title": "代码文件中的外部端点宜在 frontmatter 中声明",
+      "remediation": "在 `compatibility` 里写明需要访问哪些网络端点（便于使用者判断是否放行）"
+    },
+    {
+      "rid": "SEC-008",
+      "level": "HOUSE",
+      "title": "不得含隐藏字符（双向控制符 / 零宽字符）",
+      "remediation": "把隐藏字符删掉。双向控制符能让同一段内容「读起来」与「实际执行」不一致；零宽字符可以把指令藏进看起来无害的文本里——这类内容一律按不可信处理"
+    }
+  ]
+}

@@ -7,6 +7,10 @@
 
 实现分放在 `common.py`（共用工具）与 `commands.py`（各命令），本文件只负责把
 参数解析器装配起来并分发。
+
+本模块按 describe 协议再导出 `describe_surface`（= skillverify.describe.build_surface）：
+console/introspect.py 等消费方按 `模块.describe_surface` 属性发现机读命令面数据源，
+与 `skillverify describe --json` 同源。
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from ..library import DEFAULT_METADATA_BUDGET, DEFAULT_OVERLAP
 from .commands import (
     cmd_audit,
     cmd_check,
+    cmd_describe,
     cmd_mount,
     cmd_deliver,
     cmd_discover,
@@ -29,7 +34,11 @@ from .commands import (
     cmd_spec,
     cmd_watch,
 )
+from ..describe import build_surface as describe_surface  # noqa: F401 —— describe 协议约定导出：内省脚本等消费方按 `模块.describe_surface` 发现机读数据源
 from .common import PROG, _ArgParser, _add_common, _add_discovery_options
+
+#: 本模块的公开面；describe_surface 是协议再导出（自检死代码扫描按 __all__ 豁免）
+__all__ = ["build_parser", "main", "describe_surface"]
 
 def build_parser() -> _ArgParser:
     parser = _ArgParser(
@@ -417,6 +426,20 @@ def build_parser() -> _ArgParser:
     r_skill.set_defaults(func=cmd_review)
 
     p_review.set_defaults(func=cmd_review, review_action=None)
+
+    p_describe = sub.add_parser(
+        "describe",
+        help="命令面自描述：机读 JSON 契约（供外部工具稳定消费，不解析 argparse 私有结构）",
+        description=(
+            "把全部子命令与逐参数机械属性（位置参数/选项：flag、action、type、default、"
+            "choices、required、help）输出为带 schema 版本号（skillverify.describe/1）的"
+            "JSON 契约。默认输出人读命令树，--json 输出契约本体——本仓库 console 操作台的"
+            "内省脚本已以它为数据源。契约是对外承诺：字段语义变更必须升 schema 版本号。"
+        ),
+    )
+    p_describe.add_argument("--json", action="store_true",
+                            help="输出机读 JSON 契约（默认输出人读命令树）")
+    p_describe.set_defaults(func=cmd_describe)
 
     return parser
 

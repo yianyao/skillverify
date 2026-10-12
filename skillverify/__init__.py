@@ -14,8 +14,10 @@
   watch     文件监听与增量复跑（纯标准库轮询）
   deliver   交付门禁、交付记录与 git hook（`check` 只管日常，`deliver` 才管交付）
   report    统一结果模型与人读/机读输出（含整库汇总）
+  describe  命令面自描述（describe --json 机读契约；console 内省脚本的数据源）
   cli/      命令行入口（装配层；共用工具在 common.py，各命令在 commands.py）
             子命令：spec / lint / evals / review / discover / check / watch / deliver / hook
+                    / mount / audit / describe
 
 数据文件（`data/`，宿主名与提示词都是数据，不是代码）：
   hosts.toml            宿主布局声明

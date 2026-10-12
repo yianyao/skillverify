@@ -1,0 +1,36 @@
+{
+  "summary": "查看 pre-commit hook 接线状态：是否安装、是否是 skillverify 的、指向哪个命令。",
+  "ref": "验证流程指南 §六",
+  "inputs": [
+    {
+      "name": "目标仓库",
+      "from": "--project（默认当前目录）",
+      "shape": "git 仓库"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "hook 状态",
+      "path": "stdout",
+      "schema": "安装与否 / 是否 skillverify 接线",
+      "consumers": [
+        "人"
+      ]
+    }
+  ],
+  "consumers": [
+    "人（接线确认）"
+  ],
+  "effects": {
+    "text": "纯只读查看",
+    "ref": "skillverify hook status --help"
+  },
+  "params": {},
+  "pitfalls": [],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 30,
+    "class": "read-only",
+    "history": "audit"
+  }
+}

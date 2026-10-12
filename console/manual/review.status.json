@@ -1,0 +1,42 @@
+{
+  "summary": "读语义评审中央记录，把库内每个技能的评审状态表打出来（PASS/FAIL/WARN/已改/SKIP）——交付前预检用，提前看到「技能改过没重评」而不是等 deliver 拦。",
+  "ref": "语义评审流程指南 §六.7",
+  "inputs": [
+    {
+      "name": "语义评审中央记录",
+      "from": "<trace_dir>/review/<技能名>.json（经 hosts.toml 定位）",
+      "shape": "skillverify.review/1 记录"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "评审状态表",
+      "path": "stdout 或 --out 落盘",
+      "schema": "逐技能：最新状态 + 指纹是否与当前内容一致",
+      "consumers": [
+        "人（交付前预检）",
+        "deliver REV-000（同一数据源的正式判定）"
+      ]
+    }
+  ],
+  "consumers": [
+    "人（预检）"
+  ],
+  "effects": {
+    "text": "纯只读：只读中央记录，不写任何文件",
+    "ref": "语义评审流程指南 §六.7"
+  },
+  "params": {},
+  "pitfalls": [
+    {
+      "text": "状态表显示「已改」= 技能内容指纹与评审时不一致——重跑评审线（pack → run/session → collect）再交付",
+      "ref": "语义评审流程指南 §六.7"
+    }
+  ],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 60,
+    "class": "read-only",
+    "history": "audit"
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "domain": {
+    "id": "review",
+    "title": "语义评审",
+    "description": "机械层证明格式与结构没问题；写得对不对、会不会误导 Agent 由 review 承接：32 条提示词（每条带 PASS/FAIL 判据与证据要求），三档执行器产出同一 schema 回写（skillverify.review/1），结论经 collect 机械校验后汇入中央留痕，被 deliver/check 的 REV-000 消费。",
+    "ref": "语义评审流程指南 §〇/§一"
+  },
+  "nodes": [
+    "review.prompts",
+    "review.pack",
+    "review.material",
+    "review.run",
+    "review.session",
+    "review.human",
+    "review.collect",
+    "review.status",
+    "review.skill",
+    "deliver"
+  ],
+  "pipelines": [
+    {
+      "id": "review-main",
+      "domain": "review",
+      "title": "语义评审主线（六步流程）",
+      "steps": [
+        {
+          "node": "review.pack",
+          "note": "步骤 0+1：任务包内自带第 0 步评委校准样本（REV-012，推荐不强制）与回写模板；本轮含 E-02/E-03/E-06/E-07/E-08 时先跑下一步 material",
+          "ref": "语义评审流程指南 §三.步骤0/1"
+        },
+        {
+          "node": "review.material",
+          "condition": "本轮含 E-02/E-03/E-06/E-07/E-08（评流程产物/技能集合的提示词）或需 W-11 相邻边界清单时必跑；否则可跳过",
+          "note": "交汇点：数据源是评测工作区（评测 → 评审单向）——评测未跑完时 E-07/E-08 无数字可摘（本步会 SKIP）；标准顺序评测在前",
+          "ref": "语义评审流程指南 §三.步骤2/§七/§六.9"
+        },
+        {
+          "slot": "执行评审（三档选一）",
+          "variants": ["review.run", "review.session", "review.human"],
+          "note": "⚑ 双评项可任意两档组合，但两个评委署名必须不同（同一个人/同一命令跑两遍不算）",
+          "ref": "语义评审流程指南 §四.1"
+        },
+        {
+          "node": "review.collect",
+          "note": "三档共用验收层：REV-001..013 逐条机械校验，结论汇入中央记录",
+          "ref": "语义评审流程指南 §三.步骤4"
+        },
+        {
+          "node": "deliver",
+          "note": "门禁合流点：REV-000 按当前内容指纹核对中央记录，五态判定拦交付",
+          "ref": "语义评审流程指南 §三.步骤5"
+        }
+      ],
+      "presets": [
+        {
+          "id": "session-full",
+          "title": "档 2 全流程（会话评）",
+          "description": "pack --split 逐条出任务包（便于一条一个 LLM 会话）→（含 E 族先跑 material）→ 会话评填模板 → collect 必带 --skill-dir；双评项再补第二份署名不同的回写",
+          "variants": {"执行评审（三档选一）": "review.session"},
+          "values": {
+            "review.pack": {"split": true}
+          },
+          "ref": "语义评审流程指南 §三/§四.3/§2.2"
+        },
+        {
+          "id": "dual-review",
+          "title": "双评跑法（⚑ 8 项双人复核）",
+          "description": "review run 只跑 8 条 ⚑ 双评项，再换一个不同的 runner 命令重跑一遍（署名必须不同），两份回写一起交 collect",
+          "values": {
+            "review.run": {"prompts": "W-02,W-04,W-05,W-08,W-15,E-04,E-06,R-02"}
+          },
+          "ref": "语义评审流程指南 §1.1/§4.3/§六.5"
+        }
+      ]
+    },
+    {
+      "id": "review-assist",
+      "domain": "review",
+      "title": "辅助线（交付前预检 / 评审流程外带）",
+      "steps": [
+        {
+          "node": "review.status",
+          "note": "交付前预检：提前看到「技能改过没重评」（指纹不一致），别等 deliver 拦",
+          "ref": "语义评审流程指南 §六.7"
+        },
+        {
+          "node": "review.skill",
+          "note": "可选：把语义评审独立成技能包，跟技能走而不是只在装了 skillverify 的机器上可用",
+          "ref": "语义评审流程指南 §五.让语义评审独立成一个技能包（可选）"
+        }
+      ]
+    }
+  ],
+  "manual_nodes": {
+    "review.session": {
+      "title": "会话评（档 2 · 最常用）",
+      "summary": "开一个 LLM 会话（或人工）把任务包丢给它评：会话内自主多轮，模型可自己读技能文件、翻 material 材料、反复核对后再填模板。与档 1 产出同 schema 回写、走同一条 collect 校验。",
+      "ref": "语义评审流程指南 §四.3",
+      "effects": {
+        "text": "评审动作本身不产生文件；逐条结论最终经 review.collect 汇总写入语义评审中央记录",
+        "ref": "语义评审流程指南 §四.3/§2.5"
+      },
+      "actions": [
+        {
+          "step": 1,
+          "text": "跑 skillverify review pack <技能目录> 生成任务包三件套：<技能名>-review-pack.md / -template.json / -manifest.json（默认落在技能目录的兄弟目录）",
+          "node_ref": "review.pack",
+          "ref": "语义评审流程指南 §2.2"
+        },
+        {
+          "step": 2,
+          "text": "把 pack.md 全文交给 LLM 会话（或人）；若任务包头部提示本轮含 E-02/E-03/E-06/E-07/E-08，先跑 review material 并把材料一并提供",
+          "ref": "语义评审流程指南 §2.2 注/§三.步骤2"
+        },
+        {
+          "step": 3,
+          "text": "评委先做第 0 步校准：template.json 顶层 calibration 数组（与 results/reviewer 平级）已预置样本，把每条 verdict 从空串填成 PASS/FAIL；判错 → 本轮全部结论不可用（REV-012 FAIL）",
+          "ref": "语义评审流程指南 §三.步骤0"
+        },
+        {
+          "step": 4,
+          "text": "按判据逐条评，填 template.json：每条 verdict + evidence（≥12 字且可定位：文件名:行/原文片段/具体计数）+ finding；证据不得复述判据（REV-006）",
+          "ref": "语义评审流程指南 §1.3"
+        },
+        {
+          "step": 5,
+          "text": "reviewer 栏手写署名（无签署=没有评审，REV-002）；⚑ 双评项（8 条：W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）需第二个署名不同的评委再填一份",
+          "ref": "语义评审流程指南 §1.1/§4.3"
+        },
+        {
+          "step": 6,
+          "text": "把一份或多份回写一起交给 review collect（必带 --skill-dir）",
+          "node_ref": "review.collect",
+          "ref": "语义评审流程指南 §三.步骤4"
+        }
+      ]
+    },
+    "review.human": {
+      "title": "人工兜底（档 3）",
+      "summary": "没有模型可用时：人手写与档 1/档 2 完全相同 schema 的回写 JSON，走同一条 collect 校验——档 3 不走捷径。",
+      "ref": "语义评审流程指南 §1.2",
+      "effects": {
+        "text": "人工评审动作本身不产生文件；逐条结论最终经 review.collect 汇总写入语义评审中央记录",
+        "ref": "语义评审流程指南 §1.2/§2.5"
+      },
+      "actions": [
+        {
+          "step": 1,
+          "text": "以 <技能名>-review-template.json 为底稿（可先跑 review pack 生成），逐栏手写：skill / reviewer（签署）/ results[]（prompt_id + verdict + evidence）/ calibration",
+          "ref": "语义评审流程指南 §1.2/§三.步骤3"
+        },
+        {
+          "step": 2,
+          "text": "回写 schema 为 skillverify.review/1：PASS 也要可定位证据（REV-006）、FAIL 必须写 finding ≥8 字（REV-007）、NA 必须写理由（REV-008）、覆盖不完整显式留痕（REV-009）",
+          "ref": "语义评审流程指南 §1.3/§4.6"
+        },
+        {
+          "step": 3,
+          "text": "交给 review collect（必带 --skill-dir）；⚑ 双评项需两份署名互不相同的回写",
+          "node_ref": "review.collect",
+          "ref": "语义评审流程指南 §4.3"
+        }
+      ]
+    }
+  }
+}

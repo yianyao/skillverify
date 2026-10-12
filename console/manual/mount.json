@@ -1,0 +1,61 @@
+{
+  "summary": "上宿主之前的最后检查：技能是否真落在宿主档声明的目录里、SKILL.md 可解析且 name/description 读得出、同档内有无同名冲突，以及把三种结构损坏的 frontmatter 注入临时副本后解析器是否 fail-loud（不触碰原目录）。不验证宿主注册表与真实触发匹配——那部分到目标宿主里人工确认。",
+  "ref": "验证流程指南 §4.3/§三；skillverify mount --help",
+  "inputs": [
+    {
+      "name": "宿主档配置",
+      "from": "hosts.toml（内置 + 用户/项目级；--config 可覆盖）",
+      "shape": "宿主档列表"
+    },
+    {
+      "name": "技能目录",
+      "from": "宿主档声明的 project_roots/user_roots 下",
+      "shape": "技能包目录树"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "挂载前置检查报告",
+      "path": "stdout 或 --out 落盘",
+      "schema": "逐宿主档逐技能：目录落位/解析/同名冲突/注入测试四项",
+      "consumers": [
+        "人（上宿主放行判断）"
+      ]
+    }
+  ],
+  "consumers": [
+    "人（上宿主决策）"
+  ],
+  "effects": {
+    "text": "纯只读：frontmatter 注入测试在临时副本上做，绝不改原目录",
+    "ref": "验证流程指南 §4.3"
+  },
+  "params": {
+    "all_hosts": {
+      "effects": "逐个检查配置里的全部宿主档——新接宿主时用它验收（默认只查当前生效档）",
+      "pitfall": null,
+      "ref": "验证流程指南 §三.接入一个新宿主"
+    },
+    "skill": {
+      "effects": "只检查这个技能（默认检查每个宿主档里发现的全部技能）",
+      "pitfall": null,
+      "ref": "skillverify mount --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "工具没有宿主 API、没有宿主运行时——「注册表与真实触发是否匹配」必须到目标宿主里人工确认（见《操作手册.md》）",
+      "ref": "验证流程指南 §4.3"
+    },
+    {
+      "text": "默认只查当前生效的宿主档；新接宿主或改过配置后用 --all-hosts 逐档验收",
+      "ref": "验证流程指南 §三"
+    }
+  ],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 120,
+    "class": "read-only",
+    "history": "audit"
+  }
+}

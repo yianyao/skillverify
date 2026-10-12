@@ -1,0 +1,51 @@
+{
+  "summary": "按官方 Agent Skills 规范校验单个技能。离线实现，行为对齐 skills-ref 0.1.1；--official 额外调用官方 agentskills validate 对账。",
+  "ref": "验证流程指南 §4.1；skillverify spec --help",
+  "inputs": [
+    {
+      "name": "被检技能目录",
+      "from": "位置参数 path（含 SKILL.md）",
+      "shape": "技能包目录树"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "spec 报告",
+      "path": "stdout 或 --out 落盘（.md / 按 --json 出 .json）",
+      "schema": "官方规范逐条判定",
+      "consumers": [
+        "人",
+        "check --stages 的 spec 阶段",
+        "deliver --stages both/all"
+      ]
+    }
+  ],
+  "consumers": [
+    "check（spec 阶段）",
+    "deliver（spec 阶段）",
+    "watch（--stages spec/both 每轮）"
+  ],
+  "effects": {
+    "text": "纯只读校验（--official 时会调用官方 CLI，仍只读）",
+    "ref": "skillverify spec --help"
+  },
+  "params": {
+    "official": {
+      "effects": "额外调用官方 agentskills validate 对账（需环境里有官方 CLI）",
+      "pitfall": null,
+      "ref": "skillverify spec --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "spec 只查官方规范面；引用完整性/预算/安全等机械补检在 lint——两者由 check --stages both 一起跑",
+      "ref": "验证流程指南 §4.1/§二"
+    }
+  ],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 60,
+    "class": "read-only",
+    "history": "audit"
+  }
+}

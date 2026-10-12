@@ -1,0 +1,5103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>skillverify 操作台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-name">skillverify 操作台</span>
+    <span class="brand-sub">语义评审 · 评测 · 命令组装台</span>
+  </div>
+  <nav id="domain-tabs"><!-- 域切换（JS 渲染） --></nav>
+  <div id="snapshot-banner" title="静态快照：数据为构建时内省结果，skillverify 演进后需重跑 console/build.py 重建">
+    <span class="snap-badge">静态快照</span>
+    <span id="snap-version"></span>
+    <span id="snap-time"></span>
+    <button id="cmd-history" type="button" hidden title="查看执行桥审计（console/history.jsonl 尾部 50 条）">🕘 历史</button>
+  </div>
+</header>
+
+<div id="catalog-banner" hidden title="桥模式实况与入库快照的差异报告（GET /catalog）"></div>
+
+<main id="layout">
+  <aside id="canvas">
+    <div id="preset-bar"><!-- 套餐一键预填（JS 渲染，域内全部 pipeline 合并） --></div>
+    <div id="pipelines"><!-- 流程线块（JS 渲染，域内每条 pipeline 一块） --></div>
+    <div id="canvas-note"></div>
+  </aside>
+  <section id="inspector"><!-- 节点详情（JS 渲染） --></section>
+</main>
+
+<footer id="commandbar">
+  <div id="run-row" hidden>
+    <input id="run-cwd" type="text" placeholder="执行工作目录（留空 = 桥启动目录）">
+    <button id="cmd-run" type="button" hidden disabled title="经执行桥在桥端二次校验后执行当前命令">▶ 执行</button>
+  </div>
+  <div id="cmd-errors"></div>
+  <div id="cmd-preview-wrap">
+    <code id="cmd-preview"></code>
+    <button id="cmd-copy" type="button" title="复制完整命令">复制</button>
+  </div>
+  <pre id="run-output" hidden></pre>
+</footer>
+
+<div id="history-panel" hidden>
+  <div class="history-head">
+    <span>执行审计（桥端 console/history.jsonl，最新在上）</span>
+    <button id="history-close" type="button">关闭</button>
+  </div>
+  <div id="history-list"></div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script type="application/json" id="nodes-data">
+{
+  "schema": "skillverify.console-nodes/1",
+  "tool_version": "skillverify 0.1.0",
+  "generated_at": "2026-10-12T17:45:21",
+  "domains": [
+    {
+      "id": "evals",
+      "title": "评测",
+      "description": "skillverify 是验收员不是厨师：校验评测资产（evals.json / trigger-queryset.json）的形状与口径（EVAL-*/TRIG-*），可选 --run-with 把执行层命令接进来代跑并自动复校；WS/GRAD/BENCH/TIME 全族复校工作区产物，BENCH-004 拿聚合值重算对账。工具自己不出题、不监考、不打分。",
+      "ref": "评测流程指南 §〇"
+    },
+    {
+      "id": "ops",
+      "title": "运维",
+      "description": "技能资产的日常运维面：规范校验（spec）→ 机械补检（lint，47 条规则目录见节点档案）→ 上宿主前置（mount）→ 库级发现（discover）→ 外来技能审计（audit），结论汇入 deliver 门禁；辅助线：开发期监视（watch）、git hook 接线与命令面自描述（describe，机读契约）。",
+      "ref": "验证流程指南 §二/§四"
+    },
+    {
+      "id": "review",
+      "title": "语义评审",
+      "description": "机械层证明格式与结构没问题；写得对不对、会不会误导 Agent 由 review 承接：32 条提示词（每条带 PASS/FAIL 判据与证据要求），三档执行器产出同一 schema 回写（skillverify.review/1），结论经 collect 机械校验后汇入中央留痕，被 deliver/check 的 REV-000 消费。",
+      "ref": "语义评审流程指南 §〇/§一"
+    }
+  ],
+  "pipelines": [
+    {
+      "id": "evals-main",
+      "domain": "evals",
+      "title": "评测主线（五步：准备 → 校验 → 真跑 → 复校 → 门禁）",
+      "steps": [
+        {
+          "node": "evals",
+          "note": "步骤 2 资产校验（方式 A）：花钱跑评测前先拦形状/口径错误；此时 trigger-runs 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败",
+          "ref": "评测流程指南 §二.步骤2"
+        },
+        {
+          "node": "evals",
+          "note": "步骤 3+4 委托执行（--run-with，同节点第二段用法）：B/C 管用例、D 管触发集——完整一轮需（B 或 C）且 D；成功后自动复校（≡ 方式 A）。不经委托直接跑脚本时，跑完必须单独再跑一次 evals 复校",
+          "ref": "评测流程指南 §二.步骤3/§三.3.2"
+        },
+        {
+          "node": "check",
+          "note": "步骤 5 总检查：--stages all 全族复校（WS-001..008/GRAD/BENCH-004 对账/TIME）。评测工作区同时是语义评审 material 的数据源——交汇方向单向（评测 → 评审），标准顺序评测跑完再排评审",
+          "ref": "评测流程指南 §二.步骤4；语义评审流程指南 §7.1/§六.9"
+        },
+        {
+          "node": "deliver",
+          "note": "门禁合流（决策层交汇）：评测线（check_evals/check_trigger 消费工作区产物）与语义评审线（REV-000 消费中央记录）的结论共同决定能否交付；改版回归靠 deliver --strict + rules_hash 拦「悄悄退步」",
+          "ref": "语义评审流程指南 §7.2；评测流程指南 §七.3"
+        }
+      ],
+      "presets": [
+        {
+          "id": "ci-min",
+          "title": "CI 最小集",
+          "description": "check --stages all --json 产机读报告（进 CI artifact）；deliver --stages all --strict --json 出交付记录（--strict 需显式确认，会拦未覆盖项）",
+          "values": {
+            "check": {
+              "stages": "all",
+              "json": true
+            },
+            "deliver": {
+              "stages": "all",
+              "strict": true,
+              "json": true
+            }
+          },
+          "ref": "评测流程指南 §二.步骤5/§七.3"
+        }
+      ]
+    },
+    {
+      "id": "ops-main",
+      "domain": "ops",
+      "title": "运维主线（spec → lint → mount → audit → discover → 门禁）",
+      "steps": [
+        {
+          "node": "spec",
+          "note": "官方规范基线：先确认 SKILL.md 本身合规，再谈其它",
+          "ref": "验证流程指南 §4.1"
+        },
+        {
+          "node": "lint",
+          "note": "机械补检 47 条（引用/预算/卫生/脚本契约/依赖/安全/编码）——官方完全不查的部分；--scripts 才实测脚本契约",
+          "ref": "验证流程指南 §4.1"
+        },
+        {
+          "node": "mount",
+          "note": "上宿主前置：目录落位/解析/同名冲突/注入测试（临时副本，不碰原目录）",
+          "ref": "验证流程指南 §4.3"
+        },
+        {
+          "node": "audit",
+          "condition": "外来技能（从别处拿来的）用之前必跑；自家技能可跳过",
+          "note": "--record 落盘审计单供下次比对指纹",
+          "ref": "验证流程指南 §4.5"
+        },
+        {
+          "node": "discover",
+          "note": "库级全貌：技能清单/同名冲突/描述预算；--show-config 看有效档位（操作台 hosts 面板数据源）",
+          "ref": "验证流程指南 §三"
+        },
+        {
+          "node": "deliver",
+          "note": "门禁合流（跨域）：运维线结论经 check --stages both 汇入 deliver",
+          "ref": "验证流程指南 §六"
+        }
+      ]
+    },
+    {
+      "id": "ops-assist",
+      "domain": "ops",
+      "title": "辅助线（开发期监视 / git hook 接线 / 命令面契约）",
+      "steps": [
+        {
+          "node": "watch",
+          "note": "开发期即时反馈：文件一变自动重跑 spec+lint；务必带 --once 或 --cycles",
+          "ref": "验证流程指南 §4.6"
+        },
+        {
+          "node": "hook.install",
+          "note": "把 deliver --staged 接上 pre-commit；完整门禁仍在 CI",
+          "ref": "验证流程指南 §六"
+        },
+        {
+          "node": "hook.status",
+          "note": "确认接线状态",
+          "ref": "验证流程指南 §六"
+        },
+        {
+          "node": "describe",
+          "note": "命令面机读契约（EVOL-01）：本操作台内省脚本的数据源；加/改子命令后它自动跟着变",
+          "ref": "仓库结构说明 §3.1"
+        }
+      ]
+    },
+    {
+      "id": "review-main",
+      "domain": "review",
+      "title": "语义评审主线（六步流程）",
+      "steps": [
+        {
+          "node": "review.pack",
+          "note": "步骤 0+1：任务包内自带第 0 步评委校准样本（REV-012，推荐不强制）与回写模板；本轮含 E-02/E-03/E-06/E-07/E-08 时先跑下一步 material",
+          "ref": "语义评审流程指南 §三.步骤0/1"
+        },
+        {
+          "node": "review.material",
+          "condition": "本轮含 E-02/E-03/E-06/E-07/E-08（评流程产物/技能集合的提示词）或需 W-11 相邻边界清单时必跑；否则可跳过",
+          "note": "交汇点：数据源是评测工作区（评测 → 评审单向）——评测未跑完时 E-07/E-08 无数字可摘（本步会 SKIP）；标准顺序评测在前",
+          "ref": "语义评审流程指南 §三.步骤2/§七/§六.9"
+        },
+        {
+          "slot": "执行评审（三档选一）",
+          "variants": [
+            "review.run",
+            "review.session",
+            "review.human"
+          ],
+          "note": "⚑ 双评项可任意两档组合，但两个评委署名必须不同（同一个人/同一命令跑两遍不算）",
+          "ref": "语义评审流程指南 §四.1"
+        },
+        {
+          "node": "review.collect",
+          "note": "三档共用验收层：REV-001..013 逐条机械校验，结论汇入中央记录",
+          "ref": "语义评审流程指南 §三.步骤4"
+        },
+        {
+          "node": "deliver",
+          "note": "门禁合流点：REV-000 按当前内容指纹核对中央记录，五态判定拦交付",
+          "ref": "语义评审流程指南 §三.步骤5"
+        }
+      ],
+      "presets": [
+        {
+          "id": "session-full",
+          "title": "档 2 全流程（会话评）",
+          "description": "pack --split 逐条出任务包（便于一条一个 LLM 会话）→（含 E 族先跑 material）→ 会话评填模板 → collect 必带 --skill-dir；双评项再补第二份署名不同的回写",
+          "variants": {
+            "执行评审（三档选一）": "review.session"
+          },
+          "values": {
+            "review.pack": {
+              "split": true
+            }
+          },
+          "ref": "语义评审流程指南 §三/§四.3/§2.2"
+        },
+        {
+          "id": "dual-review",
+          "title": "双评跑法（⚑ 8 项双人复核）",
+          "description": "review run 只跑 8 条 ⚑ 双评项，再换一个不同的 runner 命令重跑一遍（署名必须不同），两份回写一起交 collect",
+          "values": {
+            "review.run": {
+              "prompts": "W-02,W-04,W-05,W-08,W-15,E-04,E-06,R-02"
+            }
+          },
+          "ref": "语义评审流程指南 §1.1/§4.3/§六.5"
+        }
+      ]
+    },
+    {
+      "id": "review-assist",
+      "domain": "review",
+      "title": "辅助线（交付前预检 / 评审流程外带）",
+      "steps": [
+        {
+          "node": "review.status",
+          "note": "交付前预检：提前看到「技能改过没重评」（指纹不一致），别等 deliver 拦",
+          "ref": "语义评审流程指南 §六.7"
+        },
+        {
+          "node": "review.skill",
+          "note": "可选：把语义评审独立成技能包，跟技能走而不是只在装了 skillverify 的机器上可用",
+          "ref": "语义评审流程指南 §五.让语义评审独立成一个技能包（可选）"
+        }
+      ]
+    }
+  ],
+  "nodes": {
+    "audit": {
+      "id": "audit",
+      "domain": "ops",
+      "title": "audit",
+      "summary": "外来技能审计（从别处拿来的技能，用之前）：spec/lint 判定明细原样带入 + 内容指纹 + 库内名字近似提示 + 台账/运行日志的陈旧检查；--record 把审计单落盘供下次比对指纹。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "audit"
+        ],
+        "positional": [
+          "target"
+        ]
+      },
+      "params": [
+        {
+          "id": "target",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": true,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "要审计的技能目录；也可以是 `discover` 能发现的技能名",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "只用内置配置",
+          "nargs": 0
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "技能根（可重复；用于找库内其它技能比对名字）",
+          "nargs": null
+        },
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "使用的宿主档",
+          "nargs": null
+        },
+        {
+          "id": "scripts",
+          "flag": "--scripts",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "以 --help 调用技能自带脚本做实测（默认不执行）",
+          "pitfall": "审计外来技能尤其慎用——执行的是别人写的代码；不开启时退出码为 2（SCRIPT 族「未执行」口径，不是审计失败）",
+          "help": "以 `--help` 调用技能自带脚本（默认不执行——审计外来技能尤其慎用）",
+          "nargs": 0
+        },
+        {
+          "id": "record",
+          "flag": "--record",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "审计单落盘到 <trace_dir>/audit/（md + json 双格式）",
+          "pitfall": null,
+          "help": "把审计单落盘到 <trace_dir>/audit/（供下次比对指纹）",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "把报告写到文件",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "不打印审计单正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "要审计的技能",
+          "from": "位置参数 target（技能目录或 discover 能发现的技能名）",
+          "shape": "技能包目录树"
+        },
+        {
+          "name": "运行台账（若有）",
+          "from": "技能包内 run log（按模板）",
+          "shape": "逐条观察 + 处置 + 日期"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "审计单",
+          "path": "stdout 或 --out 落盘；--record 时同时写 <trace_dir>/audit/<技能名>.md 与 .json",
+          "schema": "判定明细（spec/lint FAIL/WARN 原样）+ 内容指纹 + 名字近似提示 + 异常观察清单",
+          "consumers": [
+            "引入决策者（人）",
+            "下次 audit 的指纹比对"
+          ]
+        }
+      ],
+      "consumers": [
+        "引入决策（人）",
+        "audit 自身（--record 后下次比对指纹）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "confirm",
+          "param": "scripts",
+          "message": "审计外来技能会执行它的自带脚本：确认来源可信，或先只做静态审计（默认）",
+          "ref": "验证流程指南 §4.5"
+        }
+      ],
+      "execution": {
+        "timeout_s": 300,
+        "class": "mutating",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "退出码 2 = 脚本契约四项没执行（SCRIPT 族记「未执行」）——与 lint 口径一致，不是审计失败；要连脚本实测加 --scripts",
+          "ref": "验证流程指南 §4.5"
+        },
+        {
+          "text": "审计单的措辞/口径独立于 lint（用 scripts.facts()/deps.facts() 的口径写进单子），lint 措辞改了不影响已有审计单",
+          "ref": "验证流程指南 §4.5"
+        },
+        {
+          "text": "台账陈旧检查：异常观察没写处置、几周没动、日期没按 YYYY-MM-DD 写——都会进审计单；长期没更新要写明原因或恢复观测",
+          "ref": "验证流程指南 §4.5"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "--record 时把审计单写入 trace 根 audit/ 目录（供下次比对指纹）；其余只读",
+        "ref": "验证流程指南 §4.5"
+      },
+      "ref": "验证流程指南 §4.5"
+    },
+    "check": {
+      "id": "check",
+      "domain": "evals",
+      "title": "check",
+      "summary": "分阶段总检查（CI 报告入口）：--stages both（默认）只跑 spec+lint，日常快查；--stages all 再加评测资产与语义评审记录——WS-001..008 / GRAD / BENCH-004 对账 / TIME 全族复校，EVAL-010 跨轮区分度与 EVAL-011 断言时机一并激活。与 deliver 的分工：check 是体检（出报告），deliver 是门禁（FAIL 阻断交付并写交付记录）。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "check"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "hosts.toml 里的宿主档（默认 default = 官方跨宿主约定）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（项目级技能根相对它解析；默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）；便于隔离测试",
+          "nargs": null
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "直接指定技能根（可重复；给出后忽略配置里的根列表）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        },
+        {
+          "id": "stages",
+          "flag": "--stages",
+          "form": {
+            "widget": "choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "choice",
+            "choices": [
+              "all",
+              "both",
+              "spec",
+              "lint",
+              "evals",
+              "review"
+            ]
+          },
+          "default": "both",
+          "composes": [],
+          "effects": "跑哪些阶段：both = spec+lint（默认，日常快查）；all = 再加评测资产与语义评审记录；也可单跑 spec / lint / evals / review",
+          "pitfall": "CI 里忘改 --stages all → 评测与评审结论根本不在报告里，绿灯是假的（交付门禁在 deliver，但回归三层里触发层靠 deliver --strict 拦）",
+          "help": "跑哪些阶段（默认 both = spec+lint，日常快查；all = 再加评测资产与语义评审记录）",
+          "nargs": null
+        },
+        {
+          "id": "workspace",
+          "flag": "--workspace",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "显式指定评测工作区（默认找并列的 <技能名>-workspace/）",
+          "pitfall": null,
+          "help": "评测工作区（默认找并列的 <技能名>-workspace/）",
+          "nargs": null
+        },
+        {
+          "id": "iteration",
+          "flag": "--iteration",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "int"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只校验 iteration-N（默认全部）",
+          "pitfall": null,
+          "help": "只校验 iteration-N（默认全部）",
+          "nargs": null
+        },
+        {
+          "id": "metadata_budget",
+          "flag": "--metadata-budget",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "int"
+          },
+          "default": 8000,
+          "composes": [],
+          "effects": "库内所有技能 name+description 的总量预算（默认 8000）",
+          "pitfall": null,
+          "help": "库内所有技能 name+description 的总量预算（默认 8000，本项目约定、非官方硬线；按你宿主实测的上限改）",
+          "nargs": null
+        },
+        {
+          "id": "desc_overlap",
+          "flag": "--desc-overlap",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float"
+          },
+          "default": 0.5,
+          "composes": [],
+          "effects": "描述词面重叠的告警阈值（默认 0.5）",
+          "pitfall": null,
+          "help": "描述词面重叠的告警阈值（默认 0.5；只提示、不阻断）",
+          "nargs": null
+        },
+        {
+          "id": "scripts",
+          "flag": "--scripts",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "执行技能自带脚本以实测脚本契约（以 --help 等安全调用）",
+          "pitfall": "默认关闭——脚本存在副作用风险；不开时 SCRIPT 族规则记「未执行」，--strict 门禁会被它们拦住",
+          "help": "执行技能自带脚本以实测脚本契约（默认关闭，存在副作用风险）",
+          "nargs": 0
+        },
+        {
+          "id": "script_timeout",
+          "flag": "--script-timeout",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float"
+          },
+          "default": 10.0,
+          "composes": [],
+          "effects": "单个脚本的超时上限（默认 10 秒）",
+          "pitfall": null,
+          "help": "单个脚本的超时上限（默认 10 秒）",
+          "nargs": null
+        },
+        {
+          "id": "skip_review",
+          "flag": "--skip-review",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "跳过语义评审记录检查",
+          "pitfall": "显式跳过会留痕为未覆盖项——--strict 时阻断，平时记未覆盖；跳过不等于通过",
+          "help": "跳过语义评审记录检查（显式跳过会留痕为未覆盖项）",
+          "nargs": 0
+        },
+        {
+          "id": "official",
+          "flag": "--official",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "额外调用官方 agentskills validate 对账",
+          "pitfall": null,
+          "help": "额外调用官方 agentskills validate 对账",
+          "nargs": 0
+        },
+        {
+          "id": "trace",
+          "flag": "--trace",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "把报告写入配置里的中央留痕目录（trace_dir）",
+          "pitfall": null,
+          "help": "把报告写入配置里的中央留痕目录（trace_dir）",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "报告落盘路径",
+          "pitfall": null,
+          "help": "报告落盘路径（.md，或按 --json 输出 .json）",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "输出机读 JSON",
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "不打印报告正文",
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "技能库与配置",
+          "from": "hosts.toml 发现机制（--host/--project/--root/--config 可调；--no-config 只用内置）",
+          "shape": "项目级/用户级技能根 + 宿主档"
+        },
+        {
+          "name": "评测工作区（--stages all 时）",
+          "from": "并列的 <技能名>-workspace/iteration-N/（或 --workspace/--iteration 指定）",
+          "shape": "WS/GRAD/BENCH/TIME 全族复校的对象"
+        },
+        {
+          "name": "语义评审中央记录（--stages all 时）",
+          "from": ".agents/skillverify/review/<技能名>.json",
+          "shape": "REV-000 五态判定（--skip-review 可显式跳过，留痕为未覆盖项）"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "检查报告",
+          "path": "stdout，或 --out 落盘（.md / 按 --json 出 .json）；--trace 时另写中央留痕 trace_dir",
+          "schema": "分阶段逐规则结论；CI 上传 artifact 用 --json",
+          "consumers": [
+            "使用者",
+            "CI",
+            "deliver（决策参考）"
+          ]
+        }
+      ],
+      "consumers": [
+        "CI（check --stages all → deliver --strict 收口）",
+        "日常快查（默认 both = spec+lint）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "confirm",
+          "param": "scripts",
+          "message": "开启脚本实测：将以 --help 等方式执行技能自带脚本——确认这些脚本来源可信（存在副作用风险）",
+          "ref": "skillverify check --help"
+        }
+      ],
+      "execution": {
+        "timeout_s": 1800,
+        "class": "mutating",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "check 与 deliver 的分工：check 出报告（--trace 才写中央留痕），deliver 出门禁结论并写交付记录；「通过没通过」以 deliver 为准，check 全绿不等于可交付",
+          "ref": "评测流程指南 §二.步骤5；skillverify check/deliver --help"
+        },
+        {
+          "text": "回归三层各有着落：结构层 spec/lint 免费；触发层靠 deliver --strict 拦「trigger-runs 缺失/未跑过」；行为层靠 WS-004 轮次连续 + EVAL-010 跨轮区分度 + BENCH-004 对账——改完一版断言退化成恒真/恒假会被点名",
+          "ref": "评测流程指南 §七.3"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "只读全族复校：报告走 stdout 或 --out 落盘，不写任何记录",
+        "ref": "评测流程指南 §二.步骤4"
+      },
+      "ref": "评测流程指南 §二.步骤4/§二.步骤5/§七.3；skillverify check --help"
+    },
+    "deliver": {
+      "id": "deliver",
+      "domain": "review",
+      "title": "deliver",
+      "summary": "交付门禁（合流点）：比 check 严——FAIL 阻断；WARN 不阻断但逐条记入交付记录；SKIP 里属「未开启的可选批次/环境能力不足」的记未覆盖项（默认不阻断，--strict 时阻断），其余 SKIP 一律阻断。通过或未通过都会写交付记录到中央留痕目录。--stages all 时评测线（check_evals/check_trigger 消费工作区产物）与评审线（REV-000 消费中央记录）两线结论在此合流。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "deliver"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "hosts.toml 里的宿主档（默认 default = 官方跨宿主约定）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（项目级技能根相对它解析；默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）；便于隔离测试",
+          "nargs": null
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "直接指定技能根（可重复；给出后忽略配置里的根列表）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        },
+        {
+          "id": "staged",
+          "flag": "--staged",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "只检查 git 暂存内容涉及的技能（pre-commit hook 用）",
+          "pitfall": null,
+          "help": "只检查 git 暂存内容涉及的技能（pre-commit 用）",
+          "nargs": 0
+        },
+        {
+          "id": "strict",
+          "flag": "--strict",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "连「未覆盖项」也阻断（发行前跑一次）",
+          "pitfall": "未实测脚本契约（--scripts 未开）、未跑评测等都会成为未覆盖项——日常 CI 开 --strict 会被大量拦下，按需使用",
+          "help": "连「未覆盖项」也阻断（发行前跑一次）",
+          "nargs": 0
+        },
+        {
+          "id": "accept",
+          "flag": "--accept",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "把该规则的阻断项记为「已豁免」（可重复）",
+          "pitfall": "必须配 --because 写明理由；豁免会写进交付记录，绝不静默放过",
+          "help": "把该规则的阻断项记为「已豁免」（必须配 --because 写明理由；会写进交付记录，绝不静默放过）",
+          "nargs": null
+        },
+        {
+          "id": "because",
+          "flag": "--because",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "豁免理由（与 --accept 同用）",
+          "pitfall": null,
+          "help": "豁免理由（与 --accept 同用）",
+          "nargs": null
+        },
+        {
+          "id": "stages",
+          "flag": "--stages",
+          "form": {
+            "widget": "choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "choice",
+            "choices": [
+              "all",
+              "both",
+              "spec",
+              "lint",
+              "evals",
+              "review"
+            ]
+          },
+          "default": "all",
+          "composes": [],
+          "effects": "跑哪些阶段：all = spec+lint+evals+review（默认：交付要考虑全部资产）；both = spec+lint",
+          "pitfall": null,
+          "help": "跑哪些阶段（默认 all = spec+lint+evals+review：交付要考虑该技能已有的全部资产与评审结论；both = spec+lint）",
+          "nargs": null
+        },
+        {
+          "id": "scripts",
+          "flag": "--scripts",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "实测脚本契约（以 --help 等调用技能自带脚本）",
+          "pitfall": "不开启时 SCRIPT 族规则记「未执行」——--strict 门禁会被它们拦住",
+          "help": "实测脚本契约（与 check 的 --scripts 同义：以 --help 等调用技能自带脚本）。不开启时 SCRIPT 族规则记「未执行」，--strict 门禁会被它们拦住",
+          "nargs": 0
+        },
+        {
+          "id": "workspace",
+          "flag": "--workspace",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "显式指定评测工作区（默认找并列的 <技能名>-workspace/）",
+          "pitfall": null,
+          "help": "评测工作区（默认找并列的 <技能名>-workspace/）",
+          "nargs": null
+        },
+        {
+          "id": "iteration",
+          "flag": "--iteration",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "int"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只校验 iteration-N（默认全部）",
+          "pitfall": null,
+          "help": "只校验 iteration-N（默认全部）",
+          "nargs": null
+        },
+        {
+          "id": "script_timeout",
+          "flag": "--script-timeout",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float"
+          },
+          "default": 10.0,
+          "composes": [],
+          "effects": "单个脚本的超时上限（默认 10 秒）",
+          "pitfall": null,
+          "help": "单个脚本的超时上限（默认 10 秒）",
+          "nargs": null
+        },
+        {
+          "id": "no_record",
+          "flag": "--no-record",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "不写交付记录（--json 仍会输出记录内容）",
+          "pitfall": null,
+          "help": "不写交付记录（--json 仍会输出记录内容）",
+          "nargs": 0
+        },
+        {
+          "id": "skip_review",
+          "flag": "--skip-review",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "跳过语义评审记录检查",
+          "pitfall": "显式跳过会留痕为未覆盖项——--strict 时阻断，平时记未覆盖",
+          "help": "跳过语义评审记录检查（默认参与；显式跳过会留痕）",
+          "nargs": 0
+        },
+        {
+          "id": "verbose",
+          "flag": "--verbose",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "把未覆盖项与待甄别项也逐条打到 stderr",
+          "pitfall": null,
+          "help": "把未覆盖项与待甄别项也逐条打到 stderr",
+          "nargs": 0
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "输出交付记录本身（含门禁结论）而非人读报告",
+          "pitfall": null,
+          "help": "输出交付记录本身（含门禁结论）而非人读报告",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "报告落盘路径",
+          "pitfall": null,
+          "help": "报告落盘路径（.md，或按 --json 输出 .json）",
+          "nargs": null
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "不打印报告正文",
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "语义评审中央记录",
+          "from": ".agents/skillverify/review/<技能名>.json（经 hosts.toml 发现机制定位）",
+          "shape": "REV-000 按当前内容指纹五态判定"
+        },
+        {
+          "name": "评测工作区产物（--stages all 时）",
+          "from": "<技能名>-workspace/iteration-N/",
+          "shape": "evals/trigger 资产与逐轮产物"
+        },
+        {
+          "name": "WARN 裁决（可选）",
+          "from": "<留痕目录>/adjudications.json",
+          "shape": "{\"adjudications\":[{skill,rid,evidence_hash,decision:accept|fix,...}]}，绑定证据指纹"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "交付报告",
+          "path": "stdout 或 --out 落盘（.md / 按 --json 出 .json）",
+          "schema": "门禁结论 + WARN 记账 + 未覆盖项清单",
+          "consumers": [
+            "使用者",
+            "CI",
+            "git hook（deliver --staged）"
+          ]
+        },
+        {
+          "name": "交付记录",
+          "path": "中央留痕目录（latest.json/md + history.jsonl 追加；--no-record 不写）",
+          "schema": "交付记录本身（--json 输出它）",
+          "consumers": [
+            "审计/复盘"
+          ]
+        }
+      ],
+      "consumers": [
+        "交付决策（人/CI/pre-commit hook）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "confirm",
+          "param": "strict",
+          "message": "--strict 连未覆盖项也阻断：发行前跑一次用；确认你已备齐脚本实测（--scripts）、评测资产与语义评审记录",
+          "ref": "设计文档 §6 confirm 实例"
+        },
+        {
+          "rule": "requires",
+          "when": "accept",
+          "require": "because",
+          "message": "--accept 必须配 --because 写明豁免理由（会写进交付记录）",
+          "ref": "skillverify deliver --help"
+        },
+        {
+          "rule": "confirm",
+          "param": "accept",
+          "message": "豁免是显式留痕动作：规则 ID + 理由会写入交付记录，绝不静默放过",
+          "ref": "skillverify deliver --help"
+        }
+      ],
+      "execution": {
+        "timeout_s": 1800,
+        "class": "mutating",
+        "history": "central"
+      },
+      "pitfalls": [
+        {
+          "text": "REV-000 五态判定：显式 --skip-review → SKIP；无记录 → SKIP（未覆盖，提示先跑 pack → collect）；技能评审后改过（指纹不一致）→ WARN 须重评；有阻断项 FAIL → 技能不得交付；覆盖不完整/有非阻断问题 → WARN；全部干净 → PASS",
+          "ref": "语义评审流程指南 §三.步骤5"
+        },
+        {
+          "text": "WARN 裁决走 <留痕目录>/adjudications.json 人工拍板（decision: accept|fix），裁决绑定证据指纹——换证据须重新裁决",
+          "ref": "语义评审流程指南 §三.步骤5"
+        },
+        {
+          "text": "改了技能没重评 → REV-000 WARN「指纹不一致」，deliver 拦下；review status 可提前看到「已改」",
+          "ref": "语义评审流程指南 §六.7"
+        },
+        {
+          "text": "两条流程在交付门禁处合流：任一阻断项 FAIL 即不得交付；--strict 下未覆盖项也拦",
+          "ref": "语义评审流程指南 §7.1"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "通过与否都会把交付记录写入中央留痕目录（--no-record 关闭）；--accept 豁免会留痕可审计",
+        "ref": "语义评审流程指南 §三.步骤5"
+      },
+      "ref": "语义评审流程指南 §三.步骤5/§7.1；skillverify deliver --help"
+    },
+    "describe": {
+      "id": "describe",
+      "domain": "ops",
+      "title": "describe",
+      "summary": "命令面自描述：把全部子命令与逐参数机械属性（flag/action/type/default/choices/required/help）输出为带 schema 版本号（skillverify.describe/1）的 JSON 契约。这是本操作台内省脚本的首选数据源——外部工具以稳定契约消费命令面，不必再解析 argparse 私有结构。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "describe"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "输出机读 JSON 契约（skillverify.describe/1）；默认输出人读命令树",
+          "pitfall": null,
+          "help": "输出机读 JSON 契约（默认输出人读命令树）",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "无（自描述命令）",
+          "from": "本工具自身的解析器装配（cli.build_parser）",
+          "shape": "-"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "命令面契约",
+          "path": "stdout（--json）；默认输出人读命令树",
+          "schema": "skillverify.describe/1：{schema, tool, version, commands:{命令路径:{help, positionals, options}}}",
+          "consumers": [
+            "console/introspect.py（内省数据源，auto 模式优先）",
+            "外部工具（CI 校验 / 文档生成器等第三方消费方）"
+          ]
+        }
+      ],
+      "consumers": [
+        "console 操作台（生成器与执行桥的实况内省都经 introspect.py 间接消费）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 30,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "契约是对外承诺：改子命令/旗标后 describe 输出会自动跟着变（实现从同一 parser 提取），但字段语义变更必须升 schema 版本号；test_consistency 的 describe 断言会拦命令面漂移",
+          "ref": "tests/test_consistency.py run_describe"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读：只打印命令面，不做任何写操作",
+        "ref": "skillverify describe --help"
+      },
+      "ref": "仓库结构说明 §3.1（skillverify/describe.py）/ skillverify describe --help"
+    },
+    "discover": {
+      "id": "discover",
+      "domain": "ops",
+      "title": "discover",
+      "summary": "库级发现：按 hosts.toml 宿主档找到全部技能并出报告（发现清单/同名冲突/描述总量预算/描述重叠提示）；--show-config 只打印合并后的有效配置（含来源顺序）——本操作台的「hosts 档位」面板数据就来自它。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "discover"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "hosts.toml 里的宿主档（默认 default = 官方跨宿主约定）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（项目级技能根相对它解析；默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）；便于隔离测试",
+          "nargs": null
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "直接指定技能根（可重复；给出后忽略配置里的根列表）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        },
+        {
+          "id": "show_config",
+          "flag": "--show-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "只打印合并后的有效配置（含来源顺序），不做发现",
+          "pitfall": null,
+          "help": "只打印合并后的有效配置（含来源顺序），不做发现",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "报告落盘路径（.md，或按 --json 输出 .json）",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        },
+        {
+          "id": "metadata_budget",
+          "flag": "--metadata-budget",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "int"
+          },
+          "default": 8000,
+          "composes": [],
+          "effects": "库内所有技能 name+description 的总量预算（默认 8000）——本项目约定、非官方硬线，按宿主实测上限改",
+          "pitfall": null,
+          "help": "库内所有技能 name+description 的总量预算（默认 8000，本项目约定、非官方硬线；按你宿主实测的上限改）",
+          "nargs": null
+        },
+        {
+          "id": "desc_overlap",
+          "flag": "--desc-overlap",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float"
+          },
+          "default": 0.5,
+          "composes": [],
+          "effects": "描述词面重叠的告警阈值（默认 0.5）——只提示不阻断",
+          "pitfall": null,
+          "help": "描述词面重叠的告警阈值（默认 0.5；只提示、不阻断）",
+          "nargs": null
+        }
+      ],
+      "inputs": [
+        {
+          "name": "宿主配置",
+          "from": "内置 hosts.toml + 用户级/项目级配置（--config 可覆盖）",
+          "shape": "宿主档列表（defaults + hosts.*）"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "发现报告",
+          "path": "stdout 或 --out 落盘",
+          "schema": "逐宿主档的技能清单 + 同名冲突 + 预算/重叠提示",
+          "consumers": [
+            "人",
+            "audit（按名定位技能）",
+            "mount（同根校验）"
+          ]
+        },
+        {
+          "name": "有效配置",
+          "path": "--show-config 的 stdout",
+          "schema": "TOML 风格文本（defaults + hosts.* 逐档）",
+          "consumers": [
+            "人",
+            "本操作台 hosts 档位面板"
+          ]
+        }
+      ],
+      "consumers": [
+        "mount（上宿主前置）",
+        "audit（按名定位）",
+        "人（库内全貌）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 60,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "metadata-budget 是本项目约定不是官方硬线：宿主有更低上限时按实测改",
+          "ref": "验证流程指南 §三"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读：不做发现之外的任何写操作",
+        "ref": "验证流程指南 §三"
+      },
+      "ref": "验证流程指南 §三/§二"
+    },
+    "evals": {
+      "id": "evals",
+      "domain": "evals",
+      "title": "evals",
+      "summary": "评测资产校验 + 可选委托执行：校验 evals.json / trigger-queryset.json 的形状与口径（EVAL-000..011 + TRIG-*），可选 --run-with 把执行层命令接进来代跑（在技能目录里执行、限时、失败如实记 RUN-101、成功后自动复校产物）。工具自己不出题、不监考、不打分——只做两件事：把「跑过」变成可校验的产物，把「产物」校验到能对账。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "evals"
+        ],
+        "positional": [
+          "path"
+        ]
+      },
+      "params": [
+        {
+          "id": "path",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": true,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path",
+            "must_exist": true,
+            "must_be_dir": true
+          },
+          "default": null,
+          "composes": [],
+          "effects": "技能目录（含 SKILL.md）——委托命令的工作目录就是它",
+          "pitfall": null,
+          "help": "技能目录（含 SKILL.md）",
+          "nargs": null
+        },
+        {
+          "id": "workspace",
+          "flag": "--workspace",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "评测工作区（默认自动找技能目录旁边的 <技能名>-workspace/）",
+          "pitfall": "工作区是技能目录的兄弟目录，不是子目录——塞进技能目录会被 token 预算、引用检查算进去（常见坑第 3 条）",
+          "help": "评测工作区（默认找并列的 <技能名>-workspace/）",
+          "nargs": null
+        },
+        {
+          "id": "iteration",
+          "flag": "--iteration",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "int"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只校验 iteration-N（默认校验全部轮次）",
+          "pitfall": "轮次编号必须连续无缺号（WS-004）；多用例 ≠ 多轮次——加用例改 evals.json 同轮跑，换描述/模型才开新轮",
+          "help": "只校验 iteration-N（默认校验全部）",
+          "nargs": null
+        },
+        {
+          "id": "run_with",
+          "flag": "--run-with",
+          "form": {
+            "widget": "runner",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "委托执行：在技能目录里跑这条命令，跑完自动复校产物。退出码非 0（含超时 124、无法执行 127）→ 记 RUN-101 FAIL 并终止，绝不伪装成「跑过了」；退出码 0 → 立即重新执行 check_evals + check_trigger",
+          "pitfall": "退出码传播：run_evals.py 单条模型调用失败不会返回非 0（只在「没有用例」时返回 1）——自写包装脚本必须自己传播失败，否则 --run-with 会把半途而废当成功（常见坑第 4 条）",
+          "help": "委托执行评测：在技能目录里跑这条命令（例如官方评测器的入口），跑完再校验产物。命令由你给出——本工具不猜官方评测器的参数",
+          "nargs": null
+        },
+        {
+          "id": "run_timeout",
+          "flag": "--run-timeout",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float",
+            "min": 1,
+            "max": 86400
+          },
+          "default": 1800.0,
+          "composes": [],
+          "effects": "委托执行的超时上限（默认 1800 秒，超时喊停记失败）",
+          "pitfall": "与 review run --timeout 的每条限时不同——这是整条被委托命令的总限时",
+          "help": "委托执行的超时下限（默认 1800 秒）",
+          "nargs": null
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "报告落盘路径（.md，或配合 --json 输出 .json）",
+          "pitfall": null,
+          "help": "报告落盘路径（.md，或按 --json 输出 .json）",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "输出机读 JSON（CI 用）",
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "不打印报告正文",
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "评测资产（考卷）",
+          "from": "<技能>/evals/evals.json + evals/trigger-queryset.json + evals/files/ 夹具",
+          "shape": "evalx.py（EVAL-000..011）与 trigger.py（TRIG-*）逐条校验的对象；工具只验卷面，不替考"
+        },
+        {
+          "name": "评测工作区（真跑后在场）",
+          "from": "并列的 <技能名>-workspace/iteration-N/（或 --workspace 显式指定）",
+          "shape": "步骤 3–4 执行层产物：outputs/ + timing.json + run-inputs.json + grading/benchmark；在场后 WS/GRAD/BENCH/TIME 全族激活"
+        },
+        {
+          "name": "被委托命令（可选）",
+          "from": "--run-with",
+          "shape": "命令行字符串，按 shell 语义在技能目录里执行；没有占位符替换（{prompt} 那套是 examples 脚本自己做的）"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "校验报告",
+          "path": "stdout，或 --out 落盘（.md / 按 --json 出 .json）",
+          "schema": "EVAL-*/TRIG-*/RUN-101 逐条结论 + meta（委托执行时注明「已委托执行」）",
+          "consumers": [
+            "使用者（反复修改 → 重跑，直到除「尚未跑过」外无 FAIL/WARN）",
+            "CI（--json）"
+          ]
+        }
+      ],
+      "consumers": [
+        "评测流程步骤 2/4（校验与复校都是它）",
+        "CI（--json 机读）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "confirm",
+          "param": "run_with",
+          "message": "委托的命令将在技能目录里以你的权限执行（无沙箱、无参数解析）——只委托你信任的命令串",
+          "ref": "评测流程指南 §三.3.3 注意事项 3"
+        }
+      ],
+      "execution": {
+        "timeout_s": 7200,
+        "class": "mutating",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "A/B/C/D 四种用法不是流水线，是同一条命令的四种点菜方式：B（run_evals.py）与 C（官方评测器）二选一——都跑用例、深度不同；D（run_triggers.py）与 B/C 正交互补。走完完整一轮的最小组合 =（B 或 C）且 D；不经 --run-with 直接跑脚本 → 复校 A 不可省",
+          "ref": "评测流程指南 §三.3.2"
+        },
+        {
+          "text": "资产校验阶段 trigger-runs.json 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败——严格门禁下它会被 deliver 拦，但不是本轮校验的错",
+          "ref": "评测流程指南 §二.步骤2"
+        },
+        {
+          "text": "三个 examples 脚本都不评分：grading.json（passed 严格布尔、PASS 必带证据）与 benchmark.json（聚合）由 LLM/人/官方工具补齐——BENCH-004 拿聚合值与逐次产物重算对账，手改数字当场现形（常见坑第 6 条）",
+          "ref": "评测流程指南 §二.步骤3/§六.2/§六.6"
+        },
+        {
+          "text": "嵌套引号：--run-with 里的命令按 shell 语义解析，Windows 下建议在 Git Bash 里跑以统一引号行为（常见坑第 8 条）",
+          "ref": "评测流程指南 §三.3.3/§六.8"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯校验模式只读；--run-with 委托执行时把逐轮结果写入评测工作区 iteration-N/（check/deliver 的对账依据）",
+        "ref": "评测流程指南 §二.步骤2/步骤3、§四"
+      },
+      "ref": "评测流程指南 §〇/§一.1/§三"
+    },
+    "hook.install": {
+      "id": "hook.install",
+      "domain": "ops",
+      "title": "hook install",
+      "summary": "把 skillverify 接到 git pre-commit：提交前自动跑检查拦问题。--fail-closed 让「找不到 skillverify」也阻断提交（默认故障开放，只告警不拦）。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "hook",
+          "install"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "仓库目录（默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "force",
+          "flag": "--force",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "覆盖已存在的他人 hook（先备份为 .bak）",
+          "pitfall": null,
+          "help": "覆盖已存在的他人 hook（先备份为 .bak）",
+          "nargs": 0
+        },
+        {
+          "id": "fail_closed",
+          "flag": "--fail-closed",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "找不到 skillverify 时阻断提交",
+          "pitfall": "默认故障开放（只告警）——CI 有硬门禁时可以收紧，但本地环境没装工具会卡住所有提交",
+          "help": "找不到 skillverify 时阻断提交（默认故障开放，只告警）",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "目标仓库",
+          "from": "--project（默认当前目录）",
+          "shape": "git 仓库（.git/hooks/）"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "pre-commit hook",
+          "path": "<repo>/.git/hooks/pre-commit",
+          "schema": "调用 skillverify deliver --staged 的 shell 脚本",
+          "consumers": [
+            "git 提交流程",
+            "hook status（状态查看）"
+          ]
+        }
+      ],
+      "consumers": [
+        "git commit（每次提交触发）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "confirm",
+          "param": "force",
+          "message": "--force 会覆盖已存在的他人 hook（先备份 .bak）：确认那不是别人接的线",
+          "ref": "skillverify hook install --help"
+        }
+      ],
+      "execution": {
+        "timeout_s": 30,
+        "class": "mutating",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "hook 只拦暂存内容（deliver --staged）；完整门禁仍在 CI 的 deliver",
+          "ref": "验证流程指南 §六"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "写 .git/hooks/pre-commit；--force 覆盖已存在的他人 hook 时先备份为 .bak",
+        "ref": "验证流程指南 §六"
+      },
+      "ref": "验证流程指南 §六.接到提交上（git hook）"
+    },
+    "hook.status": {
+      "id": "hook.status",
+      "domain": "ops",
+      "title": "hook status",
+      "summary": "查看 pre-commit hook 接线状态：是否安装、是否是 skillverify 的、指向哪个命令。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "hook",
+          "status"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "仓库目录（默认当前目录）",
+          "nargs": null
+        }
+      ],
+      "inputs": [
+        {
+          "name": "目标仓库",
+          "from": "--project（默认当前目录）",
+          "shape": "git 仓库"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "hook 状态",
+          "path": "stdout",
+          "schema": "安装与否 / 是否 skillverify 接线",
+          "consumers": [
+            "人"
+          ]
+        }
+      ],
+      "consumers": [
+        "人（接线确认）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 30,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读查看",
+        "ref": "skillverify hook status --help"
+      },
+      "ref": "验证流程指南 §六"
+    },
+    "lint": {
+      "id": "lint",
+      "domain": "ops",
+      "title": "lint",
+      "summary": "机械补检（官方完全不查的部分）：引用完整性、上下文预算、目录卫生、脚本契约、依赖钉版本、安全扫描、编码规范。七族 47 条规则见下方目录；默认只做静态检查，--scripts 才实测脚本契约。产出报告走 stdout 或 --out 落盘。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "lint"
+        ],
+        "positional": [
+          "path"
+        ]
+      },
+      "params": [
+        {
+          "id": "path",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": true,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "技能目录（含 SKILL.md）",
+          "nargs": null
+        },
+        {
+          "id": "scripts",
+          "flag": "--scripts",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "实测脚本契约四项（--help/非法参数/幂等/dry-run 不改目录）——会以你的权限执行技能自带脚本",
+          "pitfall": "审计外来技能时尤其慎用；不开则 SCRIPT 实测族记「未执行」、audit 退出码为 2（口径一致，不是失败）",
+          "help": "执行技能自带脚本以实测 --help/错误路径/幂等（默认关闭）",
+          "nargs": 0
+        },
+        {
+          "id": "script_timeout",
+          "flag": "--script-timeout",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float"
+          },
+          "default": 10.0,
+          "composes": [],
+          "effects": "单个脚本的超时上限（默认 10 秒）",
+          "pitfall": null,
+          "help": "单个脚本的超时上限（默认 10 秒）",
+          "nargs": null
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "报告落盘路径（.md，或按 --json 输出 .json）",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "被检技能目录",
+          "from": "位置参数 path（含 SKILL.md）",
+          "shape": "技能包目录树"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "lint 报告",
+          "path": "stdout 或 --out 落盘（.md / 按 --json 出 .json）",
+          "schema": "逐条 Result（rid/级别/判定/证据）",
+          "consumers": [
+            "人",
+            "check --stages lint",
+            "audit（判定明细原样带入）",
+            "watch（每轮汇总）"
+          ]
+        }
+      ],
+      "consumers": [
+        "check（--stages both/all 的 lint 阶段）",
+        "audit（把 lint 结论带进审计单）",
+        "watch（开发期循环）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 300,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "47 条 = MUST 1 条（脚本不得阻塞交互输入）+ SHOULD 16 条（官方建议）+ HOUSE 30 条（本项目硬线/约定）——HOUSE 是本仓库自己的治理标准，带出仓库时注意口径差异",
+          "ref": "skillverify/lint/ 源码 _FAMILIES 与各 RULES"
+        },
+        {
+          "text": "lint 只对单个技能目录负责；整库批量与库级检查用 discover/check 的库级面",
+          "ref": "验证流程指南 §4.1/§4.4"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "ref": "验证流程指南 §4.1/§二；skillverify/lint/ 各模块 RULES 源码",
+      "rules": [
+        {
+          "rid": "BODY-001",
+          "level": "HOUSE",
+          "title": "SKILL.md 正文非空",
+          "remediation": "补写正文：分步指令、输入输出示例、常见边界情况"
+        },
+        {
+          "rid": "BUDGET-001",
+          "level": "SHOULD",
+          "title": "SKILL.md 总行数 ≤500（官方建议）",
+          "remediation": "把细节外移到 references/ 或 assets/，正文留核心步骤（目标 <500 行）"
+        },
+        {
+          "rid": "BUDGET-002",
+          "level": "SHOULD",
+          "title": "SKILL.md 正文 token 估算 ≤5000（官方建议）",
+          "remediation": "精简正文；估算口径为 ceil(字符数/4)，仅作量级参考"
+        },
+        {
+          "rid": "BUDGET-003",
+          "level": "HOUSE",
+          "title": "SKILL.md 总行数 ≤800（本项目硬线）",
+          "remediation": "拆分：把成段内容移入 references/，并在 SKILL.md 写明何时加载哪个文件"
+        },
+        {
+          "rid": "BUDGET-004",
+          "level": "HOUSE",
+          "title": "references//assets/ 单个文本文件 ≤500 行（本项目）",
+          "remediation": "按主题拆分引用文件；引用文件是按需加载的，拆分不会增加常态上下文成本"
+        },
+        {
+          "rid": "COV-001",
+          "level": "HOUSE",
+          "title": "扫描覆盖完整（无读取失败/超限跳过）",
+          "remediation": "修正文件权限或体积后复跑；覆盖有洞时本报告的 PASS 不代表该项已通过"
+        },
+        {
+          "rid": "DEP-001",
+          "level": "SHOULD",
+          "title": "一次性命令/包调用须钉版本",
+          "remediation": "补版本：`npx eslint@9.0.0`、`uvx ruff@0.8.0`、`pip install 'black==24.10.0'`；代码里必须精确钉住，文档里的示例至少不要用 latest"
+        },
+        {
+          "rid": "DEP-002",
+          "level": "SHOULD",
+          "title": "脚本的第三方依赖须内联声明或在文档中说明",
+          "remediation": "在脚本头部加 PEP 723 块（`# /// script` … `# ///`，含 dependencies），或在 SKILL.md 写明需要预先安装哪些包"
+        },
+        {
+          "rid": "DEP-003",
+          "level": "SHOULD",
+          "title": "包内不得出现独立依赖清单（会引入安装步骤）",
+          "remediation": "把依赖移入脚本的 PEP 723 块并删除清单；技能应能被单条命令直接跑起来"
+        },
+        {
+          "rid": "DEP-004",
+          "level": "SHOULD",
+          "title": "内联声明的依赖须钉版本并声明 requires-python",
+          "remediation": "把 `\"pkg\"` 改为 `\"pkg>=1.2,<2\"`，并补 `requires-python = \">=3.10\"`"
+        },
+        {
+          "rid": "DEP-005",
+          "level": "HOUSE",
+          "title": "非 Python 脚本的内联依赖（只认明确形态）也要钉版本",
+          "remediation": "Deno：写 `npm:pkg@1.2.3` / `jsr:@scope/pkg@1.2.3`，别只写 `npm:pkg`；Bun 等把版本写进 import 说明符的写法：`\"pkg@1.2.3\"`；Ruby 的 `bundler/inline`：`gem \"名字\", \"1.2.3\"`，别只写 `gem \"名字\"`"
+        },
+        {
+          "rid": "ENC-001",
+          "level": "HOUSE",
+          "title": "shell 脚本必须 LF 换行",
+          "remediation": "转换为 LF；在 .gitattributes 写 `*.sh text eol=lf` 防止复发"
+        },
+        {
+          "rid": "ENC-002",
+          "level": "HOUSE",
+          "title": "文本文件统一 LF 换行",
+          "remediation": "转换为 LF；在 .gitattributes 写 `* text=auto eol=lf` 防止复发"
+        },
+        {
+          "rid": "ENC-003",
+          "level": "HOUSE",
+          "title": "文本文件不得带 BOM",
+          "remediation": "以 UTF-8（无 BOM）重新保存"
+        },
+        {
+          "rid": "ENC-004",
+          "level": "HOUSE",
+          "title": "文本文件必须能以 UTF-8 解码",
+          "remediation": "以 UTF-8 重新保存该文件"
+        },
+        {
+          "rid": "HYG-001",
+          "level": "HOUSE",
+          "title": "目录命名宜用官方约定的承载目录（scripts//references//assets/）",
+          "remediation": "改用 references/ 或 assets/；同义变体目录名会让使用者在多个技能间失去一致性预期"
+        },
+        {
+          "rid": "HYG-002",
+          "level": "HOUSE",
+          "title": "包内不得残留缓存/临时/备份文件",
+          "remediation": "删除该文件，并把相应模式加入 .gitignore，避免再次误提交"
+        },
+        {
+          "rid": "HYG-003",
+          "level": "HOUSE",
+          "title": "文件扩展名在已知集合内",
+          "remediation": "确认该文件确属技能内容（是则归入 assets/ 或补全扩展名，否则删除）"
+        },
+        {
+          "rid": "HYG-004",
+          "level": "HOUSE",
+          "title": "单个文件 ≤1MB",
+          "remediation": "把大文件移出技能包（技能包会被整份复制/加载），或改为按需下载并说明来源"
+        },
+        {
+          "rid": "HYG-005",
+          "level": "HOUSE",
+          "title": "素材类文件应归置 assets/",
+          "remediation": "把模板/图片/数据等静态资源移到 assets/，SKILL.md 用相对路径引用"
+        },
+        {
+          "rid": "HYG-006",
+          "level": "HOUSE",
+          "title": "license 字段宜简短（≤200 字符、单行）",
+          "remediation": "把完整条款放进随包文件（LICENSE/COPYING），frontmatter 里只写许可名或一句指引——frontmatter 是每次加载都要读的元数据，塞长文本会挤占上下文预算"
+        },
+        {
+          "rid": "HYG-007",
+          "level": "HOUSE",
+          "title": "声明了 license 就应有随包许可文件",
+          "remediation": "在技能根放一份 LICENSE（或 COPYING/NOTICE）：对外交付时收件人要能核对条款全文"
+        },
+        {
+          "rid": "I18N-001",
+          "level": "HOUSE",
+          "title": "代码块内的命令行不得混入中文/全角字符",
+          "remediation": "命令保持原文，中文说明另起一行或写在 `#` 注释里"
+        },
+        {
+          "rid": "REF-001",
+          "level": "SHOULD",
+          "title": "正文引用的包内文件必须存在（代码块外）",
+          "remediation": "修正路径或补上被引用的文件；相对技能根目录书写"
+        },
+        {
+          "rid": "REF-002",
+          "level": "HOUSE",
+          "title": "代码块内引用的路径须存在（可能是占位示例）",
+          "remediation": "示例性引用改为不含真实承载目录的占位写法（如 `scripts/<name>.py`）或补上文件"
+        },
+        {
+          "rid": "REF-003",
+          "level": "SHOULD",
+          "title": "不得使用宿主绝对路径（~/、$HOME、盘符）",
+          "remediation": "改为相对技能根目录的路径；技能要跨宿主可用，不能绑定某一台机器"
+        },
+        {
+          "rid": "REF-004",
+          "level": "HOUSE",
+          "title": "指向本包文件的引用应写相对路径（禁绝对路径与 `..` 上跳）",
+          "remediation": "把绝对路径/上跳写法改成相对技能根目录的写法"
+        },
+        {
+          "rid": "REF-005",
+          "level": "SHOULD",
+          "title": "引用深度 ≤1 层（避免深层引用链）",
+          "remediation": "把二级引用改为直接从 SKILL.md 引用，或把内容合并进一层文件"
+        },
+        {
+          "rid": "REF-006",
+          "level": "SHOULD",
+          "title": "避免笼统指引（须点名具体文件）",
+          "remediation": "写成「读 references/api-errors.md（API 返回非 200 时）」，点名文件并给出加载时机"
+        },
+        {
+          "rid": "REF-007",
+          "level": "SHOULD",
+          "title": "scripts/ 下的脚本须在 SKILL.md 中被列出",
+          "remediation": "在 SKILL.md 的「可用脚本」清单里加上该脚本及其用途，否则 Agent 不知道它存在"
+        },
+        {
+          "rid": "SCRIPT-001",
+          "level": "HOUSE",
+          "title": "Python 脚本可通过语法解析",
+          "remediation": "修掉语法错误（若是 Python 2 脚本，请移植到 Python 3）"
+        },
+        {
+          "rid": "SCRIPT-002",
+          "level": "MUST",
+          "title": "脚本不得阻塞在交互式输入上",
+          "remediation": "改为命令行旗标/环境变量/stdin 读入；缺参数时打印明确错误与用法后非零退出"
+        },
+        {
+          "rid": "SCRIPT-003",
+          "level": "SHOULD",
+          "title": "脚本应提供 --help（静态可见的参数解析）",
+          "remediation": "用 argparse/click/typer 等提供 `--help`，或至少实现 `-h` 分支打印用法"
+        },
+        {
+          "rid": "SCRIPT-004",
+          "level": "SHOULD",
+          "title": "实测 `--help` 可用（退出 0、有输出、含用法）",
+          "remediation": "实现 `--help`：打印用途、参数、示例；退出码 0；输出走 stdout"
+        },
+        {
+          "rid": "SCRIPT-005",
+          "level": "SHOULD",
+          "title": "破坏性/有状态操作须有防护旗标（--dry-run 或 --confirm/--force）",
+          "remediation": "为破坏性操作加 `--dry-run`（预览）或 `--confirm/--force`（显式确认），并在 `--help` 中说明"
+        },
+        {
+          "rid": "SCRIPT-006",
+          "level": "SHOULD",
+          "title": "实测非法参数：非零退出且错误信息走 stderr",
+          "remediation": "未知参数时向 stderr 打印可诊断的错误（含期望值与收到值）并非零退出"
+        },
+        {
+          "rid": "SCRIPT-007",
+          "level": "SHOULD",
+          "title": "实测重复调用行为一致（幂等）",
+          "remediation": "消除输出中的时间戳/随机序；同一输入应得到同一结果"
+        },
+        {
+          "rid": "SCRIPT-008",
+          "level": "HOUSE",
+          "title": "`--help` 输出简洁（≤4000 字符）",
+          "remediation": "精简 `--help`：保留用途、参数、1–2 条示例"
+        },
+        {
+          "rid": "SCRIPT-009",
+          "level": "HOUSE",
+          "title": "dry-run 类旗标试跑后不得改动技能目录",
+          "remediation": "让 dry-run 真的只预览：把写操作挪到 `if not args.dry_run:` 之后，或先算后写（先产出计划再统一落盘）"
+        },
+        {
+          "rid": "SEC-001",
+          "level": "HOUSE",
+          "title": "不得包含真实密钥/私钥",
+          "remediation": "移除密钥并改用环境变量；如已提交过，务必作废并轮换该凭据"
+        },
+        {
+          "rid": "SEC-002",
+          "level": "HOUSE",
+          "title": "赋值形式的疑似凭据须人工确认",
+          "remediation": "确认是否为真实凭据；示例值请写成 <YOUR_API_KEY> 这类占位形态"
+        },
+        {
+          "rid": "SEC-003",
+          "level": "HOUSE",
+          "title": "高熵字符串须人工确认（可能是密钥）",
+          "remediation": "确认该串用途；若是密钥请移入环境变量，若是样例请改为明显占位形态"
+        },
+        {
+          "rid": "SEC-004",
+          "level": "HOUSE",
+          "title": "禁止「下载即执行」链",
+          "remediation": "改为先下载到文件、校验哈希、再执行；或直接内置该脚本"
+        },
+        {
+          "rid": "SEC-005",
+          "level": "HOUSE",
+          "title": "禁止混淆式动态执行（base64 + eval/exec）",
+          "remediation": "改为明文代码；确需动态执行时写明来源与校验方式"
+        },
+        {
+          "rid": "SEC-006",
+          "level": "HOUSE",
+          "title": "URL 中不得携带凭据（query 参数或 userinfo）",
+          "remediation": "凭据改走请求头或环境变量，不要放在 URL 里（URL 会进日志与浏览器历史）"
+        },
+        {
+          "rid": "SEC-007",
+          "level": "HOUSE",
+          "title": "代码文件中的外部端点宜在 frontmatter 中声明",
+          "remediation": "在 `compatibility` 里写明需要访问哪些网络端点（便于使用者判断是否放行）"
+        },
+        {
+          "rid": "SEC-008",
+          "level": "HOUSE",
+          "title": "不得含隐藏字符（双向控制符 / 零宽字符）",
+          "remediation": "把隐藏字符删掉。双向控制符能让同一段内容「读起来」与「实际执行」不一致；零宽字符可以把指令藏进看起来无害的文本里——这类内容一律按不可信处理"
+        }
+      ],
+      "rules_note": "规则目录为构建时从 skillverify.lint.RULES 导出的静态快照；源码加规则后重跑 console/build.py 并过守卫（tests/test_console_consistency.py 会核对规则 id 集合）"
+    },
+    "mount": {
+      "id": "mount",
+      "domain": "ops",
+      "title": "mount",
+      "summary": "上宿主之前的最后检查：技能是否真落在宿主档声明的目录里、SKILL.md 可解析且 name/description 读得出、同档内有无同名冲突，以及把三种结构损坏的 frontmatter 注入临时副本后解析器是否 fail-loud（不触碰原目录）。不验证宿主注册表与真实触发匹配——那部分到目标宿主里人工确认。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "mount"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "只检查该宿主档（默认逐个检查配置里的全部宿主档）",
+          "nargs": null
+        },
+        {
+          "id": "all_hosts",
+          "flag": "--all-hosts",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "逐个检查配置里的全部宿主档——新接宿主时用它验收（默认只查当前生效档）",
+          "pitfall": null,
+          "help": "逐个检查配置里的**全部**宿主档（新接宿主时用它验收；默认只查当前生效的那个档）",
+          "nargs": 0
+        },
+        {
+          "id": "skill",
+          "flag": "--skill",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只检查这个技能（默认检查每个宿主档里发现的全部技能）",
+          "pitfall": null,
+          "help": "只检查这个技能（默认检查每个宿主档里发现的全部技能）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "把报告写到文件",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "宿主档配置",
+          "from": "hosts.toml（内置 + 用户/项目级；--config 可覆盖）",
+          "shape": "宿主档列表"
+        },
+        {
+          "name": "技能目录",
+          "from": "宿主档声明的 project_roots/user_roots 下",
+          "shape": "技能包目录树"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "挂载前置检查报告",
+          "path": "stdout 或 --out 落盘",
+          "schema": "逐宿主档逐技能：目录落位/解析/同名冲突/注入测试四项",
+          "consumers": [
+            "人（上宿主放行判断）"
+          ]
+        }
+      ],
+      "consumers": [
+        "人（上宿主决策）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 120,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "工具没有宿主 API、没有宿主运行时——「注册表与真实触发是否匹配」必须到目标宿主里人工确认（见《操作手册.md》）",
+          "ref": "验证流程指南 §4.3"
+        },
+        {
+          "text": "默认只查当前生效的宿主档；新接宿主或改过配置后用 --all-hosts 逐档验收",
+          "ref": "验证流程指南 §三"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读：frontmatter 注入测试在临时副本上做，绝不改原目录",
+        "ref": "验证流程指南 §4.3"
+      },
+      "ref": "验证流程指南 §4.3/§三；skillverify mount --help"
+    },
+    "review.collect": {
+      "id": "review.collect",
+      "domain": "review",
+      "title": "review collect",
+      "summary": "三档共用验收层：校验回写（REV-001..013 逐条机械执行）、写中央记录、盖内容指纹。多份回写（双评场景）一起收，冲突由 REV-010 记 WARN 转人工裁决。结论三态：pass / warn（有非阻断问题或未覆盖）/ fail（有阻断项 FAIL）；存在 FAIL → 非零退出码。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "review",
+          "collect"
+        ],
+        "positional": [
+          "files"
+        ]
+      },
+      "params": [
+        {
+          "id": "files",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "回写 JSON 文件（可多个；双评场景多份一起交）",
+          "pitfall": null,
+          "help": "回写 JSON 文件（可多个）",
+          "nargs": "*"
+        },
+        {
+          "id": "dir",
+          "flag": "--dir",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "汇总该目录下的全部 *.json（与 files 二选一或并用）",
+          "pitfall": null,
+          "help": "汇总该目录下的全部 *.json",
+          "nargs": null
+        },
+        {
+          "id": "skill_dir",
+          "flag": "--skill-dir",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path",
+            "must_exist": true,
+            "must_be_dir": true
+          },
+          "default": null,
+          "composes": [],
+          "effects": "被评审的技能目录：算当前内容指纹写进记录，并对账 manifest 的 prompt_ids",
+          "pitfall": "漏掉它 → 记录里没有当前指纹，REV-000 的新鲜度检查失效（技能改过也不会 WARN）——务必带（常见坑第 2 条）",
+          "help": "被评审的技能目录（用于记录内容指纹与覆盖范围）",
+          "nargs": null
+        },
+        {
+          "id": "no_store",
+          "flag": "--no-store",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "只校验，不写中央记录（试验回写时用）",
+          "pitfall": null,
+          "help": "只校验，不写中央记录",
+          "nargs": 0
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "输出机读 JSON",
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "报告落盘路径",
+          "pitfall": null,
+          "help": "报告落盘路径",
+          "nargs": null
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "不打印报告正文",
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        },
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "hosts.toml 里的宿主档（默认 default = 官方跨宿主约定）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（项目级技能根相对它解析；默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）；便于隔离测试",
+          "nargs": null
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "直接指定技能根（可重复；给出后忽略配置里的根列表）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "回写 JSON（可多份）",
+          "from": "位置参数 files，或 --dir 目录下的全部 *.json",
+          "shape": "skillverify.review/1（三档执行器同 schema：档 1 run 自动组装 / 档 2 会话填 template / 档 3 手写）"
+        },
+        {
+          "name": "被评审技能目录",
+          "from": "--skill-dir",
+          "shape": "含 SKILL.md 的目录（给了它 collect 才算当前内容指纹并写进记录）"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "REV 校验报告",
+          "path": "stdout 或 --out 落盘",
+          "schema": "Markdown 或 --json 机读",
+          "consumers": [
+            "使用者",
+            "CI"
+          ]
+        },
+        {
+          "name": "中央记录",
+          "path": ".agents/skillverify/review/<技能名>.json（latest）+ history.jsonl 追加一行（--no-store 除外）",
+          "schema": "latest + history.jsonl 追加",
+          "consumers": [
+            "check / deliver 的 REV-000",
+            "review status"
+          ]
+        }
+      ],
+      "consumers": [
+        "deliver REV-000（门禁）",
+        "review status（状态表）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "requires",
+          "require": "skill_dir",
+          "message": "review collect 必带 --skill-dir：否则中央记录没有当前内容指纹，REV-000 的新鲜度检查失效",
+          "ref": "设计文档 §6 requires 实例；语义评审流程指南 §六.2"
+        }
+      ],
+      "execution": {
+        "timeout_s": 600,
+        "class": "mutating",
+        "history": "central"
+      },
+      "pitfalls": [
+        {
+          "text": "必带 --skill-dir：漏了 → 记录无当前指纹，REV-000 新鲜度检查失效（技能改过也不会 WARN）",
+          "ref": "语义评审流程指南 §六.2"
+        },
+        {
+          "text": "证据写「符合要求」→ REV-006 FAIL（不可定位）；写 SKILL.md:42、引用原文、给具体计数；把判据换个说法当证据 → REV-006 WARN「疑似复述判据」（旧体系 29 条回写的通病）",
+          "ref": "语义评审流程指南 §六.3/§六.4/§1.3"
+        },
+        {
+          "text": "FAIL 必须写清问题（finding ≥8 字，REV-007）；NA 必须写理由（REV-008）；覆盖不完整显式留痕（REV-009 WARN）——未覆盖不等于通过",
+          "ref": "语义评审流程指南 §1.3/§4.6"
+        },
+        {
+          "text": "双评结论冲突 → REV-010 WARN：写 <留痕目录>/adjudications.json 由人裁决，裁决绑定证据指纹（换证据须重新裁决）",
+          "ref": "语义评审流程指南 §4.6/§三.步骤5"
+        },
+        {
+          "text": "校准样本判错 → REV-012 FAIL（本轮全部结论不可用）；没判全 WARN；完全没做 INFO（校准是增强项不是仪式）",
+          "ref": "语义评审流程指南 §三.步骤0/§4.6"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "汇总评审结果并写入语义评审中央记录（REV-000 交付门禁的唯一数据源）——技能改过没重评会在这里被指纹比对发现",
+        "ref": "语义评审流程指南 §2.5"
+      },
+      "ref": "语义评审流程指南 §1.3/§2.5/§三.步骤4/§4.6"
+    },
+    "review.material": {
+      "id": "review.material",
+      "domain": "review",
+      "title": "review material",
+      "summary": "生成语义评审所需材料（条件节点）：有 6 条提示词（E-02/E-03/E-06/E-07/E-08/W-11）评的不是技能文件本身，而是流程产物或技能集合。本命令把五类材料（MAT-001..005）摘成材料文件，生成不了记 SKIP 并说明缺什么——让「材料没准备」与「准备好了」在报告里能区分开。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "review",
+          "material"
+        ],
+        "positional": [
+          "path"
+        ]
+      },
+      "params": [
+        {
+          "id": "path",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": true,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path",
+            "must_exist": true,
+            "must_be_dir": true
+          },
+          "default": null,
+          "composes": [],
+          "effects": "被评审的技能目录",
+          "pitfall": null,
+          "help": "被评审的技能目录",
+          "nargs": null
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "材料输出目录（默认 <技能名>-review-material/）",
+          "pitfall": null,
+          "help": "材料输出目录（默认 <技能名>-review-material/）",
+          "nargs": null
+        },
+        {
+          "id": "workspace",
+          "flag": "--workspace",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "显式指定评测工作区（默认找并列的 <技能名>-workspace/）——它是 workspace-digest（MAT-004）与 revision-signals（MAT-002）的数据源",
+          "pitfall": "评测工作区是评测流程步骤 3–4 的产物：评测没跑就没数字可摘（本命令会 SKIP）；交汇方向单向（评测 → 评审），评审不向评测回流",
+          "help": "评测工作区（默认找并列的 <技能名>-workspace/）",
+          "nargs": null
+        },
+        {
+          "id": "diff_base",
+          "flag": "--diff-base",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "E-02 描述 diff 的 git 基线（分支/tag/commit，默认 HEAD）",
+          "pitfall": null,
+          "help": "description diff 的基线引用（默认 HEAD）",
+          "nargs": null
+        },
+        {
+          "id": "blind",
+          "flag": "--blind",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "E-06 盲评：给两版产物（目录或文件），随机落到 blind-A/blind-B，映射封存 blind/mapping.json",
+          "pitfall": "评审者不看映射文件，盲评才成立；A/B 顺序被随机化，不代表新旧",
+          "help": "盲评用的两版产物（目录或文件），随机落到 blind-A/blind-B",
+          "nargs": 2
+        },
+        {
+          "id": "blind_seed",
+          "flag": "--blind-seed",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "int"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "盲评 A/B 分配种子（给了就可复现，默认随机）",
+          "pitfall": null,
+          "help": "盲评 A/B 的分配种子（默认随机；给了就可复现）",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "被评审的技能目录",
+          "from": "位置参数 path",
+          "shape": "含 SKILL.md 的目录"
+        },
+        {
+          "name": "评测工作区（E-07/E-08 数据源）",
+          "from": "并列的 <技能名>-workspace/iteration-N/（benchmark/grading/timing/feedback）",
+          "shape": "评测流程步骤 3–4 产物；方向单向：评测 → 评审，评审不回流"
+        },
+        {
+          "name": "git 基线（E-02）",
+          "from": "--diff-base 指定的引用（默认 HEAD）",
+          "shape": "git 仓库（非 git 仓库 → SKIP）"
+        },
+        {
+          "name": "盲评两版产物（E-06）",
+          "from": "--blind A B 显式给定（可取自评测产物如旧版/新版 outputs/，但不会自动取）",
+          "shape": "目录或文件 × 2"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "五类材料文件",
+          "path": "<技能名>-review-material/（默认；description-diff.md / revision-signals.md / blind/ / workspace-digest.md / adjacency.md）",
+          "schema": "MAT-001..005（逐条注明服务的提示词与来源）",
+          "consumers": [
+            "评审者（评 E-02/E-03/E-06/E-07/E-08/W-11 时的输入材料）"
+          ]
+        }
+      ],
+      "consumers": [
+        "评审者（材料类提示词的输入）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "confirm",
+          "param": "blind",
+          "message": "开启盲评（E-06）：两版产物将被随机分配 A/B 并封存映射——请确认两版路径给对（顺序随机化，不代表新旧），且评审者不会接触 blind/mapping.json",
+          "ref": "设计文档 §6 confirm 原语实例；语义评审流程指南 §2.3 MAT-003"
+        }
+      ],
+      "execution": {
+        "timeout_s": 600,
+        "class": "mutating",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "没跑 material 就评 E 族 → E-02/E-03/E-06/E-07/E-08 永远 NA，而 NA 与「材料没准备」在报告里长得一样；先跑 material，仍不适用再如实 NA",
+          "ref": "语义评审流程指南 §六.1"
+        },
+        {
+          "text": "评审排在评测之前 → E-07/E-08 没有工作区数字可摘（material 会 SKIP）；标准顺序是评测跑完出工作区 → material → 评审",
+          "ref": "语义评审流程指南 §六.9/§7.3"
+        },
+        {
+          "text": "相邻技能边界清单（MAT-005，W-11）只在同级目录里找邻居——分类嵌套布局会漏；同级没有别的技能 → INFO（真的不适用）",
+          "ref": "语义评审流程指南 §2.3 MAT-005"
+        },
+        {
+          "text": "workspace-digest（MAT-004）的数据源是评测工作区：逐轮 benchmark（pass_rate/time_seconds/tokens 的 mean±sd 与 delta）+ grading + timing；评审者不直接翻工作区，评的是摘好的一屏数字",
+          "ref": "语义评审流程指南 §7.1"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "生成评审材料包（提示词摘录 / W-11 相邻边界清单）供人工评审取用；不写中央记录",
+        "ref": "语义评审流程指南 §2.3"
+      },
+      "ref": "语义评审流程指南 §2.3/§六.1/§七",
+      "condition": "本轮含 E-02/E-03/E-06/E-07/E-08 或需 W-11 相邻边界清单时必跑；纯机械层评审或不含上述条目时可跳过"
+    },
+    "review.pack": {
+      "id": "review.pack",
+      "domain": "review",
+      "title": "review pack",
+      "summary": "生成语义评审任务包（档 2 第一步）：三件套落在默认 <技能名>-review/ 兄弟目录——pack.md（人读的提示词+判据，头部含第 0 步校准样本与回写格式契约）、template.json（待填模板，预置 calibration 数组与 ⚑ 项 by/at 栏）、manifest.json（技能内容指纹 + prompt_ids，供 collect 对账）。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "review",
+          "pack"
+        ],
+        "positional": [
+          "path"
+        ]
+      },
+      "params": [
+        {
+          "id": "path",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": true,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path",
+            "must_exist": true,
+            "must_be_dir": true
+          },
+          "default": null,
+          "composes": [],
+          "effects": "被评审的技能目录",
+          "pitfall": null,
+          "help": "被评审的技能目录",
+          "nargs": null
+        },
+        {
+          "id": "prompts",
+          "flag": "--prompts",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只评指定 id（默认全部 32 条）；评子集时覆盖不完整会显式留痕（REV-009 WARN）",
+          "pitfall": null,
+          "help": "只评指定 id（默认全部条目）",
+          "nargs": null
+        },
+        {
+          "id": "family",
+          "flag": "--family",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只评某家族（D|W|E|R，可重复）",
+          "pitfall": null,
+          "help": "只评某家族（可重复）",
+          "nargs": null
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "自定义任务包输出目录（默认 <技能名>-review/，技能目录的兄弟目录）",
+          "pitfall": null,
+          "help": "任务包输出目录（默认 <技能>-review/）",
+          "nargs": null
+        },
+        {
+          "id": "split",
+          "flag": "--split",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "每条提示词单独一个 .md 文件，适合一条一个 LLM 会话并行评审",
+          "pitfall": null,
+          "help": "每条提示词一个 Markdown 文件（便于一条一个 LLM 调用）",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "被评审的技能目录",
+          "from": "位置参数 path",
+          "shape": "含 SKILL.md 的目录"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "任务包 pack.md",
+          "path": "<技能名>-review/<技能名>-review-pack.md",
+          "schema": "Markdown（提示词+判据+第 0 步校准+回写契约）",
+          "consumers": [
+            "评审者（LLM 会话/人）"
+          ]
+        },
+        {
+          "name": "待填模板 template.json",
+          "path": "<技能名>-review/<技能名>-review-template.json",
+          "schema": "skillverify.review/1 预置结构（calibration 数组在顶层）",
+          "consumers": [
+            "评审者填写 → review collect"
+          ]
+        },
+        {
+          "name": "清单 manifest.json",
+          "path": "<技能名>-review/<技能名>-review-manifest.json",
+          "schema": "技能内容指纹 + prompt_ids",
+          "consumers": [
+            "review collect 对账"
+          ]
+        }
+      ],
+      "consumers": [
+        "评审者（档 2 会话评/档 3 人工评）",
+        "review collect（manifest 对账）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 300,
+        "class": "mutating",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "本轮含 E-02/E-03/E-06/E-07/E-08 时，须先跑 review material 再开评（任务包头会自动提醒）——否则这几条永远 NA",
+          "ref": "语义评审流程指南 §2.2 注/§三.步骤2/§六.1"
+        },
+        {
+          "text": "⚑ 双评项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）：每条需 ≥2 份署名互不相同的结论（REV-013）；template.json 的 ⚑ 项带 by/at 栏",
+          "ref": "语义评审流程指南 §1.1/§2.2/§4.3"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "产出评审包 manifest（prompts_manifest.json）——它是 review collect 比对技能改动的指纹基准；不改技能文件本身",
+        "ref": "语义评审流程指南 §2.2"
+      },
+      "ref": "语义评审流程指南 §2.2/§三.步骤1"
+    },
+    "review.prompts": {
+      "id": "review.prompts",
+      "domain": "review",
+      "title": "review prompts",
+      "summary": "查看/渲染语义评审提示词目录：32 条（旧体系 29 + 新增 W-17/R-03/E-11），每条带适用条件、PASS/FAIL 判据、证据要求、是否阻断、旧体系出处。纯查看命令，无业务留痕；供评委会前统一判据理解（校准前必读）。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "review",
+          "prompts"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "family",
+          "flag": "--family",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "按家族过滤：D（设计期）/ W（编写期）/ E（测试期）/ R（运行期），可重复给多个",
+          "pitfall": null,
+          "help": "只显示某家族（可重复）",
+          "nargs": null
+        },
+        {
+          "id": "prompts",
+          "flag": "--prompts",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只显示指定 id（逗号分隔，如 W-01,W-08）",
+          "pitfall": null,
+          "help": "只显示指定 id",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "输出机读 JSON（供程序消费）",
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "把渲染结果落盘到指定文件",
+          "pitfall": null,
+          "help": "落盘路径",
+          "nargs": null
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "不打印正文（配 --out 使用：只落盘不刷屏）",
+          "pitfall": null,
+          "help": "不打印正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "无外部输入",
+          "from": "内置提示词目录（安装包内 review-prompts.json：D 设计期 1 · W 编写期 17 · E 测试期 11 · R 运行期 3）",
+          "shape": "内置数据"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "提示词目录渲染",
+          "path": "stdout 或 --out 落盘（--json 为机读版）",
+          "schema": "Markdown 渲染或机读 JSON",
+          "consumers": [
+            "评委（校准/判据理解）",
+            "操作台使用者"
+          ]
+        }
+      ],
+      "consumers": [
+        "评委（第 0 步校准前统一判据理解）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 120,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "阻断项共 4 条（W-02/W-08/W-15/W-17 = FAIL 即技能不得交付）；⚑ 双评项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）——查阅时先认清这两类",
+          "ref": "语义评审流程指南 §1.1"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读浏览：不写任何文件、不产生记录",
+        "ref": "skillverify review prompts --help"
+      },
+      "ref": "语义评审流程指南 §1.1/§2.1"
+    },
+    "review.run": {
+      "id": "review.run",
+      "domain": "review",
+      "title": "review run",
+      "summary": "档 1 CLI 自动单轮：逐条把提示词渲染成完整指令（提示词正文 + PASS/FAIL 判据 + 回写格式契约 + 技能目录绝对路径）送上 runner 的 stdin，从 stdout 收回 JSON 结论，自动组装成与档 2/档 3 完全相同的回写，再走同一条 collect 校验——档 1 不走捷径。默认自动遍历全部 32 条，每条一次子进程、一问一答。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "review",
+          "run"
+        ],
+        "positional": [
+          "path"
+        ]
+      },
+      "params": [
+        {
+          "id": "path",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": true,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path",
+            "must_exist": true,
+            "must_be_dir": true
+          },
+          "default": null,
+          "composes": [],
+          "effects": "被评审的技能目录，也是 runner 的工作目录",
+          "pitfall": null,
+          "help": "被评审的技能目录",
+          "nargs": null
+        },
+        {
+          "id": "runner",
+          "flag": "--runner",
+          "form": {
+            "widget": "runner",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "评审命令：读 stdin、把 JSON 打到 stdout；以你的权限执行。runner 自己不需要懂评审——评审的「专业性」全部来自 skillverify 渲染进指令的判据与回写契约",
+          "pitfall": "runner 必须真的读 stdin（只接受命令行参数的命令收不到提示词，stdin 空转）；stdout 必须含一个 JSON 对象（前后的说明文字没关系），只有自然语言 → 全部条目解析失败",
+          "help": "评审命令（读 stdin、把 JSON 打到 stdout）；以你的权限执行",
+          "nargs": null
+        },
+        {
+          "id": "prompts",
+          "flag": "--prompts",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "只跑指定提示词（默认全部 32 条，逗号分隔 id）",
+          "pitfall": null,
+          "help": "只跑指定提示词（默认全部条目）",
+          "nargs": null
+        },
+        {
+          "id": "timeout",
+          "flag": "--timeout",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float",
+            "min": 1,
+            "max": 86400
+          },
+          "default": 180.0,
+          "composes": [],
+          "effects": "单条提示词的超时上限（秒）；与 evals --run-timeout 的 1800 秒总限时不同——这是每条限时",
+          "pitfall": "32 条全跑最坏情况 = 32 × timeout，按模型速度预留（默认 180 秒/条）",
+          "help": "单条提示词超时（默认 180 秒）",
+          "nargs": null
+        },
+        {
+          "id": "allow_partial",
+          "flag": "--allow-partial",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "部分条目失败时只记 WARN（默认记 FAIL 并返回非零）",
+          "pitfall": "runner 失败（非零退出/超时/输出不可解析/verdict 非法）绝不会被写成 NA——那会把工具故障伪装成「本项不适用」；失败条目直接不产出",
+          "help": "部分条目失败时只记 WARN（默认记 FAIL 并返回非零）",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "把组装好的回写落到该目录（<技能名>-review-cli.json，便于复核 runner 产出）",
+          "pitfall": null,
+          "help": "把回写落到该目录（便于复核 runner 产出）",
+          "nargs": null
+        },
+        {
+          "id": "collect",
+          "flag": "--collect",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "顺带跑 collect，把结论写进中央记录（需要留痕目录，经 --host/--project 等发现参数定位）",
+          "pitfall": null,
+          "help": "顺带跑 collect，把结论写进中央记录",
+          "nargs": 0
+        },
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "hosts.toml 里的宿主档（默认 default = 官方跨宿主约定）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（项目级技能根相对它解析；默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）；便于隔离测试",
+          "nargs": null
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "直接指定技能根（可重复；给出后忽略配置里的根列表）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "输出机读 JSON",
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "不打印报告正文",
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "被评审的技能目录",
+          "from": "位置参数 path（同时也是 runner 的工作目录 cwd）",
+          "shape": "含 SKILL.md 的目录"
+        },
+        {
+          "name": "runner 评审命令",
+          "from": "--runner",
+          "shape": "命令行模板：stdin 进指令 / stdout 出 JSON / 退出码可靠"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "回写 JSON",
+          "path": "--out 时落 <技能名>-review-cli.json；--collect 时直写中央记录（不带 --out 用临时文件作载体，用完即删）；两个开关都不带 → 不落任何文件",
+          "schema": "skillverify.review/1（reviewer 自动签署为「档 1 CLI：<runner 命令>」）",
+          "consumers": [
+            "review collect（同一条 validate_writeback）",
+            "人工复核 runner 产出"
+          ]
+        }
+      ],
+      "consumers": [
+        "review collect（三档同一验收层）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "suggest",
+          "param": "prompts",
+          "values": [
+            "W-02",
+            "W-04",
+            "W-05",
+            "W-08",
+            "W-15",
+            "E-04",
+            "E-06",
+            "R-02"
+          ],
+          "message": "prompts 含 ⚑ 双评项（选中值命中 W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02 时提示）：需再跑一次 review run 用不同的 runner 命令（署名不同），两份回写一起 collect",
+          "ref": "语义评审流程指南 §1.1/§4.3/§六.5"
+        }
+      ],
+      "execution": {
+        "timeout_s": 7200,
+        "class": "mutating",
+        "history": "central"
+      },
+      "pitfalls": [
+        {
+          "text": "自动签署：回写 reviewer 自动填「档 1 CLI：<runner 命令>」——双评时换一个 runner 命令署名自然不同；同一个命令跑两遍署名相同，REV-013 不认（误差相关，假独立）",
+          "ref": "语义评审流程指南 §4.2.5/§六.5"
+        },
+        {
+          "text": "空 verdict 不会被替它编成 NA（凭空造判定是本项目红线）；失败条目不产出并以非零退出码报出",
+          "ref": "语义评审流程指南 §4.2.4"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "逐条执行评审，把评审会话记录写入 <技能名>-reviews/（review collect 的唯一输入）",
+        "ref": "语义评审流程指南 §2.4"
+      },
+      "ref": "语义评审流程指南 §2.4/§4.2/§4.3"
+    },
+    "review.skill": {
+      "id": "review.skill",
+      "domain": "review",
+      "title": "review skill",
+      "summary": "把语义评审独立成一个技能包：输出一个可在其它宿主/会话里使用的评审技能（默认名 skillverify-review），让语义评审流程跟着技能包走而不是只在装了 skillverify 的机器上可用。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "review",
+          "skill"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "输出目录（默认为当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "name",
+          "flag": "--name",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": "skillverify-review",
+          "composes": [],
+          "effects": "技能名（默认 skillverify-review）",
+          "pitfall": null,
+          "help": "技能名（默认 skillverify-review）",
+          "nargs": null
+        }
+      ],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "语义评审技能包",
+          "path": "--out 目录（默认当前目录）",
+          "schema": "标准技能包（SKILL.md + 评审判据/模板）",
+          "consumers": [
+            "其它宿主/会话中的评审者"
+          ]
+        }
+      ],
+      "consumers": [
+        "想在别处复用语义评审流程的人"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 60,
+        "class": "mutating",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "生成的技能包是评审流程的载体，不替代 collect 的 schema 校验——回写仍按 skillverify.review/1 交 collect",
+          "ref": "语义评审流程指南 §五"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "在 --out 目录生成新技能包文件；不写中央记录",
+        "ref": "语义评审流程指南 §五"
+      },
+      "ref": "语义评审流程指南 §五.让语义评审独立成一个技能包（可选）"
+    },
+    "review.status": {
+      "id": "review.status",
+      "domain": "review",
+      "title": "review status",
+      "summary": "读语义评审中央记录，把库内每个技能的评审状态表打出来（PASS/FAIL/WARN/已改/SKIP）——交付前预检用，提前看到「技能改过没重评」而不是等 deliver 拦。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "review",
+          "status"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "落盘路径",
+          "nargs": null
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "不打印正文",
+          "nargs": 0
+        },
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "hosts.toml 里的宿主档（默认 default = 官方跨宿主约定）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（项目级技能根相对它解析；默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）；便于隔离测试",
+          "nargs": null
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "直接指定技能根（可重复；给出后忽略配置里的根列表）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "语义评审中央记录",
+          "from": "<trace_dir>/review/<技能名>.json（经 hosts.toml 定位）",
+          "shape": "skillverify.review/1 记录"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "评审状态表",
+          "path": "stdout 或 --out 落盘",
+          "schema": "逐技能：最新状态 + 指纹是否与当前内容一致",
+          "consumers": [
+            "人（交付前预检）",
+            "deliver REV-000（同一数据源的正式判定）"
+          ]
+        }
+      ],
+      "consumers": [
+        "人（预检）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 60,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "状态表显示「已改」= 技能内容指纹与评审时不一致——重跑评审线（pack → run/session → collect）再交付",
+          "ref": "语义评审流程指南 §六.7"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读：只读中央记录，不写任何文件",
+        "ref": "语义评审流程指南 §六.7"
+      },
+      "ref": "语义评审流程指南 §六.7"
+    },
+    "spec": {
+      "id": "spec",
+      "domain": "ops",
+      "title": "spec",
+      "summary": "按官方 Agent Skills 规范校验单个技能。离线实现，行为对齐 skills-ref 0.1.1；--official 额外调用官方 agentskills validate 对账。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "spec"
+        ],
+        "positional": [
+          "path"
+        ]
+      },
+      "params": [
+        {
+          "id": "path",
+          "flag": null,
+          "form": {
+            "widget": "path",
+            "required": true,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "技能目录（含 SKILL.md）",
+          "nargs": null
+        },
+        {
+          "id": "official",
+          "flag": "--official",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "额外调用官方 agentskills validate 对账（需环境里有官方 CLI）",
+          "pitfall": null,
+          "help": "额外调用官方 agentskills validate 对账",
+          "nargs": 0
+        },
+        {
+          "id": "out",
+          "flag": "--out",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "报告落盘路径（.md，或按 --json 输出 .json）",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "输出机读 JSON",
+          "nargs": 0
+        },
+        {
+          "id": "quiet",
+          "flag": "--quiet",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "不打印报告正文",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "被检技能目录",
+          "from": "位置参数 path（含 SKILL.md）",
+          "shape": "技能包目录树"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "spec 报告",
+          "path": "stdout 或 --out 落盘（.md / 按 --json 出 .json）",
+          "schema": "官方规范逐条判定",
+          "consumers": [
+            "人",
+            "check --stages 的 spec 阶段",
+            "deliver --stages both/all"
+          ]
+        }
+      ],
+      "consumers": [
+        "check（spec 阶段）",
+        "deliver（spec 阶段）",
+        "watch（--stages spec/both 每轮）"
+      ],
+      "compose_rules": [],
+      "execution": {
+        "timeout_s": 60,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "spec 只查官方规范面；引用完整性/预算/安全等机械补检在 lint——两者由 check --stages both 一起跑",
+          "ref": "验证流程指南 §4.1/§二"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读校验（--official 时会调用官方 CLI，仍只读）",
+        "ref": "skillverify spec --help"
+      },
+      "ref": "验证流程指南 §4.1；skillverify spec --help"
+    },
+    "watch": {
+      "id": "watch",
+      "domain": "ops",
+      "title": "watch",
+      "summary": "开发期即时反馈：盯住技能根，文件一变就自动重跑 spec+lint（--stages both 默认）并打印每轮汇总——改代码时挂着它就不用反复手动跑。默认无限轮询，操作台执行务必带 --once 或 --cycles。",
+      "node_type": "cli",
+      "cli": {
+        "argv": [
+          "skillverify",
+          "watch"
+        ],
+        "positional": []
+      },
+      "params": [
+        {
+          "id": "host",
+          "flag": "--host",
+          "form": {
+            "widget": "text",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "hosts.toml 里的宿主档（默认 default = 官方跨宿主约定）",
+          "nargs": null
+        },
+        {
+          "id": "project",
+          "flag": "--project",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": ".",
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "项目根（项目级技能根相对它解析；默认当前目录）",
+          "nargs": null
+        },
+        {
+          "id": "user_home",
+          "flag": "--user-home",
+          "form": {
+            "widget": "path",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "path"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "解析 ~ 的基准目录（默认当前用户主目录）；便于隔离测试",
+          "nargs": null
+        },
+        {
+          "id": "root",
+          "flag": "--root",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "直接指定技能根（可重复；给出后忽略配置里的根列表）",
+          "nargs": null
+        },
+        {
+          "id": "config",
+          "flag": "--config",
+          "form": {
+            "widget": "multi-choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "string"
+          },
+          "default": null,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "额外的 hosts.toml（可重复，按给定顺序覆盖）",
+          "nargs": null
+        },
+        {
+          "id": "no_config",
+          "flag": "--no-config",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "忽略用户级/项目级配置，只用内置配置",
+          "nargs": 0
+        },
+        {
+          "id": "stages",
+          "flag": "--stages",
+          "form": {
+            "widget": "choice",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "choice",
+            "choices": [
+              "both",
+              "spec",
+              "lint"
+            ]
+          },
+          "default": "both",
+          "composes": [],
+          "effects": "跑哪些阶段（both/spec/lint；默认 both）——评测资产不随敲代码变化，要看评测请用 check --stages evals",
+          "pitfall": null,
+          "help": "跑哪些阶段（默认 spec+lint；评测资产不随敲代码变化，要看评测资产请用 `check --stages evals`）",
+          "nargs": null
+        },
+        {
+          "id": "interval",
+          "flag": "--interval",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float"
+          },
+          "default": 1.0,
+          "composes": [],
+          "effects": "轮询间隔（默认 1 秒，最小 0.01）",
+          "pitfall": null,
+          "help": "轮询间隔（默认 1 秒，最小 0.01）",
+          "nargs": null
+        },
+        {
+          "id": "cycles",
+          "flag": "--cycles",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "int"
+          },
+          "default": null,
+          "composes": [],
+          "effects": "跑 N 轮后退出（默认不限轮数）",
+          "pitfall": null,
+          "help": "跑 N 轮后退出（默认不限轮数）",
+          "nargs": null
+        },
+        {
+          "id": "once",
+          "flag": "--once",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": "等价于 --cycles 1——跑一轮就退出",
+          "pitfall": null,
+          "help": "等价于 --cycles 1",
+          "nargs": 0
+        },
+        {
+          "id": "script_timeout",
+          "flag": "--script-timeout",
+          "form": {
+            "widget": "number",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "float"
+          },
+          "default": 10.0,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "单个脚本的超时上限（默认 10 秒）",
+          "nargs": null
+        },
+        {
+          "id": "json",
+          "flag": "--json",
+          "form": {
+            "widget": "flag",
+            "required": false,
+            "placeholder": ""
+          },
+          "type": {
+            "kind": "flag"
+          },
+          "default": false,
+          "composes": [],
+          "effects": null,
+          "pitfall": null,
+          "help": "每轮输出一行 JSON（便于管道消费）",
+          "nargs": 0
+        }
+      ],
+      "inputs": [
+        {
+          "name": "监视的技能根",
+          "from": "--root（可重复）或 hosts.toml 配置根列表",
+          "shape": "技能包目录树"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "每轮检查汇总",
+          "path": "stdout（--json 时每轮一行 JSON）",
+          "schema": "逐轮 spec+lint 结论摘要",
+          "consumers": [
+            "开发者",
+            "管道消费（--json）"
+          ]
+        }
+      ],
+      "consumers": [
+        "开发者（开发期循环）"
+      ],
+      "compose_rules": [
+        {
+          "rule": "suggest",
+          "param": "once",
+          "message": "操作台执行建议带 --once（或 --cycles N）——watch 是长驻循环，不带会挂到超时",
+          "ref": "skillverify watch --help"
+        }
+      ],
+      "execution": {
+        "timeout_s": 60,
+        "class": "read-only",
+        "history": "audit"
+      },
+      "pitfalls": [
+        {
+          "text": "默认无限轮询——操作台/桥上执行必须带 --once 或 --cycles N，否则会被超时强杀（timeout 记 timed_out）",
+          "ref": "skillverify watch --help"
+        },
+        {
+          "text": "--stages 默认 both（spec+lint）：评测资产不会因为改代码而变化，别指望 watch 帮你盯评测",
+          "ref": "skillverify watch --help"
+        }
+      ],
+      "source": {
+        "params": "argparse",
+        "semantics": "manual"
+      },
+      "effects": {
+        "text": "纯只读监视：不写任何记录/文件",
+        "ref": "验证流程指南 §4.6"
+      },
+      "ref": "验证流程指南 §4.6；skillverify watch --help"
+    },
+    "review.session": {
+      "id": "review.session",
+      "domain": "review",
+      "title": "会话评（档 2 · 最常用）",
+      "summary": "开一个 LLM 会话（或人工）把任务包丢给它评：会话内自主多轮，模型可自己读技能文件、翻 material 材料、反复核对后再填模板。与档 1 产出同 schema 回写、走同一条 collect 校验。",
+      "node_type": "manual",
+      "params": [],
+      "inputs": [],
+      "outputs": [],
+      "consumers": [],
+      "compose_rules": [],
+      "pitfalls": [],
+      "execution": {
+        "class": "manual",
+        "history": "central"
+      },
+      "source": {
+        "params": "none",
+        "semantics": "manual"
+      },
+      "ref": "语义评审流程指南 §四.3",
+      "effects": {
+        "text": "评审动作本身不产生文件；逐条结论最终经 review.collect 汇总写入语义评审中央记录",
+        "ref": "语义评审流程指南 §四.3/§2.5"
+      },
+      "actions": [
+        {
+          "step": 1,
+          "text": "跑 skillverify review pack <技能目录> 生成任务包三件套：<技能名>-review-pack.md / -template.json / -manifest.json（默认落在技能目录的兄弟目录）",
+          "node_ref": "review.pack",
+          "ref": "语义评审流程指南 §2.2"
+        },
+        {
+          "step": 2,
+          "text": "把 pack.md 全文交给 LLM 会话（或人）；若任务包头部提示本轮含 E-02/E-03/E-06/E-07/E-08，先跑 review material 并把材料一并提供",
+          "ref": "语义评审流程指南 §2.2 注/§三.步骤2"
+        },
+        {
+          "step": 3,
+          "text": "评委先做第 0 步校准：template.json 顶层 calibration 数组（与 results/reviewer 平级）已预置样本，把每条 verdict 从空串填成 PASS/FAIL；判错 → 本轮全部结论不可用（REV-012 FAIL）",
+          "ref": "语义评审流程指南 §三.步骤0"
+        },
+        {
+          "step": 4,
+          "text": "按判据逐条评，填 template.json：每条 verdict + evidence（≥12 字且可定位：文件名:行/原文片段/具体计数）+ finding；证据不得复述判据（REV-006）",
+          "ref": "语义评审流程指南 §1.3"
+        },
+        {
+          "step": 5,
+          "text": "reviewer 栏手写署名（无签署=没有评审，REV-002）；⚑ 双评项（8 条：W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）需第二个署名不同的评委再填一份",
+          "ref": "语义评审流程指南 §1.1/§4.3"
+        },
+        {
+          "step": 6,
+          "text": "把一份或多份回写一起交给 review collect（必带 --skill-dir）",
+          "node_ref": "review.collect",
+          "ref": "语义评审流程指南 §三.步骤4"
+        }
+      ]
+    },
+    "review.human": {
+      "id": "review.human",
+      "domain": "review",
+      "title": "人工兜底（档 3）",
+      "summary": "没有模型可用时：人手写与档 1/档 2 完全相同 schema 的回写 JSON，走同一条 collect 校验——档 3 不走捷径。",
+      "node_type": "manual",
+      "params": [],
+      "inputs": [],
+      "outputs": [],
+      "consumers": [],
+      "compose_rules": [],
+      "pitfalls": [],
+      "execution": {
+        "class": "manual",
+        "history": "central"
+      },
+      "source": {
+        "params": "none",
+        "semantics": "manual"
+      },
+      "ref": "语义评审流程指南 §1.2",
+      "effects": {
+        "text": "人工评审动作本身不产生文件；逐条结论最终经 review.collect 汇总写入语义评审中央记录",
+        "ref": "语义评审流程指南 §1.2/§2.5"
+      },
+      "actions": [
+        {
+          "step": 1,
+          "text": "以 <技能名>-review-template.json 为底稿（可先跑 review pack 生成），逐栏手写：skill / reviewer（签署）/ results[]（prompt_id + verdict + evidence）/ calibration",
+          "ref": "语义评审流程指南 §1.2/§三.步骤3"
+        },
+        {
+          "step": 2,
+          "text": "回写 schema 为 skillverify.review/1：PASS 也要可定位证据（REV-006）、FAIL 必须写 finding ≥8 字（REV-007）、NA 必须写理由（REV-008）、覆盖不完整显式留痕（REV-009）",
+          "ref": "语义评审流程指南 §1.3/§4.6"
+        },
+        {
+          "step": 3,
+          "text": "交给 review collect（必带 --skill-dir）；⚑ 双评项需两份署名互不相同的回写",
+          "node_ref": "review.collect",
+          "ref": "语义评审流程指南 §4.3"
+        }
+      ]
+    }
+  },
+  "hosts_panel": {
+    "captured_at": "2026-10-12T17:45:21",
+    "source": "skillverify discover --show-config（构建时原样捕获）",
+    "text": "# 有效配置来源（后者覆盖前者）: D:\\Data\\git\\specSkill\\skillverify\\data\\hosts.toml\n\n[defaults]\ndescription = \"官方跨宿主约定（.agents/skills）；不绑定任何具体宿主\"\nproject_roots = [\".agents/skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.nested-by-category]\ndescription = \"按分类分组的库：skills/<分类>/<技能>/SKILL.md\"\nproject_roots = [\"skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 2\n\n[hosts.project-local]\ndescription = \"技能直接放在项目根的 skills/ 下（小型仓库常见）\"\nproject_roots = [\"skills\", \".agents/skills\"]\nuser_roots = []\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.workbuddy]\ndescription = \"WorkBuddy 兼容布局（本项目历史环境；非必需）\"\nproject_roots = [\".workbuddy/skills\", \".agents/skills\"]\nuser_roots = [\"~/.workbuddy/skills\", \"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n"
+  }
+}
+  </script>
+<script src="app.js"></script>
+</body>
+</html>

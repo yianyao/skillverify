@@ -1,0 +1,122 @@
+{
+  "summary": "评测资产校验 + 可选委托执行：校验 evals.json / trigger-queryset.json 的形状与口径（EVAL-000..011 + TRIG-*），可选 --run-with 把执行层命令接进来代跑（在技能目录里执行、限时、失败如实记 RUN-101、成功后自动复校产物）。工具自己不出题、不监考、不打分——只做两件事：把「跑过」变成可校验的产物，把「产物」校验到能对账。",
+  "ref": "评测流程指南 §〇/§一.1/§三",
+  "effects": {
+    "text": "纯校验模式只读；--run-with 委托执行时把逐轮结果写入评测工作区 iteration-N/（check/deliver 的对账依据）",
+    "ref": "评测流程指南 §二.步骤2/步骤3、§四"
+  },
+  "inputs": [
+    {
+      "name": "评测资产（考卷）",
+      "from": "<技能>/evals/evals.json + evals/trigger-queryset.json + evals/files/ 夹具",
+      "shape": "evalx.py（EVAL-000..011）与 trigger.py（TRIG-*）逐条校验的对象；工具只验卷面，不替考"
+    },
+    {
+      "name": "评测工作区（真跑后在场）",
+      "from": "并列的 <技能名>-workspace/iteration-N/（或 --workspace 显式指定）",
+      "shape": "步骤 3–4 执行层产物：outputs/ + timing.json + run-inputs.json + grading/benchmark；在场后 WS/GRAD/BENCH/TIME 全族激活"
+    },
+    {
+      "name": "被委托命令（可选）",
+      "from": "--run-with",
+      "shape": "命令行字符串，按 shell 语义在技能目录里执行；没有占位符替换（{prompt} 那套是 examples 脚本自己做的）"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "校验报告",
+      "path": "stdout，或 --out 落盘（.md / 按 --json 出 .json）",
+      "schema": "EVAL-*/TRIG-*/RUN-101 逐条结论 + meta（委托执行时注明「已委托执行」）",
+      "consumers": [
+        "使用者（反复修改 → 重跑，直到除「尚未跑过」外无 FAIL/WARN）",
+        "CI（--json）"
+      ]
+    }
+  ],
+  "consumers": [
+    "评测流程步骤 2/4（校验与复校都是它）",
+    "CI（--json 机读）"
+  ],
+  "params": {
+    "path": {
+      "effects": "技能目录（含 SKILL.md）——委托命令的工作目录就是它",
+      "pitfall": null,
+      "type": {
+        "must_exist": true,
+        "must_be_dir": true
+      },
+      "ref": "评测流程指南 §一.1"
+    },
+    "workspace": {
+      "effects": "评测工作区（默认自动找技能目录旁边的 <技能名>-workspace/）",
+      "pitfall": "工作区是技能目录的兄弟目录，不是子目录——塞进技能目录会被 token 预算、引用检查算进去（常见坑第 3 条）",
+      "ref": "评测流程指南 §一.1/§六.3"
+    },
+    "iteration": {
+      "effects": "只校验 iteration-N（默认校验全部轮次）",
+      "pitfall": "轮次编号必须连续无缺号（WS-004）；多用例 ≠ 多轮次——加用例改 evals.json 同轮跑，换描述/模型才开新轮",
+      "ref": "评测流程指南 §一.1/§六.5"
+    },
+    "run_with": {
+      "effects": "委托执行：在技能目录里跑这条命令，跑完自动复校产物。退出码非 0（含超时 124、无法执行 127）→ 记 RUN-101 FAIL 并终止，绝不伪装成「跑过了」；退出码 0 → 立即重新执行 check_evals + check_trigger",
+      "pitfall": "退出码传播：run_evals.py 单条模型调用失败不会返回非 0（只在「没有用例」时返回 1）——自写包装脚本必须自己传播失败，否则 --run-with 会把半途而废当成功（常见坑第 4 条）",
+      "ref": "评测流程指南 §三.3.1/§六.4"
+    },
+    "run_timeout": {
+      "effects": "委托执行的超时上限（默认 1800 秒，超时喊停记失败）",
+      "pitfall": "与 review run --timeout 的每条限时不同——这是整条被委托命令的总限时",
+      "ref": "评测流程指南 §一.1/§三.3.4",
+      "type": {
+        "min": 1,
+        "max": 86400
+      },
+      "note": "操作台钳制范围 1..86400（设计文档 §4 示例；非工具语义）"
+    },
+    "out": {
+      "effects": "报告落盘路径（.md，或配合 --json 输出 .json）",
+      "pitfall": null,
+      "ref": "评测流程指南 §一.1"
+    },
+    "json": {
+      "effects": "输出机读 JSON（CI 用）",
+      "pitfall": null,
+      "ref": "评测流程指南 §一.1"
+    },
+    "quiet": {
+      "effects": "不打印报告正文",
+      "pitfall": null,
+      "ref": "评测流程指南 §一.1"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "A/B/C/D 四种用法不是流水线，是同一条命令的四种点菜方式：B（run_evals.py）与 C（官方评测器）二选一——都跑用例、深度不同；D（run_triggers.py）与 B/C 正交互补。走完完整一轮的最小组合 =（B 或 C）且 D；不经 --run-with 直接跑脚本 → 复校 A 不可省",
+      "ref": "评测流程指南 §三.3.2"
+    },
+    {
+      "text": "资产校验阶段 trigger-runs.json 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败——严格门禁下它会被 deliver 拦，但不是本轮校验的错",
+      "ref": "评测流程指南 §二.步骤2"
+    },
+    {
+      "text": "三个 examples 脚本都不评分：grading.json（passed 严格布尔、PASS 必带证据）与 benchmark.json（聚合）由 LLM/人/官方工具补齐——BENCH-004 拿聚合值与逐次产物重算对账，手改数字当场现形（常见坑第 6 条）",
+      "ref": "评测流程指南 §二.步骤3/§六.2/§六.6"
+    },
+    {
+      "text": "嵌套引号：--run-with 里的命令按 shell 语义解析，Windows 下建议在 Git Bash 里跑以统一引号行为（常见坑第 8 条）",
+      "ref": "评测流程指南 §三.3.3/§六.8"
+    }
+  ],
+  "compose_rules": [
+    {
+      "rule": "confirm",
+      "param": "run_with",
+      "message": "委托的命令将在技能目录里以你的权限执行（无沙箱、无参数解析）——只委托你信任的命令串",
+      "ref": "评测流程指南 §三.3.3 注意事项 3"
+    }
+  ],
+  "execution": {
+    "timeout_s": 7200,
+    "class": "mutating",
+    "history": "audit"
+  }
+}

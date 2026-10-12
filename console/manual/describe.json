@@ -1,0 +1,48 @@
+{
+  "summary": "命令面自描述：把全部子命令与逐参数机械属性（flag/action/type/default/choices/required/help）输出为带 schema 版本号（skillverify.describe/1）的 JSON 契约。这是本操作台内省脚本的首选数据源——外部工具以稳定契约消费命令面，不必再解析 argparse 私有结构。",
+  "ref": "仓库结构说明 §3.1（skillverify/describe.py）/ skillverify describe --help",
+  "inputs": [
+    {
+      "name": "无（自描述命令）",
+      "from": "本工具自身的解析器装配（cli.build_parser）",
+      "shape": "-"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "命令面契约",
+      "path": "stdout（--json）；默认输出人读命令树",
+      "schema": "skillverify.describe/1：{schema, tool, version, commands:{命令路径:{help, positionals, options}}}",
+      "consumers": [
+        "console/introspect.py（内省数据源，auto 模式优先）",
+        "外部工具（CI 校验 / 文档生成器等第三方消费方）"
+      ]
+    }
+  ],
+  "consumers": [
+    "console 操作台（生成器与执行桥的实况内省都经 introspect.py 间接消费）"
+  ],
+  "effects": {
+    "text": "纯只读：只打印命令面，不做任何写操作",
+    "ref": "skillverify describe --help"
+  },
+  "params": {
+    "json": {
+      "effects": "输出机读 JSON 契约（skillverify.describe/1）；默认输出人读命令树",
+      "pitfall": null,
+      "ref": "skillverify describe --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "契约是对外承诺：改子命令/旗标后 describe 输出会自动跟着变（实现从同一 parser 提取），但字段语义变更必须升 schema 版本号；test_consistency 的 describe 断言会拦命令面漂移",
+      "ref": "tests/test_consistency.py run_describe"
+    }
+  ],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 30,
+    "class": "read-only",
+    "history": "audit"
+  }
+}

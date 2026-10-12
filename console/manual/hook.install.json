@@ -1,0 +1,60 @@
+{
+  "summary": "把 skillverify 接到 git pre-commit：提交前自动跑检查拦问题。--fail-closed 让「找不到 skillverify」也阻断提交（默认故障开放，只告警不拦）。",
+  "ref": "验证流程指南 §六.接到提交上（git hook）",
+  "inputs": [
+    {
+      "name": "目标仓库",
+      "from": "--project（默认当前目录）",
+      "shape": "git 仓库（.git/hooks/）"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "pre-commit hook",
+      "path": "<repo>/.git/hooks/pre-commit",
+      "schema": "调用 skillverify deliver --staged 的 shell 脚本",
+      "consumers": [
+        "git 提交流程",
+        "hook status（状态查看）"
+      ]
+    }
+  ],
+  "consumers": [
+    "git commit（每次提交触发）"
+  ],
+  "effects": {
+    "text": "写 .git/hooks/pre-commit；--force 覆盖已存在的他人 hook 时先备份为 .bak",
+    "ref": "验证流程指南 §六"
+  },
+  "params": {
+    "force": {
+      "effects": "覆盖已存在的他人 hook（先备份为 .bak）",
+      "pitfall": null,
+      "ref": "skillverify hook install --help"
+    },
+    "fail_closed": {
+      "effects": "找不到 skillverify 时阻断提交",
+      "pitfall": "默认故障开放（只告警）——CI 有硬门禁时可以收紧，但本地环境没装工具会卡住所有提交",
+      "ref": "验证流程指南 §六"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "hook 只拦暂存内容（deliver --staged）；完整门禁仍在 CI 的 deliver",
+      "ref": "验证流程指南 §六"
+    }
+  ],
+  "compose_rules": [
+    {
+      "rule": "confirm",
+      "param": "force",
+      "message": "--force 会覆盖已存在的他人 hook（先备份 .bak）：确认那不是别人接的线",
+      "ref": "skillverify hook install --help"
+    }
+  ],
+  "execution": {
+    "timeout_s": 30,
+    "class": "mutating",
+    "history": "audit"
+  }
+}

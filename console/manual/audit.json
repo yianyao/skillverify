@@ -1,0 +1,74 @@
+{
+  "summary": "外来技能审计（从别处拿来的技能，用之前）：spec/lint 判定明细原样带入 + 内容指纹 + 库内名字近似提示 + 台账/运行日志的陈旧检查；--record 把审计单落盘供下次比对指纹。",
+  "ref": "验证流程指南 §4.5",
+  "inputs": [
+    {
+      "name": "要审计的技能",
+      "from": "位置参数 target（技能目录或 discover 能发现的技能名）",
+      "shape": "技能包目录树"
+    },
+    {
+      "name": "运行台账（若有）",
+      "from": "技能包内 run log（按模板）",
+      "shape": "逐条观察 + 处置 + 日期"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "审计单",
+      "path": "stdout 或 --out 落盘；--record 时同时写 <trace_dir>/audit/<技能名>.md 与 .json",
+      "schema": "判定明细（spec/lint FAIL/WARN 原样）+ 内容指纹 + 名字近似提示 + 异常观察清单",
+      "consumers": [
+        "引入决策者（人）",
+        "下次 audit 的指纹比对"
+      ]
+    }
+  ],
+  "consumers": [
+    "引入决策（人）",
+    "audit 自身（--record 后下次比对指纹）"
+  ],
+  "effects": {
+    "text": "--record 时把审计单写入 trace 根 audit/ 目录（供下次比对指纹）；其余只读",
+    "ref": "验证流程指南 §4.5"
+  },
+  "params": {
+    "scripts": {
+      "effects": "以 --help 调用技能自带脚本做实测（默认不执行）",
+      "pitfall": "审计外来技能尤其慎用——执行的是别人写的代码；不开启时退出码为 2（SCRIPT 族「未执行」口径，不是审计失败）",
+      "ref": "验证流程指南 §4.5"
+    },
+    "record": {
+      "effects": "审计单落盘到 <trace_dir>/audit/（md + json 双格式）",
+      "pitfall": null,
+      "ref": "skillverify audit --help"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "退出码 2 = 脚本契约四项没执行（SCRIPT 族记「未执行」）——与 lint 口径一致，不是审计失败；要连脚本实测加 --scripts",
+      "ref": "验证流程指南 §4.5"
+    },
+    {
+      "text": "审计单的措辞/口径独立于 lint（用 scripts.facts()/deps.facts() 的口径写进单子），lint 措辞改了不影响已有审计单",
+      "ref": "验证流程指南 §4.5"
+    },
+    {
+      "text": "台账陈旧检查：异常观察没写处置、几周没动、日期没按 YYYY-MM-DD 写——都会进审计单；长期没更新要写明原因或恢复观测",
+      "ref": "验证流程指南 §4.5"
+    }
+  ],
+  "compose_rules": [
+    {
+      "rule": "confirm",
+      "param": "scripts",
+      "message": "审计外来技能会执行它的自带脚本：确认来源可信，或先只做静态审计（默认）",
+      "ref": "验证流程指南 §4.5"
+    }
+  ],
+  "execution": {
+    "timeout_s": 300,
+    "class": "mutating",
+    "history": "audit"
+  }
+}

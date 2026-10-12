@@ -1,0 +1,92 @@
+{
+  "summary": "生成语义评审任务包（档 2 第一步）：三件套落在默认 <技能名>-review/ 兄弟目录——pack.md（人读的提示词+判据，头部含第 0 步校准样本与回写格式契约）、template.json（待填模板，预置 calibration 数组与 ⚑ 项 by/at 栏）、manifest.json（技能内容指纹 + prompt_ids，供 collect 对账）。",
+  "ref": "语义评审流程指南 §2.2/§三.步骤1",
+  "effects": {
+    "text": "产出评审包 manifest（prompts_manifest.json）——它是 review collect 比对技能改动的指纹基准；不改技能文件本身",
+    "ref": "语义评审流程指南 §2.2"
+  },
+  "inputs": [
+    {
+      "name": "被评审的技能目录",
+      "from": "位置参数 path",
+      "shape": "含 SKILL.md 的目录"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "任务包 pack.md",
+      "path": "<技能名>-review/<技能名>-review-pack.md",
+      "schema": "Markdown（提示词+判据+第 0 步校准+回写契约）",
+      "consumers": [
+        "评审者（LLM 会话/人）"
+      ]
+    },
+    {
+      "name": "待填模板 template.json",
+      "path": "<技能名>-review/<技能名>-review-template.json",
+      "schema": "skillverify.review/1 预置结构（calibration 数组在顶层）",
+      "consumers": [
+        "评审者填写 → review collect"
+      ]
+    },
+    {
+      "name": "清单 manifest.json",
+      "path": "<技能名>-review/<技能名>-review-manifest.json",
+      "schema": "技能内容指纹 + prompt_ids",
+      "consumers": [
+        "review collect 对账"
+      ]
+    }
+  ],
+  "consumers": [
+    "评审者（档 2 会话评/档 3 人工评）",
+    "review collect（manifest 对账）"
+  ],
+  "params": {
+    "path": {
+      "effects": "被评审的技能目录",
+      "pitfall": null,
+      "type": {
+        "must_exist": true,
+        "must_be_dir": true
+      },
+      "ref": "语义评审流程指南 §2.2"
+    },
+    "prompts": {
+      "effects": "只评指定 id（默认全部 32 条）；评子集时覆盖不完整会显式留痕（REV-009 WARN）",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.2/§六.8"
+    },
+    "family": {
+      "effects": "只评某家族（D|W|E|R，可重复）",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.2"
+    },
+    "out": {
+      "effects": "自定义任务包输出目录（默认 <技能名>-review/，技能目录的兄弟目录）",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.2"
+    },
+    "split": {
+      "effects": "每条提示词单独一个 .md 文件，适合一条一个 LLM 会话并行评审",
+      "pitfall": null,
+      "ref": "语义评审流程指南 §2.2"
+    }
+  },
+  "pitfalls": [
+    {
+      "text": "本轮含 E-02/E-03/E-06/E-07/E-08 时，须先跑 review material 再开评（任务包头会自动提醒）——否则这几条永远 NA",
+      "ref": "语义评审流程指南 §2.2 注/§三.步骤2/§六.1"
+    },
+    {
+      "text": "⚑ 双评项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）：每条需 ≥2 份署名互不相同的结论（REV-013）；template.json 的 ⚑ 项带 by/at 栏",
+      "ref": "语义评审流程指南 §1.1/§2.2/§4.3"
+    }
+  ],
+  "compose_rules": [],
+  "execution": {
+    "timeout_s": 300,
+    "class": "mutating",
+    "history": "audit"
+  }
+}
