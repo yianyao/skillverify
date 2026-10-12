@@ -29,6 +29,9 @@
     <div id="pipelines"><!-- 流程线块（JS 渲染，域内每条 pipeline 一块） --></div>
     <div id="canvas-note"></div>
   </aside>
+  <div id="splitter" title="拖动调整左栏宽度；双击恢复默认宽度">
+    <button id="canvas-toggle" type="button" title="收起左栏">⟨</button>
+  </div>
   <section id="inspector"><!-- 节点详情（JS 渲染） --></section>
 </main>
 
@@ -59,7 +62,7 @@
 {
   "schema": "skillverify.console-nodes/1",
   "tool_version": "skillverify 0.1.0",
-  "generated_at": "2026-10-12T17:45:21",
+  "generated_at": "2026-10-12T21:37:19",
   "domains": [
     {
       "id": "evals",
@@ -86,6 +89,11 @@
       "domain": "evals",
       "title": "评测主线（五步：准备 → 校验 → 真跑 → 复校 → 门禁）",
       "steps": [
+        {
+          "label": "准备评测资产（人工编写，无命令）",
+          "note": "步骤 1 备料：在技能包 evals/ 下手写 evals.json（输出质量用例：先 2–3 条、prompt 像真人说话、断言可判定）与 trigger-queryset.json（触发集，与 evals.json 分开两个文件）；评测工作区 <技能名>-workspace/iteration-N/ 跑评测时产生，放技能目录旁边不是里面（塞进去会被 token 预算/引用检查算进去）",
+          "ref": "技能编写指南 §五"
+        },
         {
           "node": "evals",
           "note": "步骤 2 资产校验（方式 A）：花钱跑评测前先拦形状/口径错误；此时 trigger-runs 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败",
@@ -5092,9 +5100,9 @@
     }
   },
   "hosts_panel": {
-    "captured_at": "2026-10-12T17:45:21",
+    "captured_at": "2026-10-12T21:37:19",
     "source": "skillverify discover --show-config（构建时原样捕获）",
-    "text": "# 有效配置来源（后者覆盖前者）: D:\\Data\\git\\specSkill\\skillverify\\data\\hosts.toml\n\n[defaults]\ndescription = \"官方跨宿主约定（.agents/skills）；不绑定任何具体宿主\"\nproject_roots = [\".agents/skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.nested-by-category]\ndescription = \"按分类分组的库：skills/<分类>/<技能>/SKILL.md\"\nproject_roots = [\"skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 2\n\n[hosts.project-local]\ndescription = \"技能直接放在项目根的 skills/ 下（小型仓库常见）\"\nproject_roots = [\"skills\", \".agents/skills\"]\nuser_roots = []\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.workbuddy]\ndescription = \"WorkBuddy 兼容布局（本项目历史环境；非必需）\"\nproject_roots = [\".workbuddy/skills\", \".agents/skills\"]\nuser_roots = [\"~/.workbuddy/skills\", \"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n"
+    "text": "# 有效配置来源（后者覆盖前者）: <ROOT>\\skillverify\\data\\hosts.toml\n\n[defaults]\ndescription = \"官方跨宿主约定（.agents/skills）；不绑定任何具体宿主\"\nproject_roots = [\".agents/skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.nested-by-category]\ndescription = \"按分类分组的库：skills/<分类>/<技能>/SKILL.md\"\nproject_roots = [\"skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 2\n\n[hosts.project-local]\ndescription = \"技能直接放在项目根的 skills/ 下（小型仓库常见）\"\nproject_roots = [\"skills\", \".agents/skills\"]\nuser_roots = []\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.workbuddy]\ndescription = \"WorkBuddy 兼容布局（本项目历史环境；非必需）\"\nproject_roots = [\".workbuddy/skills\", \".agents/skills\"]\nuser_roots = [\"~/.workbuddy/skills\", \"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n"
   }
 }
   </script>

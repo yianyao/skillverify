@@ -497,7 +497,10 @@ def build(repo_root: Path, python_exe: str, tool_cmd: list[str], out_path: Path,
             hosts_panel = {
                 "captured_at": datetime.datetime.now().isoformat(timespec="seconds"),
                 "source": "skillverify discover --show-config（构建时原样捕获）",
-                "text": proc.stdout,
+                # 仓库绝对路径就地归一化为 <ROOT>：nodes.json 是进 git 的产物，
+                # 必须跨机器字节一致——烘着构建机的盘符路径，任何其他机器上
+                # 重新生成都会对不上守卫（跨机器确定性缺陷，2026-10-12 实测抓出）
+                "text": proc.stdout.replace(str(repo_root), "<ROOT>"),
             }
         else:
             print(f"warning: discover --show-config 退出 {proc.returncode}，"

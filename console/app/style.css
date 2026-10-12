@@ -20,6 +20,11 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* hidden 属性必须永远生效：下面有 #history-panel/#run-row 等设置了 display:flex
+   的元素，作者规则会压过 UA 的 [hidden]{display:none}，导致 JS 切 hidden 关不掉
+   （M-缺陷：执行审计面板"关闭"按钮失效、静态模式下执行行常显） */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
@@ -85,8 +90,9 @@ body {
 #layout {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(300px, 380px) 1fr;
-  gap: 14px;
+  /* 左栏 | 分隔条 | 右栏：左栏宽度可拖（JS 写行内样式），收起时类选择器接管 */
+  grid-template-columns: minmax(240px, 380px) 6px 1fr;
+  gap: 6px;
   padding: 14px 18px;
   min-height: 0;
 }
@@ -97,7 +103,47 @@ body {
   border-radius: 10px;
   padding: 14px;
   overflow-y: auto;
+  min-width: 0;
 }
+
+/* ---- 左栏分隔条：拖宽 / 双击复位 / 收起 ---- */
+#splitter {
+  position: relative;
+  cursor: col-resize;
+  min-height: 80px;
+  border-radius: 3px;
+}
+#splitter::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--border);
+  border-radius: 1px;
+  transition: background .15s;
+}
+#splitter:hover::before { background: var(--accent-dim); }
+#canvas-toggle {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+}
+#canvas-toggle:hover { color: var(--accent); border-color: var(--accent); }
+body.canvas-collapsed #canvas { display: none; }
+body.canvas-collapsed #layout { grid-template-columns: 6px 1fr; }
 
 #pipeline-title { font-weight: 700; margin-bottom: 12px; }
 
@@ -164,6 +210,17 @@ body {
 .variant-group .node-card { margin-bottom: 6px; }
 .variant-group .node-card:last-child { margin-bottom: 0; }
 .variant-group .node-card.chosen { border-color: var(--ok); }
+
+/* 纯说明步骤（如评测主线「步骤 1 准备评测资产」：人工编写，无 CLI 可组装） */
+.prep-card {
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: help;
+}
 
 #canvas-note {
   margin-top: 12px;

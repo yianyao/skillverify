@@ -16,6 +16,11 @@
       "title": "评测主线（五步：准备 → 校验 → 真跑 → 复校 → 门禁）",
       "steps": [
         {
+          "label": "准备评测资产（人工编写，无命令）",
+          "note": "步骤 1 备料：在技能包 evals/ 下手写 evals.json（输出质量用例：先 2–3 条、prompt 像真人说话、断言可判定）与 trigger-queryset.json（触发集，与 evals.json 分开两个文件）；评测工作区 <技能名>-workspace/iteration-N/ 跑评测时产生，放技能目录旁边不是里面（塞进去会被 token 预算/引用检查算进去）",
+          "ref": "技能编写指南 §五"
+        },
+        {
           "node": "evals",
           "note": "步骤 2 资产校验（方式 A）：花钱跑评测前先拦形状/口径错误；此时 trigger-runs 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败",
           "ref": "评测流程指南 §二.步骤2"

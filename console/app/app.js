@@ -29,6 +29,7 @@ const BRIDGE_URL = "http://127.0.0.1:8742";
 const state = {
   domain: DATA.domains.length ? DATA.domains[0].id : null,
   selectedNode: null,
+  selectedStep: null, // "pipelineId#步序"：按步骤实例高亮（同节点可在多条步骤出现，如 evals 主线第 2/3 步都是 evals 命令）
   values: {},      // nodeId -> paramId -> string | boolean
   confirmed: new Set(), // "nodeId|paramId" 已显式确认的 confirm 规则
   chosenVariant: {},    // slotKey -> nodeId
@@ -59,9 +60,16 @@ function el(tag, attrs, ...children) {
 
 function paramValue(nodeId, p) {
   const vals = state.values[nodeId] || {};
-  if (p.form.widget === "flag") return vals[p.id] === true;
+  if (p.form.widget === "flag") {
+    if (p.id in vals) return vals[p.id] === true;  // 用户动过：以用户为准
+    return p.default === true;                     // 未动过：跟随 CLI 默认
+  }
   const v = vals[p.id];
-  return (typeof v === "string" && v.trim() !== "") ? v.trim() : null;
+  if (typeof v === "string" && v.trim() !== "") return v.trim();
+  // 未动过 = 预填 CLI 默认值（命令里显式带上，产物可审计、跨机器可复现）；
+  // v === ""（用户主动清空）= 明确不传该参数，交还给 CLI 默认
+  if (v == null && p.default != null && p.default !== false) return p.default;
+  return null;
 }
 
 function setParamValue(nodeId, p, value) {
@@ -309,14 +317,16 @@ function nodeBadge(node) {
   return badges;
 }
 
-function nodeCard(nodeId, extraClass) {
+function nodeCard(nodeId, extraClass, onSelect) {
   const node = DATA.nodes[nodeId];
   if (!node) return el("div", { class: "placeholder-empty", text: "未知节点 " + nodeId });
   const desc = node.summary ? node.summary.slice(0, 46) + (node.summary.length > 46 ? "…" : "") : "";
   const card = el("button", {
     class: "node-card " + (extraClass || "") + (state.selectedNode === nodeId ? " selected" : ""),
     type: "button",
-    onclick: () => selectNode(nodeId),
+    // 左栏宽度有限：截断摘要的完整全文挂 title，悬停即可读
+    title: node.summary || node.title,
+    onclick: onSelect || (() => selectNode(nodeId)),
   });
   card.appendChild(el("span", { class: "node-id", text: node.title }));
   for (const b of nodeBadge(node)) card.appendChild(b);
@@ -329,19 +339,26 @@ function renderCanvas() {
   const wrap = $("#pipelines");
   const note = $("#canvas-note");
   wrap.textContent = "";
-  // 执行流当前步（M2-07）：静态模式"当前步" = 选中的节点（点击即跟随），
-  // 跨 pipeline 定位（M4 起每域可有多条流程线）
-  const isCurrentStep = (step) => (step.node && state.selectedNode === step.node) ||
+  // 执行流当前步（M2-07）：高亮按「步骤实例」（pipelineId#步序）判定——
+  // 同一节点可在同一条流程线出现多次（如评测主线第 2/3 步都是 evals 命令），
+  // 按节点 id 匹配会让多步齐亮（M4 验收发现的缺陷）。
+  // 回退：选中未带步骤上下文（如行动卡跳转）时，只标第一条匹配步。
+  const stepMatch = (step) => (step.node && state.selectedNode === step.node) ||
     (step.slot && (step.variants || []).includes(state.selectedNode));
+  const isCurrentStep = (pl, i) => {
+    if (state.selectedStep) return state.selectedStep === pl.id + "#" + i;
+    return stepMatch(pl.steps[i]) && pl.steps.findIndex(stepMatch) === i;
+  };
 
   const chainSteps = (chain, pl) => {
     pl.steps.forEach((step, i) => {
       if (i > 0) chain.appendChild(el("li", { class: "step", }, el("div", { class: "step-connector" })));
-      const cur = isCurrentStep(step);
+      const cur = isCurrentStep(pl, i);
+      const stepKey = pl.id + "#" + i;
       if (step.node) {
         const li = el("li", { class: "step" + (cur ? " current" : "") });
         li.appendChild(el("span", { class: "step-index", text: cur ? "▶ " + (i + 1) : String(i + 1) }));
-        li.appendChild(nodeCard(step.node));
+        li.appendChild(nodeCard(step.node, null, () => selectNode(step.node, stepKey)));
         if (step.condition) {
           li.appendChild(el("div", {
             class: "param-hint ref",
@@ -365,14 +382,27 @@ function renderCanvas() {
           text: "◆ " + step.slot + (step.note ? " — " + step.note : "") }));
         for (const vid of step.variants || []) {
           const chosen = state.chosenVariant[step.slot] === vid;
-          const card = nodeCard(vid, chosen ? "chosen" : "");
-          card.addEventListener("click", () => {
+          const card = nodeCard(vid, chosen ? "chosen" : "", () => {
             state.chosenVariant[step.slot] = vid;
-            selectNode(vid);
+            selectNode(vid, stepKey);
           });
           group.appendChild(card);
         }
         li.appendChild(group);
+        chain.appendChild(li);
+      } else if (step.label) {
+        // 纯说明步骤（无命令节点）：如评测主线的「步骤 1 准备评测资产」（人工编写，无 CLI 可组装）
+        const li = el("li", { class: "step" });
+        li.appendChild(el("span", { class: "step-index", text: String(i + 1) }));
+        li.appendChild(el("div", { class: "prep-card", title: step.note || step.label,
+          text: step.label }));
+        if (step.note) {
+          li.appendChild(el("div", {
+            class: "param-hint ref",
+            text: step.note,
+            style: "margin:2px 0 0 10px",
+          }));
+        }
         chain.appendChild(li);
       }
     });
@@ -380,7 +410,7 @@ function renderCanvas() {
 
   for (const pl of pipelines) {
     const block = el("div", { class: "pipeline-block" });
-    const curIdx = pl.steps.findIndex(isCurrentStep);
+    const curIdx = pl.steps.findIndex((_, i) => isCurrentStep(pl, i));
     block.appendChild(el("div", {
       class: "pipeline-title" + (curIdx >= 0 ? " current" : ""),
       text: pl.title + (curIdx >= 0
@@ -520,7 +550,9 @@ function paramRow(node, p) {
   row.appendChild(head);
 
   const ctrl = el("div", { class: "param-control" });
-  const cur = state.values[node.id] && state.values[node.id][p.id];
+  // 表单初始值走 paramValue（含默认值预填），与命令预览/桥执行同源，
+  // 避免"表单看着空、命令里却带着默认值"的两张皮
+  const cur = paramValue(node.id, p);
   const widget = p.form.widget;
   let input;
 
@@ -759,8 +791,11 @@ function renderActionCards(box, node) {
 
 /* ---------------------------------------------------------------- 顶层渲染 */
 
-function selectNode(nodeId) {
+function selectNode(nodeId, stepKey) {
   state.selectedNode = nodeId;
+  // 步骤上下文：从流程线卡片点击时带上（同节点多步时精确高亮那一步）；
+  // 其他入口（行动卡跳转/套餐）不带 → 回退「只标第一条匹配步」
+  state.selectedStep = stepKey || null;
   state.focusParam = null;
   renderCanvas();
   renderInspector();
@@ -778,6 +813,7 @@ function renderDomainTabs() {
       onclick: () => {
         state.domain = d.id;
         state.selectedNode = null;
+        state.selectedStep = null;
         renderDomainTabs();
         renderCanvas();
         renderInspector();
@@ -804,12 +840,48 @@ function init() {
   renderCanvas();
   renderInspector();
   renderCommand(null);
-  // 默认选中第一个流程节点，开箱即见表单
+  // 默认选中第一条流程线的首个命令节点（label 型说明步骤无命令，跳过），开箱即见表单
   const pipeline = DATA.pipelines.find(p => p.domain === state.domain) || DATA.pipelines[0];
-  if (pipeline && pipeline.steps.length && pipeline.steps[0].node) {
-    selectNode(pipeline.steps[0].node);
+  const firstIdx = pipeline ? pipeline.steps.findIndex(s => s.node) : -1;
+  if (firstIdx >= 0) {
+    selectNode(pipeline.steps[firstIdx].node, pipeline.id + "#" + firstIdx);
   }
+  initSplitter();
   detectBridge();  // 异步探测执行桥，不阻塞静态功能
+}
+
+/* ---------------------------------------------------------------- 布局：左栏拖宽 / 收起 */
+
+function initSplitter() {
+  const layout = $("#layout");
+  const splitter = $("#splitter");
+  const toggle = $("#canvas-toggle");
+  if (!splitter || !toggle) return;
+  const MIN_W = 240;
+  let dragging = false;
+
+  splitter.addEventListener("mousedown", (e) => {
+    if (e.target === toggle || document.body.classList.contains("canvas-collapsed")) return;
+    dragging = true;
+    e.preventDefault();  // 拖动时别选中文本
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const rect = layout.getBoundingClientRect();
+    // 右栏至少留 360px；超出即到头
+    const w = Math.min(Math.max(e.clientX - rect.left, MIN_W), rect.width - 360);
+    layout.style.gridTemplateColumns = w + "px 6px 1fr";
+  });
+  document.addEventListener("mouseup", () => { dragging = false; });
+  splitter.addEventListener("dblclick", () => { layout.style.gridTemplateColumns = ""; });
+
+  toggle.addEventListener("click", () => {
+    const collapsed = document.body.classList.toggle("canvas-collapsed");
+    layout.style.gridTemplateColumns = "";  // 清掉拖宽的行内样式，交给收起态类接管
+    toggle.textContent = collapsed ? "⟩" : "⟨";
+    toggle.title = collapsed ? "展开左栏" : "收起左栏";
+    splitter.title = collapsed ? "展开左栏" : "拖动调整左栏宽度；双击恢复默认宽度";
+  });
 }
 
 /* ---------------------------------------------------------------- 桥模式（M3） */

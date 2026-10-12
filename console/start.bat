@@ -84,7 +84,16 @@ echo   app\index.html not built yet - running console\build.py ...
 if errorlevel 1 goto :fail
 
 :start_bridge
-start "skillverify-bridge" cmd /k ""%PY%" console\serve_bridge.py %BRIDGEARGS%"
+rem  Branch on PY shape (see PYMULTI note in :try_python):
+rem  - multi-word commands (py -3 / uv run python): no wrapping quotes,
+rem    cmd /k takes the whole command line as-is;
+rem  - single-token command / path with spaces: keep the double-quote
+rem    wrapping form (compatible with paths containing spaces).
+if defined PYMULTI (
+    start "skillverify-bridge" cmd /k %PY% console\serve_bridge.py %BRIDGEARGS%
+) else (
+    start "skillverify-bridge" cmd /k ""%PY%" console\serve_bridge.py %BRIDGEARGS%"
+)
 ping -n 3 127.0.0.1 >nul
 start "" "%REPO%\console\app\index.html"
 echo.
@@ -94,7 +103,17 @@ popd
 exit /b 0
 
 :try_python
-%~1 -c "import sys" >nul 2>nul && set "PY=%~1"
+%~1 -c "import sys" >nul 2>nul
+if errorlevel 1 exit /b 0
+set "PY=%~1"
+rem  Mark multi-word commands (py -3 / uv run python): cmd /k quoting rules
+rem  do not apply to them -- wrapping in quotes makes cmd treat the whole
+rem  phrase as ONE program name, failing with "is not recognized as a
+rem  command". Keep comments ASCII-only: cmd parses this file as ANSI
+rem  and non-ASCII bytes in rem lines can split lines unpredictably.
+set "PYMULTI="
+set "CHK=%~1"
+if not "%CHK: =%"=="%CHK%" set "PYMULTI=1"
 exit /b 0
 
 :fail
