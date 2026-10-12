@@ -317,15 +317,19 @@ function nodeBadge(node) {
   return badges;
 }
 
-function nodeCard(nodeId, extraClass, onSelect) {
+function nodeCard(nodeId, extraClass, onSelect, descOverride) {
   const node = DATA.nodes[nodeId];
   if (!node) return el("div", { class: "placeholder-empty", text: "未知节点 " + nodeId });
-  const desc = node.summary ? node.summary.slice(0, 46) + (node.summary.length > 46 ? "…" : "") : "";
+  // 步骤卡可带差异化文案（step.card）：同一节点在流程线里多段使用时
+  // （如 evals 主线：方式 A 纯校验 vs --run-with 委托执行），光看节点摘要分不出哪步是哪步
+  const summary = node.summary || "";
+  const desc = descOverride ||
+    (summary ? summary.slice(0, 46) + (summary.length > 46 ? "…" : "") : "");
   const card = el("button", {
     class: "node-card " + (extraClass || "") + (state.selectedNode === nodeId ? " selected" : ""),
     type: "button",
     // 左栏宽度有限：截断摘要的完整全文挂 title，悬停即可读
-    title: node.summary || node.title,
+    title: (descOverride ? descOverride + "\n——\n" : "") + (summary || node.title),
     onclick: onSelect || (() => selectNode(nodeId)),
   });
   card.appendChild(el("span", { class: "node-id", text: node.title }));
@@ -358,7 +362,7 @@ function renderCanvas() {
       if (step.node) {
         const li = el("li", { class: "step" + (cur ? " current" : "") });
         li.appendChild(el("span", { class: "step-index", text: cur ? "▶ " + (i + 1) : String(i + 1) }));
-        li.appendChild(nodeCard(step.node, null, () => selectNode(step.node, stepKey)));
+        li.appendChild(nodeCard(step.node, null, () => selectNode(step.node, stepKey), step.card));
         if (step.condition) {
           li.appendChild(el("div", {
             class: "param-hint ref",

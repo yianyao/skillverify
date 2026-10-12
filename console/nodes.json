@@ -1,7 +1,7 @@
 {
   "schema": "skillverify.console-nodes/1",
   "tool_version": "skillverify 0.1.0",
-  "generated_at": "2026-10-12T21:37:19",
+  "generated_at": "2026-10-12T22:20:38",
   "domains": [
     {
       "id": "evals",
@@ -35,11 +35,13 @@
         },
         {
           "node": "evals",
+          "card": "方式 A：纯校验，不执行",
           "note": "步骤 2 资产校验（方式 A）：花钱跑评测前先拦形状/口径错误；此时 trigger-runs 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败",
           "ref": "评测流程指南 §二.步骤2"
         },
         {
           "node": "evals",
+          "card": "方式 B：--run-with 委托真跑 + 自动复校",
           "note": "步骤 3+4 委托执行（--run-with，同节点第二段用法）：B/C 管用例、D 管触发集——完整一轮需（B 或 C）且 D；成功后自动复校（≡ 方式 A）。不经委托直接跑脚本时，跑完必须单独再跑一次 evals 复校",
           "ref": "评测流程指南 §二.步骤3/§三.3.2"
         },
@@ -5039,7 +5041,7 @@
     }
   },
   "hosts_panel": {
-    "captured_at": "2026-10-12T21:37:19",
+    "captured_at": "2026-10-12T22:20:38",
     "source": "skillverify discover --show-config（构建时原样捕获）",
     "text": "# 有效配置来源（后者覆盖前者）: <ROOT>\\skillverify\\data\\hosts.toml\n\n[defaults]\ndescription = \"官方跨宿主约定（.agents/skills）；不绑定任何具体宿主\"\nproject_roots = [\".agents/skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.nested-by-category]\ndescription = \"按分类分组的库：skills/<分类>/<技能>/SKILL.md\"\nproject_roots = [\"skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 2\n\n[hosts.project-local]\ndescription = \"技能直接放在项目根的 skills/ 下（小型仓库常见）\"\nproject_roots = [\"skills\", \".agents/skills\"]\nuser_roots = []\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.workbuddy]\ndescription = \"WorkBuddy 兼容布局（本项目历史环境；非必需）\"\nproject_roots = [\".workbuddy/skills\", \".agents/skills\"]\nuser_roots = [\"~/.workbuddy/skills\", \"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n"
   }
