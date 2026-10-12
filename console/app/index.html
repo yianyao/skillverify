@@ -62,7 +62,7 @@
 {
   "schema": "skillverify.console-nodes/1",
   "tool_version": "skillverify 0.1.0",
-  "generated_at": "2026-10-12T23:28:15",
+  "generated_at": "2026-10-12T23:28:29",
   "domains": [
     {
       "id": "evals",
@@ -5102,7 +5102,7 @@
     }
   },
   "hosts_panel": {
-    "captured_at": "2026-10-12T23:28:15",
+    "captured_at": "2026-10-12T23:28:29",
     "source": "skillverify discover --show-config（构建时原样捕获）",
     "text": "# 有效配置来源（后者覆盖前者）: <ROOT>\\skillverify\\data\\hosts.toml\n\n[defaults]\ndescription = \"官方跨宿主约定（.agents/skills）；不绑定任何具体宿主\"\nproject_roots = [\".agents/skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.nested-by-category]\ndescription = \"按分类分组的库：skills/<分类>/<技能>/SKILL.md\"\nproject_roots = [\"skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 2\n\n[hosts.project-local]\ndescription = \"技能直接放在项目根的 skills/ 下（小型仓库常见）\"\nproject_roots = [\"skills\", \".agents/skills\"]\nuser_roots = []\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.workbuddy]\ndescription = \"WorkBuddy 兼容布局（本项目历史环境；非必需）\"\nproject_roots = [\".workbuddy/skills\", \".agents/skills\"]\nuser_roots = [\"~/.workbuddy/skills\", \"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n"
   }
