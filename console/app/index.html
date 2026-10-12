@@ -62,7 +62,7 @@
 {
   "schema": "skillverify.console-nodes/1",
   "tool_version": "skillverify 0.1.0",
-  "generated_at": "2026-10-12T23:00:33",
+  "generated_at": "2026-10-12T23:28:15",
   "domains": [
     {
       "id": "evals",
@@ -79,7 +79,7 @@
     {
       "id": "review",
       "title": "语义评审",
-      "description": "机械层证明格式与结构没问题；写得对不对、会不会误导 Agent 由 review 承接：32 条提示词（每条带 PASS/FAIL 判据与证据要求），三档执行器产出同一 schema 回写（skillverify.review/1），结论经 collect 机械校验后汇入中央留痕——交付门禁拿它核对「评审结论对当前技能内容还有没有效」（REV-000）。",
+      "description": "机械层证明格式与结构没问题；写得对不对、会不会误导 Agent 由 review 承接：32 条提示词（每条带 PASS/FAIL 判据与证据要求），三种评审方式（命令自动 / AI 会话 / 人工手写）产出同一种格式的结论（skillverify.review/1），结论经 collect 机械校验后汇入中央执行记录——交付门禁拿它核对「评审结论对当前技能内容还有没有效」（REV-000）。",
       "ref": "验证流程指南.md 五（语义评审：三档执行器，一个 schema）"
     }
   ],
@@ -209,28 +209,28 @@
       "steps": [
         {
           "node": "review.pack",
-          "note": "步骤 0+1：任务包内自带第 0 步评委校准样本（判错则本轮全部作废，规则 REV-012；推荐不强制）与回写模板；本轮含 E-02/E-03/E-06/E-07/E-08（评流程产物/技能集合的提示词）时先跑下一步 material",
+          "note": "步骤 0+1：任务包里自带第 0 步评委校准样本（评委若把样本判错，本轮所有评审结论作废重来；建议做但不强制，对应规则 REV-012）和回写模板；如果本轮要评「评测做得怎么样」那五条提示词（E-02/E-03/E-06/E-07/E-08：评测有没有作弊、失败原因有没有归对类、这版改动有没有效果），先跑下一步准备评测材料",
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
           "node": "review.material",
-          "condition": "本轮含 E-02/E-03/E-06/E-07/E-08（评流程产物/技能集合的提示词）或需要相邻技能边界清单（边界检查提示词 W-11 的材料）时必跑；否则可跳过",
-          "note": "交汇点：数据源是评测工作区（评测 → 评审单向）——评测未跑完时 E-07/E-08 没有数字可摘（本步跳过并记 SKIP）；标准顺序是评测在前",
+          "condition": "本轮评审包含「评评测做得怎么样」的五条提示词（E-02/E-03/E-06/E-07/E-08：评测有没有作弊、失败原因有没有归对类、这版改动有没有效果），或需要相邻技能边界清单（边界检查提示词 W-11 的材料）时必跑；否则可跳过",
+          "note": "交汇点：数据源是评测工作区（评测 → 评审单向）——评测还没跑完时，「失败模式归因」「改动效果解读」两条（E-07/E-08）没有数字可摘（本步跳过并记 SKIP）；标准顺序是评测在前",
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
-          "slot": "执行评审（三档选一）",
+          "slot": "执行评审（三种方式选一：命令自动 / AI 会话 / 人工手写）",
           "variants": [
             "review.run",
             "review.session",
             "review.human"
           ],
-          "note": "⚑ 双评项可任意两档组合，但两个评委署名必须不同（同一个人/同一命令跑两遍不算）",
+          "note": "⚑ 需双人复核的项：两种评审方式怎么组合都行，但两个评委署名必须不同（同一个人/同一命令跑两遍不算）",
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
           "node": "review.collect",
-          "note": "三档共用验收层：13 条回写校验规则（REV-001..013）逐条机械执行，结论汇入中央记录",
+          "note": "三种方式共用同一道验收关：13 条回写校验规则（REV-001..013）逐条机械执行，结论汇入中央记录",
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
@@ -242,10 +242,10 @@
       "presets": [
         {
           "id": "session-full",
-          "title": "档 2 全流程（会话评）",
-          "description": "pack --split 逐条出任务包（便于一条一个 LLM 会话）→（含 E 族评流程产物的条目先跑 material）→ 会话评填模板 → collect 必带 --skill-dir（让记录带上当前内容指纹）；双评项再补第二份署名不同的回写",
+          "title": "全流程套餐（AI 会话评审）",
+          "description": "pack --split 逐条出任务包（一条提示词给一个 AI 会话评）→ 涉及「评评测做得怎么样」条目的先跑 material 备材料 → 会话里填模板 → collect 汇总时必带 --skill-dir（让记录带上当前内容指纹）；需双人复核的项再补第二份署名不同的结论",
           "variants": {
-            "执行评审（三档选一）": "review.session"
+            "执行评审（三种方式选一：命令自动 / AI 会话 / 人工手写）": "review.session"
           },
           "values": {
             "review.pack": {
@@ -256,8 +256,8 @@
         },
         {
           "id": "dual-review",
-          "title": "双评跑法（⚑ 8 项双人复核）",
-          "description": "review run 只跑 8 条 ⚑ 双评项，再换一个不同的 runner 命令重跑一遍（署名必须不同），两份回写一起交 collect",
+          "title": "双人复核套餐（⚑ 8 项需两条独立结论）",
+          "description": "review run 只跑 8 条需双人复核的项（⚑），再换一个不同的执行命令重跑一遍（署名必须不同），两份结论一起交 collect 汇总",
           "values": {
             "review.run": {
               "prompts": "W-02,W-04,W-05,W-08,W-15,E-04,E-06,R-02"
@@ -2083,7 +2083,7 @@
       },
       "pitfalls": [
         {
-          "text": "同一条 evals 命令是「点菜」不是「流水线」——四种用法可以按需组合：什么都不带 = 只校验；--run-with 带不同执行器 = 替你真跑（跑用例的两档二选一：本项目 run_evals.py 或官方评测器；跑触发集的 run_triggers.py 必须单独也跑，它和用例互相替代不了）。完整一轮 = 用例 + 触发集都跑；绕开 --run-with 手动跑脚本的话，跑完必须再补一次纯校验。（指南里的 A/B/C/D 就是这四种用法的编号）",
+          "text": "同一条 evals 命令是「点菜」不是「流水线」——四种用法可以按需组合：什么都不带 = 只校验；--run-with 带不同执行器 = 替你真跑（跑用例的两个执行器二选一：本项目 run_evals.py 或官方评测器；跑触发集的 run_triggers.py 必须单独也跑，它和用例互相替代不了）。完整一轮 = 用例 + 触发集都跑；绕开 --run-with 手动跑脚本的话，跑完必须再补一次纯校验。（指南里的 A/B/C/D 就是这四种用法的编号）",
           "ref": "操作手册 A4b"
         },
         {
@@ -3007,7 +3007,7 @@
       "id": "review.collect",
       "domain": "review",
       "title": "review collect",
-      "summary": "三档共用验收层：校验回写（13 条机械校验规则 REV-001..013 逐条执行）、写中央记录、盖内容指纹。多份回写（双评场景）一起收，两份结论冲突 → 记 WARN 转人工裁决（REV-010）。结论三态：pass / warn（有非阻断问题或未覆盖）/ fail（有阻断项 FAIL）；存在 FAIL → 非零退出码。",
+      "summary": "三种评审方式（命令自动 / AI 会话 / 人工手写）共用同一道验收关：校验回写（13 条机械校验规则 REV-001..013 逐条执行）、写中央记录、盖内容指纹。多份结论（双人复核场景）一起收，两份结论冲突 → 记 WARN 转人工裁决（REV-010）。结论三态：pass / warn（有非阻断问题或未覆盖）/ fail（有阻断项 FAIL）；存在 FAIL → 非零退出码。",
       "node_type": "cli",
       "cli": {
         "argv": [
@@ -3033,7 +3033,7 @@
           },
           "default": null,
           "composes": [],
-          "effects": "回写 JSON 文件（可多个；双评场景多份一起交）",
+          "effects": "结论 JSON 文件（可多个；双人复核场景多份一起交）",
           "pitfall": null,
           "help": "回写 JSON 文件（可多个）",
           "nargs": "*"
@@ -3261,7 +3261,7 @@
         {
           "name": "回写 JSON（可多份）",
           "from": "位置参数 files，或 --dir 目录下的全部 *.json",
-          "shape": "skillverify.review/1（三档执行器同 schema：档 1 run 自动组装 / 档 2 会话填 template / 档 3 手写）"
+          "shape": "skillverify.review/1（三种评审方式同格式：命令自动由 run 组装 / AI 会话填 template / 人工手写）"
         },
         {
           "name": "被评审技能目录",
@@ -3320,7 +3320,7 @@
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
-          "text": "双评结论冲突 → 记 WARN 并写 <留痕目录>/adjudications.json 由人裁决（REV-010）；裁决绑定证据指纹——换了证据要重新裁决",
+          "text": "两份结论冲突 → 记 WARN 并写 <留痕目录>/adjudications.json 由人裁决（REV-010）；裁决绑定证据指纹——换了证据要重新裁决",
           "ref": "验证流程指南.md 六（交付门禁，WARN 裁决留痕小节）"
         },
         {
@@ -3552,7 +3552,7 @@
       },
       "pitfalls": [
         {
-          "text": "没跑 material 就评 E 族 → E-02/E-03/E-06/E-07/E-08 永远 NA，而 NA 与「材料没准备」在报告里长得一样；先跑 material，仍不适用再如实 NA",
+          "text": "没备材料就评「评测做得怎么样」那五条（E-02/E-03/E-06/E-07/E-08）→ 它们永远 NA，而 NA 与「材料没准备」在报告里长得一样；先跑 material，仍不适用再如实 NA",
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
@@ -3577,13 +3577,13 @@
         "ref": "验证流程指南.md 五（语义评审）"
       },
       "ref": "验证流程指南.md 五（语义评审，含「几条提示词需要的流程材料：review material」小节）",
-      "condition": "本轮含 E-02/E-03/E-06/E-07/E-08（评流程产物/技能集合的提示词）或需要相邻技能边界清单（W-11 的材料）时必跑；纯机械层评审或不含上述条目时可跳过"
+      "condition": "本轮评审包含「评评测做得怎么样」的五条提示词（E-02/E-03/E-06/E-07/E-08：评测有没有作弊、失败原因有没有归对类、这版改动有没有效果），或需要相邻技能边界清单（边界检查提示词 W-11 的材料）时必跑；纯机械层评审或不含这些条目时可跳过"
     },
     "review.pack": {
       "id": "review.pack",
       "domain": "review",
       "title": "review pack",
-      "summary": "生成语义评审任务包（档 2 第一步）：三件套落在默认 <技能名>-review/ 兄弟目录——pack.md（人读的提示词+判据，头部含第 0 步校准样本与回写格式契约）、template.json（待填模板，预置 calibration 数组与 ⚑ 项 by/at 栏）、manifest.json（技能内容指纹 + prompt_ids，供 collect 对账）。",
+      "summary": "生成语义评审任务包（AI 会话评审方式的第一步）：三件套落在默认 <技能名>-review/ 兄弟目录——pack.md（人读的提示词+判据，头部含第 0 步校准样本与回写格式契约）、template.json（待填模板，预置 calibration 数组与 ⚑ 项 by/at 栏）、manifest.json（技能内容指纹 + prompt_ids，供 collect 对账）。",
       "node_type": "cli",
       "cli": {
         "argv": [
@@ -3723,7 +3723,7 @@
         }
       ],
       "consumers": [
-        "评审者（档 2 会话评/档 3 人工评）",
+        "评审者（AI 会话评审或人工手写）",
         "review collect（manifest 对账）"
       ],
       "compose_rules": [],
@@ -3738,7 +3738,7 @@
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
-          "text": "⚑ 双评项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）：每条需要两条独立结论互相印证（REV-013）——即 ≥2 份署名互不相同的回写；template.json 的 ⚑ 项带 by/at 栏",
+          "text": "⚑ 需双人复核的项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）：每条需要两条独立结论互相印证（REV-013）——即 ≥2 份署名互不相同的结论；template.json 的 ⚑ 项带 by/at 栏",
           "ref": "验证流程指南.md 五（语义评审）；六（交付门禁，⚑ 逐条双评小节）"
         }
       ],
@@ -3887,7 +3887,7 @@
       },
       "pitfalls": [
         {
-          "text": "阻断项共 4 条（W-02/W-08/W-15/W-17 = FAIL 即技能不得交付）；⚑ 双评项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）——查阅时先认清这两类",
+          "text": "阻断项共 4 条（W-02/W-08/W-15/W-17 = FAIL 即技能不得交付）；⚑ 需双人复核的项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）——查阅时先认清这两类",
           "ref": "验证流程指南.md 五（语义评审）"
         }
       ],
@@ -3905,7 +3905,7 @@
       "id": "review.run",
       "domain": "review",
       "title": "review run",
-      "summary": "档 1 CLI 自动单轮：逐条把提示词渲染成完整指令（提示词正文 + PASS/FAIL 判据 + 回写格式契约 + 技能目录绝对路径）送上 runner 的 stdin，从 stdout 收回 JSON 结论，自动组装成与档 2/档 3 完全相同的回写，再走同一条 collect 校验——档 1 不走捷径。默认自动遍历全部 32 条，每条一次子进程、一问一答。",
+      "summary": "命令行自动评审（三种方式的档 1，单轮）：逐条把提示词渲染成完整指令（提示词正文 + PASS/FAIL 判据 + 回写格式契约 + 技能目录绝对路径）送上执行命令的 stdin，从 stdout 收回 JSON 结论，自动组装成与 AI 会话、人工两种方式完全相同的结论格式，再走同一条 collect 校验——自动方式不走捷径。默认自动遍历全部 32 条，每条一次子进程、一问一答。",
       "node_type": "cli",
       "cli": {
         "argv": [
@@ -4209,7 +4209,7 @@
         {
           "name": "回写 JSON",
           "path": "--out 时落 <技能名>-review-cli.json；--collect 时直写中央记录（不带 --out 用临时文件作载体，用完即删）；两个开关都不带 → 不落任何文件",
-          "schema": "skillverify.review/1（reviewer 自动签署为「档 1 CLI：<runner 命令>」）",
+          "schema": "skillverify.review/1（reviewer 字段自动签署为「档 1 CLI：<runner 命令>」——「档 1 CLI」是写入记录的固定字面量，意思是这条结论由命令行自动方式产出）",
           "consumers": [
             "review collect（同一条 validate_writeback）",
             "人工复核 runner 产出"
@@ -4217,7 +4217,7 @@
         }
       ],
       "consumers": [
-        "review collect（三档同一验收层）"
+        "review collect（三种方式同一道验收关）"
       ],
       "compose_rules": [
         {
@@ -4233,7 +4233,7 @@
             "E-06",
             "R-02"
           ],
-          "message": "prompts 含 ⚑ 双评项（选中值命中 W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02 时提示）：这些条目需要两条署名不同的独立结论互相印证——再跑一次 review run 换一个 runner 命令（署名自然不同），两份回写一起交 collect",
+          "message": "prompts 含 ⚑ 需双人复核的项（选中值命中 W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02 时提示）：这些条目需要两条署名不同的独立结论互相印证——再跑一次 review run 换一个 runner 命令（署名自然不同），两份结论一起交 collect",
           "ref": "验证流程指南.md 六（交付门禁，⚑ 逐条双评小节）"
         }
       ],
@@ -4244,7 +4244,7 @@
       },
       "pitfalls": [
         {
-          "text": "自动签署：回写 reviewer 自动填「档 1 CLI：<runner 命令>」——双评时换一个 runner 命令，署名自然不同；同一个命令跑两遍署名相同，双评不认（REV-013 要两条独立结论，同一命令重跑误差相关，算假独立）",
+          "text": "自动签署：结论 JSON 的 reviewer 字段自动填「档 1 CLI：<runner 命令>」（固定字面量，见输出 schema 说明）——双人复核时换一个执行命令重跑，署名自然不同；同一个命令跑两遍署名相同，复核不认（规则 REV-013 要两条独立结论，同一命令重跑的误差是相关的，算假独立）",
           "ref": "验证流程指南.md 五（语义评审）；六（交付门禁，⚑ 逐条双评小节）"
         },
         {
@@ -4999,8 +4999,8 @@
     "review.session": {
       "id": "review.session",
       "domain": "review",
-      "title": "会话评（档 2 · 最常用）",
-      "summary": "开一个 LLM 会话（或人工）把任务包丢给它评：会话内自主多轮，模型可自己读技能文件、翻材料文件（review material 的产出）、反复核对后再填模板。与档 1 产出同 schema 回写、走同一条 collect 校验。",
+      "title": "AI 会话评审（最常用）",
+      "summary": "开一个 LLM 会话（或人工）把任务包丢给它评：会话内自主多轮，模型可自己读技能文件、翻材料文件（review material 的产出）、反复核对后再填模板。产出格式与命令自动评审完全相同、走同一条 collect 校验。",
       "node_type": "manual",
       "params": [],
       "inputs": [],
@@ -5030,7 +5030,7 @@
         },
         {
           "step": 2,
-          "text": "把 pack.md 全文交给 LLM 会话（或人）；若任务包头部提示本轮含 E-02/E-03/E-06/E-07/E-08（评流程产物/技能集合的条目），先跑 review material 并把材料一并提供",
+          "text": "把 pack.md 全文交给 LLM 会话（或人）；若任务包头部提示本轮要评「评测做得怎么样」（E-02/E-03/E-06/E-07/E-08：评测有没有作弊、失败原因归对类没有、改动有没有效果），先跑 review material 并把材料一并提供",
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
@@ -5045,7 +5045,7 @@
         },
         {
           "step": 5,
-          "text": "reviewer 栏手写署名（无签署=没有评审，REV-002）；⚑ 双评项（8 条：W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）需第二个署名不同的评委再填一份",
+          "text": "reviewer 栏手写署名（无签署=没有评审，REV-002）；⚑ 需双人复核的项（8 条：W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）需第二个署名不同的评委再填一份",
           "ref": "验证流程指南.md 五（语义评审）"
         },
         {
@@ -5059,8 +5059,8 @@
     "review.human": {
       "id": "review.human",
       "domain": "review",
-      "title": "人工兜底（档 3）",
-      "summary": "没有模型可用时：人手写与档 1/档 2 完全相同 schema 的回写 JSON，走同一条 collect 校验——档 3 不走捷径。",
+      "title": "人工手写（无模型时的兜底）",
+      "summary": "没有模型可用时：人手写与命令自动、AI 会话两种方式完全相同格式的结论 JSON，走同一条 collect 校验——人工方式不走捷径。",
       "node_type": "manual",
       "params": [],
       "inputs": [],
@@ -5094,7 +5094,7 @@
         },
         {
           "step": 3,
-          "text": "交给 review collect（必带 --skill-dir）；⚑ 双评项需两份署名互不相同的回写",
+          "text": "交给 review collect（必带 --skill-dir）；⚑ 需双人复核的项需两份署名互不相同的结论",
           "node_ref": "review.collect",
           "ref": "验证流程指南.md 五（语义评审）"
         }
@@ -5102,7 +5102,7 @@
     }
   },
   "hosts_panel": {
-    "captured_at": "2026-10-12T23:00:33",
+    "captured_at": "2026-10-12T23:28:15",
     "source": "skillverify discover --show-config（构建时原样捕获）",
     "text": "# 有效配置来源（后者覆盖前者）: <ROOT>\\skillverify\\data\\hosts.toml\n\n[defaults]\ndescription = \"官方跨宿主约定（.agents/skills）；不绑定任何具体宿主\"\nproject_roots = [\".agents/skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.nested-by-category]\ndescription = \"按分类分组的库：skills/<分类>/<技能>/SKILL.md\"\nproject_roots = [\"skills\"]\nuser_roots = [\"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 2\n\n[hosts.project-local]\ndescription = \"技能直接放在项目根的 skills/ 下（小型仓库常见）\"\nproject_roots = [\"skills\", \".agents/skills\"]\nuser_roots = []\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n[hosts.workbuddy]\ndescription = \"WorkBuddy 兼容布局（本项目历史环境；非必需）\"\nproject_roots = [\".workbuddy/skills\", \".agents/skills\"]\nuser_roots = [\"~/.workbuddy/skills\", \"~/.agents/skills\"]\ntrace_dir = \".agents/skillverify\"\nmax_depth = 1\n\n"
   }

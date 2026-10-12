@@ -1,5 +1,5 @@
 {
-  "summary": "档 1 CLI 自动单轮：逐条把提示词渲染成完整指令（提示词正文 + PASS/FAIL 判据 + 回写格式契约 + 技能目录绝对路径）送上 runner 的 stdin，从 stdout 收回 JSON 结论，自动组装成与档 2/档 3 完全相同的回写，再走同一条 collect 校验——档 1 不走捷径。默认自动遍历全部 32 条，每条一次子进程、一问一答。",
+  "summary": "命令行自动评审（三种方式的档 1，单轮）：逐条把提示词渲染成完整指令（提示词正文 + PASS/FAIL 判据 + 回写格式契约 + 技能目录绝对路径）送上执行命令的 stdin，从 stdout 收回 JSON 结论，自动组装成与 AI 会话、人工两种方式完全相同的结论格式，再走同一条 collect 校验——自动方式不走捷径。默认自动遍历全部 32 条，每条一次子进程、一问一答。",
   "ref": "验证流程指南.md 五（语义评审）",
   "effects": {
     "text": "逐条执行评审，把评审会话记录写入 <技能名>-reviews/（review collect 的唯一输入）",
@@ -21,7 +21,7 @@
     {
       "name": "回写 JSON",
       "path": "--out 时落 <技能名>-review-cli.json；--collect 时直写中央记录（不带 --out 用临时文件作载体，用完即删）；两个开关都不带 → 不落任何文件",
-      "schema": "skillverify.review/1（reviewer 自动签署为「档 1 CLI：<runner 命令>」）",
+      "schema": "skillverify.review/1（reviewer 字段自动签署为「档 1 CLI：<runner 命令>」——「档 1 CLI」是写入记录的固定字面量，意思是这条结论由命令行自动方式产出）",
       "consumers": [
         "review collect（同一条 validate_writeback）",
         "人工复核 runner 产出"
@@ -29,7 +29,7 @@
     }
   ],
   "consumers": [
-    "review collect（三档同一验收层）"
+    "review collect（三种方式同一道验收关）"
   ],
   "params": {
     "path": {
@@ -44,7 +44,7 @@
     "runner": {
       "effects": "评审命令：读 stdin、把 JSON 打到 stdout；以你的权限执行。runner 自己不需要懂评审——评审的「专业性」全部来自 skillverify 渲染进指令的判据与回写契约",
       "pitfall": "runner 必须真的读 stdin（只接受命令行参数的命令收不到提示词，stdin 空转）；stdout 必须含一个 JSON 对象（前后的说明文字没关系），只有自然语言 → 全部条目解析失败",
-      "ref": "验证流程指南.md 五（语义评审，档 1 执行器小节）"
+      "ref": "验证流程指南.md 五（语义评审）"
     },
     "prompts": {
       "effects": "只跑指定提示词（默认全部 32 条，逗号分隔 id）",
@@ -89,7 +89,7 @@
   },
   "pitfalls": [
     {
-      "text": "自动签署：回写 reviewer 自动填「档 1 CLI：<runner 命令>」——双评时换一个 runner 命令，署名自然不同；同一个命令跑两遍署名相同，双评不认（REV-013 要两条独立结论，同一命令重跑误差相关，算假独立）",
+      "text": "自动签署：结论 JSON 的 reviewer 字段自动填「档 1 CLI：<runner 命令>」（固定字面量，见输出 schema 说明）——双人复核时换一个执行命令重跑，署名自然不同；同一个命令跑两遍署名相同，复核不认（规则 REV-013 要两条独立结论，同一命令重跑的误差是相关的，算假独立）",
       "ref": "验证流程指南.md 五（语义评审）；六（交付门禁，⚑ 逐条双评小节）"
     },
     {
@@ -111,7 +111,7 @@
         "E-06",
         "R-02"
       ],
-      "message": "prompts 含 ⚑ 双评项（选中值命中 W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02 时提示）：这些条目需要两条署名不同的独立结论互相印证——再跑一次 review run 换一个 runner 命令（署名自然不同），两份回写一起交 collect",
+      "message": "prompts 含 ⚑ 需双人复核的项（选中值命中 W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02 时提示）：这些条目需要两条署名不同的独立结论互相印证——再跑一次 review run 换一个 runner 命令（署名自然不同），两份结论一起交 collect",
       "ref": "验证流程指南.md 六（交付门禁，⚑ 逐条双评小节）"
     }
   ],

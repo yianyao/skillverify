@@ -1,5 +1,5 @@
 {
-  "summary": "生成语义评审任务包（档 2 第一步）：三件套落在默认 <技能名>-review/ 兄弟目录——pack.md（人读的提示词+判据，头部含第 0 步校准样本与回写格式契约）、template.json（待填模板，预置 calibration 数组与 ⚑ 项 by/at 栏）、manifest.json（技能内容指纹 + prompt_ids，供 collect 对账）。",
+  "summary": "生成语义评审任务包（AI 会话评审方式的第一步）：三件套落在默认 <技能名>-review/ 兄弟目录——pack.md（人读的提示词+判据，头部含第 0 步校准样本与回写格式契约）、template.json（待填模板，预置 calibration 数组与 ⚑ 项 by/at 栏）、manifest.json（技能内容指纹 + prompt_ids，供 collect 对账）。",
   "ref": "验证流程指南.md 五（语义评审）",
   "effects": {
     "text": "产出评审包 manifest（prompts_manifest.json）——它是 review collect 比对技能改动的指纹基准；不改技能文件本身",
@@ -39,7 +39,7 @@
     }
   ],
   "consumers": [
-    "评审者（档 2 会话评/档 3 人工评）",
+    "评审者（AI 会话评审或人工手写）",
     "review collect（manifest 对账）"
   ],
   "params": {
@@ -79,7 +79,7 @@
       "ref": "验证流程指南.md 五（语义评审）"
     },
     {
-      "text": "⚑ 双评项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）：每条需要两条独立结论互相印证（REV-013）——即 ≥2 份署名互不相同的回写；template.json 的 ⚑ 项带 by/at 栏",
+      "text": "⚑ 需双人复核的项共 8 条（W-02/W-04/W-05/W-08/W-15/E-04/E-06/R-02）：每条需要两条独立结论互相印证（REV-013）——即 ≥2 份署名互不相同的结论；template.json 的 ⚑ 项带 by/at 栏",
       "ref": "验证流程指南.md 五（语义评审）；六（交付门禁，⚑ 逐条双评小节）"
     }
   ],
