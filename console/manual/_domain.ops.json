@@ -2,7 +2,7 @@
   "domain": {
     "id": "ops",
     "title": "运维",
-    "description": "技能资产的日常运维面：规范校验（spec）→ 机械补检（lint，47 条规则目录见节点档案）→ 上宿主前置（mount）→ 库级发现（discover）→ 外来技能审计（audit），结论汇入 deliver 门禁；辅助线：开发期监视（watch）、git hook 接线与命令面自描述（describe，机读契约）。",
+    "description": "技能资产的日常运维面：官方规范校验（spec）→ 机械补检（lint，47 条规则见 lint 节点档案）→ 上宿主前置（mount）→ 库级发现（discover）→ 外来技能审计（audit），结论汇入 deliver 门禁；辅助线：开发期监视（watch）、git hook 接线（hook.install/hook.status）与命令面自描述（describe，输出机器可读的命令清单）。",
     "ref": "验证流程指南 §二/§四"
   },
   "nodes": [
@@ -40,18 +40,18 @@
         {
           "node": "audit",
           "condition": "外来技能（从别处拿来的）用之前必跑；自家技能可跳过",
-          "note": "--record 落盘审计单供下次比对指纹",
+          "note": "加 --record 把审计单存档，下次审计时比对内容指纹，能发现「东西被换过」",
           "ref": "验证流程指南 §4.5"
         },
         {
           "node": "discover",
-          "note": "库级全貌：技能清单/同名冲突/描述预算；--show-config 看有效档位（操作台 hosts 面板数据源）",
+          "note": "库级全貌：列出全部技能、同名冲突、描述总量预算；--show-config 打印合并后的有效配置（本操作台 hosts 面板的数据源）",
           "ref": "验证流程指南 §三"
         },
         {
           "node": "deliver",
-          "note": "门禁合流（跨域）：运维线结论经 check --stages both 汇入 deliver",
-          "ref": "验证流程指南 §六"
+          "note": "最终把关：运维线的检查结论先经 check --stages both 汇总，最后由 deliver 决定能不能交付",
+          "ref": "验证流程指南 六"
         }
       ]
     },
@@ -67,17 +67,17 @@
         },
         {
           "node": "hook.install",
-          "note": "把 deliver --staged 接上 pre-commit；完整门禁仍在 CI",
-          "ref": "验证流程指南 §六"
+          "note": "git 提交前自动检查一次暂存内容（接上 pre-commit 钩子）；完整把关仍在 CI",
+          "ref": "验证流程指南 六"
         },
         {
           "node": "hook.status",
-          "note": "确认接线状态",
-          "ref": "验证流程指南 §六"
+          "note": "查看 pre-commit 钩子是否已接好、是不是本工具接的",
+          "ref": "验证流程指南 六"
         },
         {
           "node": "describe",
-          "note": "命令面机读契约（EVOL-01）：本操作台内省脚本的数据源；加/改子命令后它自动跟着变",
+          "note": "输出所有子命令和参数的机器可读清单：本操作台内省脚本靠它取数据；你加或改子命令后，它的输出会自动跟着变",
           "ref": "仓库结构说明 §3.1"
         }
       ]

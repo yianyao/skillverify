@@ -35,7 +35,7 @@
   },
   "pitfalls": [
     {
-      "text": "契约是对外承诺：改子命令/旗标后 describe 输出会自动跟着变（实现从同一 parser 提取），但字段语义变更必须升 schema 版本号；test_consistency 的 describe 断言会拦命令面漂移",
+      "text": "契约是对外承诺：改子命令/旗标后 describe 输出会自动跟着变（实现从同一 parser 提取），但字段语义变更必须升 schema 版本号；仓库自检测试会拦住命令面悄悄漂移",
       "ref": "tests/test_consistency.py run_describe"
     }
   ],

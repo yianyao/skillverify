@@ -1,15 +1,15 @@
 {
-  "summary": "交付门禁（合流点）：比 check 严——FAIL 阻断；WARN 不阻断但逐条记入交付记录；SKIP 里属「未开启的可选批次/环境能力不足」的记未覆盖项（默认不阻断，--strict 时阻断），其余 SKIP 一律阻断。通过或未通过都会写交付记录到中央留痕目录。--stages all 时评测线（check_evals/check_trigger 消费工作区产物）与评审线（REV-000 消费中央记录）两线结论在此合流。",
-  "ref": "语义评审流程指南 §三.步骤5/§7.1；skillverify deliver --help",
+  "summary": "交付门禁（合流点）：比 check 严——FAIL 阻断；WARN 不阻断但逐条记入交付记录；SKIP 里属「未开启的可选批次/环境能力不足」的记未覆盖项（默认不阻断，--strict 时阻断），其余 SKIP 一律阻断。通过或未通过都会写交付记录到中央留痕目录。--stages all 时评测线与语义评审线的结论在此合流（评测线看工作区产物，评审线看中央评审记录）。",
+  "ref": "验证流程指南 六；skillverify deliver --help",
   "effects": {
     "text": "通过与否都会把交付记录写入中央留痕目录（--no-record 关闭）；--accept 豁免会留痕可审计",
-    "ref": "语义评审流程指南 §三.步骤5"
+    "ref": "验证流程指南 六"
   },
   "inputs": [
     {
       "name": "语义评审中央记录",
       "from": ".agents/skillverify/review/<技能名>.json（经 hosts.toml 发现机制定位）",
-      "shape": "REV-000 按当前内容指纹五态判定"
+      "shape": "评审记录按当前内容指纹给出五种状态之一的结论"
     },
     {
       "name": "评测工作区产物（--stages all 时）",
@@ -54,7 +54,7 @@
     "strict": {
       "effects": "连「未覆盖项」也阻断（发行前跑一次）",
       "pitfall": "未实测脚本契约（--scripts 未开）、未跑评测等都会成为未覆盖项——日常 CI 开 --strict 会被大量拦下，按需使用",
-      "ref": "skillverify deliver --help/语义评审流程指南 §六"
+      "ref": "skillverify deliver --help；验证流程指南 六"
     },
     "accept": {
       "effects": "把该规则的阻断项记为「已豁免」（可重复）",
@@ -73,7 +73,7 @@
     },
     "scripts": {
       "effects": "实测脚本契约（以 --help 等调用技能自带脚本）",
-      "pitfall": "不开启时 SCRIPT 族规则记「未执行」——--strict 门禁会被它们拦住",
+      "pitfall": "不开启时脚本实测项记「未执行」——--strict 门禁会被它们拦住",
       "ref": "skillverify deliver --help"
     },
     "workspace": {
@@ -99,7 +99,7 @@
     "skip_review": {
       "effects": "跳过语义评审记录检查",
       "pitfall": "显式跳过会留痕为未覆盖项——--strict 时阻断，平时记未覆盖",
-      "ref": "语义评审流程指南 §三.步骤5"
+      "ref": "验证流程指南 六"
     },
     "verbose": {
       "effects": "把未覆盖项与待甄别项也逐条打到 stderr",
@@ -124,20 +124,20 @@
   },
   "pitfalls": [
     {
-      "text": "REV-000 五态判定：显式 --skip-review → SKIP；无记录 → SKIP（未覆盖，提示先跑 pack → collect）；技能评审后改过（指纹不一致）→ WARN 须重评；有阻断项 FAIL → 技能不得交付；覆盖不完整/有非阻断问题 → WARN；全部干净 → PASS",
-      "ref": "语义评审流程指南 §三.步骤5"
+      "text": "评审记录的五种判定：显式跳过 → 跳过；没有评审记录 → 跳过（未覆盖，提示先跑评审的打包与收集步骤）；评审之后又改过技能（内容指纹对不上）→ WARN 须重新评审；有阻断性问题 FAIL → 技能不得交付；覆盖不完整/有非阻断问题 → WARN；全部干净 → PASS",
+      "ref": "验证流程指南 六"
     },
     {
       "text": "WARN 裁决走 <留痕目录>/adjudications.json 人工拍板（decision: accept|fix），裁决绑定证据指纹——换证据须重新裁决",
-      "ref": "语义评审流程指南 §三.步骤5"
+      "ref": "验证流程指南 六"
     },
     {
-      "text": "改了技能没重评 → REV-000 WARN「指纹不一致」，deliver 拦下；review status 可提前看到「已改」",
-      "ref": "语义评审流程指南 §六.7"
+      "text": "改了技能没重新评审 → 评审记录判「指纹不一致」记 WARN，deliver 拦下；用 review status 可提前看到「已改」",
+      "ref": "验证流程指南 六"
     },
     {
       "text": "两条流程在交付门禁处合流：任一阻断项 FAIL 即不得交付；--strict 下未覆盖项也拦",
-      "ref": "语义评审流程指南 §7.1"
+      "ref": "验证流程指南 六"
     }
   ],
   "compose_rules": [
@@ -145,7 +145,7 @@
       "rule": "confirm",
       "param": "strict",
       "message": "--strict 连未覆盖项也阻断：发行前跑一次用；确认你已备齐脚本实测（--scripts）、评测资产与语义评审记录",
-      "ref": "设计文档 §6 confirm 实例"
+      "ref": "操作手册 A6"
     },
     {
       "rule": "requires",

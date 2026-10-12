@@ -1,9 +1,9 @@
 {
-  "summary": "分阶段总检查（CI 报告入口）：--stages both（默认）只跑 spec+lint，日常快查；--stages all 再加评测资产与语义评审记录——WS-001..008 / GRAD / BENCH-004 对账 / TIME 全族复校，EVAL-010 跨轮区分度与 EVAL-011 断言时机一并激活。与 deliver 的分工：check 是体检（出报告），deliver 是门禁（FAIL 阻断交付并写交付记录）。",
-  "ref": "评测流程指南 §二.步骤4/§二.步骤5/§七.3；skillverify check --help",
+  "summary": "分阶段总检查（CI 报告入口）：--stages both（默认）只跑官方规范+机械补检，日常快查；--stages all 再加评测资产与语义评审记录——把工作区里每轮产物（输出、计时、评分、基准值）逐项复校对账，还会检查断言是否有效、多轮之间有没有区分度。与 deliver 的分工：check 是体检（出报告），deliver 是门禁（FAIL 阻断交付并写交付记录）。",
+  "ref": "操作手册 A6；skillverify check --help",
   "effects": {
     "text": "只读全族复校：报告走 stdout 或 --out 落盘，不写任何记录",
-    "ref": "评测流程指南 §二.步骤4"
+    "ref": "操作手册 A6"
   },
   "inputs": [
     {
@@ -14,12 +14,12 @@
     {
       "name": "评测工作区（--stages all 时）",
       "from": "并列的 <技能名>-workspace/iteration-N/（或 --workspace/--iteration 指定）",
-      "shape": "WS/GRAD/BENCH/TIME 全族复校的对象"
+      "shape": "工作区/评分/基准/计时各复校项的对象"
     },
     {
       "name": "语义评审中央记录（--stages all 时）",
       "from": ".agents/skillverify/review/<技能名>.json",
-      "shape": "REV-000 五态判定（--skip-review 可显式跳过，留痕为未覆盖项）"
+      "shape": "语义评审记录按当前内容指纹给出五种状态之一的结论（--skip-review 可显式跳过，留痕为未覆盖项）"
     }
   ],
   "outputs": [
@@ -41,8 +41,8 @@
   "params": {
     "stages": {
       "effects": "跑哪些阶段：both = spec+lint（默认，日常快查）；all = 再加评测资产与语义评审记录；也可单跑 spec / lint / evals / review",
-      "pitfall": "CI 里忘改 --stages all → 评测与评审结论根本不在报告里，绿灯是假的（交付门禁在 deliver，但回归三层里触发层靠 deliver --strict 拦）",
-      "ref": "skillverify check --help；评测流程指南 §二.步骤5/§七.3"
+      "pitfall": "CI 里忘改 --stages all → 评测与评审结论根本不在报告里，绿灯是假的（交付门禁在 deliver，但触发层回归要靠 deliver --strict 拦）",
+      "ref": "skillverify check --help；操作手册 A6"
     },
     "workspace": {
       "effects": "显式指定评测工作区（默认找并列的 <技能名>-workspace/）",
@@ -68,7 +68,7 @@
     },
     "scripts": {
       "effects": "执行技能自带脚本以实测脚本契约（以 --help 等安全调用）",
-      "pitfall": "默认关闭——脚本存在副作用风险；不开时 SCRIPT 族规则记「未执行」，--strict 门禁会被它们拦住",
+      "pitfall": "默认关闭——脚本存在副作用风险；不开时脚本实测项记「未执行」，--strict 门禁会被它们拦住",
       "ref": "skillverify check/deliver --help"
     },
     "script_timeout": {
@@ -110,11 +110,11 @@
   "pitfalls": [
     {
       "text": "check 与 deliver 的分工：check 出报告（--trace 才写中央留痕），deliver 出门禁结论并写交付记录；「通过没通过」以 deliver 为准，check 全绿不等于可交付",
-      "ref": "评测流程指南 §二.步骤5；skillverify check/deliver --help"
+      "ref": "操作手册 A6；skillverify check/deliver --help"
     },
     {
-      "text": "回归三层各有着落：结构层 spec/lint 免费；触发层靠 deliver --strict 拦「trigger-runs 缺失/未跑过」；行为层靠 WS-004 轮次连续 + EVAL-010 跨轮区分度 + BENCH-004 对账——改完一版断言退化成恒真/恒假会被点名",
-      "ref": "评测流程指南 §七.3"
+      "text": "防退步三道各有着落：结构层（官方规范+机械补检）免费；触发层靠 deliver --strict 拦「没跑过触发测试集」；行为层靠每轮编号连续、多轮之间评分有区分度、聚合分与逐次产物对账——改完一版断言退化成恒真/恒假会被点名",
+      "ref": "操作手册 A6"
     }
   ],
   "compose_rules": [

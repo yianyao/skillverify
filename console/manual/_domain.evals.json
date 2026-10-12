@@ -2,8 +2,8 @@
   "domain": {
     "id": "evals",
     "title": "评测",
-    "description": "skillverify 是验收员不是厨师：校验评测资产（evals.json / trigger-queryset.json）的形状与口径（EVAL-*/TRIG-*），可选 --run-with 把执行层命令接进来代跑并自动复校；WS/GRAD/BENCH/TIME 全族复校工作区产物，BENCH-004 拿聚合值重算对账。工具自己不出题、不监考、不打分。",
-    "ref": "评测流程指南 §〇"
+    "description": "skillverify 是验收员不是厨师：校验你手写的两份考卷（evals.json 输出质量用例、trigger-queryset.json 触发测试集）格式与口径对不对；加 --run-with 还能替你真跑，跑完自动复校产物。真跑产生的每轮产物（输出、计时、评分、基准值）也逐项对账，聚合分数和逐次记录对不上会当场点名。工具自己不出题、不监考、不打分。",
+    "ref": "技能编写指南 §五"
   },
   "nodes": [
     "evals",
@@ -17,42 +17,42 @@
       "steps": [
         {
           "label": "准备评测资产（人工编写，无命令）",
-          "note": "步骤 1 备料：在技能包 evals/ 下手写 evals.json（输出质量用例：先 2–3 条、prompt 像真人说话、断言可判定）与 trigger-queryset.json（触发集，与 evals.json 分开两个文件）；评测工作区 <技能名>-workspace/iteration-N/ 跑评测时产生，放技能目录旁边不是里面（塞进去会被 token 预算/引用检查算进去）",
+          "note": "步骤 1 备料：在技能包 evals/ 下手写两份资产——evals.json（输出质量用例：先 2–3 条就够，prompt 像真人说话，断言要能判定对错）和 trigger-queryset.json（触发测试集，单独一份文件）。评测工作区 <技能名>-workspace/iteration-N/ 是跑的时候产生的，放技能目录旁边、别塞进技能目录里（会被算进 token 预算和引用检查）",
           "ref": "技能编写指南 §五"
         },
         {
           "node": "evals",
-          "card": "方式 A：纯校验，不执行",
-          "note": "步骤 2 资产校验（方式 A）：花钱跑评测前先拦形状/口径错误；此时 trigger-runs 不存在，TRIG-* 报「尚未跑过」（SKIP）是预期，不是失败",
-          "ref": "评测流程指南 §二.步骤2"
+          "card": "只校验，不真跑（花钱前先验货）",
+          "note": "步骤 2 先验货再花钱：只检查你手写的两份资产格式对不对、口径齐不齐，不执行。还没跑过触发集时提示「尚未跑过」是正常预期，不是失败",
+          "ref": "操作手册 A4"
         },
         {
           "node": "evals",
-          "card": "方式 B：--run-with 委托真跑 + 自动复校",
-          "note": "步骤 3+4 委托执行（--run-with，同节点第二段用法）：B/C 管用例、D 管触发集——完整一轮需（B 或 C）且 D；成功后自动复校（≡ 方式 A）。不经委托直接跑脚本时，跑完必须单独再跑一次 evals 复校",
-          "ref": "评测流程指南 §二.步骤3/§三.3.2"
+          "card": "真跑一轮：用例 + 触发集（跑完自动复校）",
+          "note": "步骤 3+4 真跑：还是这条命令，加 --run-with 让它替你执行——要跑两样：「输出质量用例」选一个执行器（run_evals.py 或官方评测器，二选一）、「触发测试集」跑 run_triggers.py，两样都齐才算完整一轮。跑完它自动把产物再校验一遍；如果你绕开它自己手动跑脚本，跑完必须回来补一次上一步的校验",
+          "ref": "操作手册 A4b"
         },
         {
           "node": "check",
-          "note": "步骤 5 总检查：--stages all 全族复校（WS-001..008/GRAD/BENCH-004 对账/TIME）。评测工作区同时是语义评审 material 的数据源——交汇方向单向（评测 → 评审），标准顺序评测跑完再排评审",
-          "ref": "评测流程指南 §二.步骤4；语义评审流程指南 §7.1/§六.9"
+          "note": "步骤 5 全面复检：--stages all 把工作区里跑出来的所有产物（输出、计时、评分、基准值）逐项对账，防止有人手改数字糊弄。评测的结论之后会被语义评审线拿去当材料——顺序上先跑完评测、再排评审",
+          "ref": "操作手册 A6；验证流程指南 六"
         },
         {
           "node": "deliver",
-          "note": "门禁合流（决策层交汇）：评测线（check_evals/check_trigger 消费工作区产物）与语义评审线（REV-000 消费中央记录）的结论共同决定能否交付；改版回归靠 deliver --strict + rules_hash 拦「悄悄退步」",
-          "ref": "语义评审流程指南 §7.2；评测流程指南 §七.3"
+          "note": "最后一步 交付放行：评测线的结论和语义评审线的结论在这里汇合，共同决定技能能不能交付；版本改动后加 --strict，配合内容指纹比对（指纹变了说明改过却没重评），拦住「悄悄退步」",
+          "ref": "操作手册 A6；验证流程指南 六"
         }
       ],
       "presets": [
         {
           "id": "ci-min",
           "title": "CI 最小集",
-          "description": "check --stages all --json 产机读报告（进 CI artifact）；deliver --stages all --strict --json 出交付记录（--strict 需显式确认，会拦未覆盖项）",
+          "description": "CI 里跑两条：check --stages all --json 出机读报告（可存为 CI artifact）；deliver --stages all --strict --json 出交付记录并做最终把关（--strict 会连未覆盖项也拦下，需显式确认）",
           "values": {
             "check": {"stages": "all", "json": true},
             "deliver": {"stages": "all", "strict": true, "json": true}
           },
-          "ref": "评测流程指南 §二.步骤5/§七.3"
+          "ref": "操作手册 A6"
         }
       ]
     }

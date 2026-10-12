@@ -50,7 +50,7 @@
   },
   "pitfalls": [
     {
-      "text": "默认无限轮询——操作台/桥上执行必须带 --once 或 --cycles N，否则会被超时强杀（timeout 记 timed_out）",
+      "text": "默认无限轮询——操作台/桥上执行必须带 --once 或 --cycles N，否则会被超时强杀（执行历史里记为超时）",
       "ref": "skillverify watch --help"
     },
     {
