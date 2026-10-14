@@ -18,10 +18,12 @@
 from __future__ import annotations
 
 import argparse
+import io
 import ast
 import os
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -303,6 +305,60 @@ def forbidden_newline_kwarg(tree: ast.AST) -> list[int]:
     return hits
 
 
+def fstring_backslash_hits(src: str) -> list[str]:
+    r"""找出「f-string 的**表达式部分**里有反斜杠」的写法（Python 3.12+ 才允许）。
+
+    为什么单独写这条：`ast.parse(feature_version=...)` 抓不到它（3.12 起的 PEG 解析器
+    无论 feature_version 都照收），而 3.11 会直接 `SyntaxError: f-string expression part
+    cannot include a backslash` —— 本机 3.13 永远绿、CI 红在"运行测试"那一步（2026-10-14 实栽）。
+    判据：3.12+ 的 tokenizer 把 f-string 切成 FSTRING_START/MIDDLE/END；表达式里的字符串是
+    普通 STRING token。**在 f-string 内部出现的、含反斜杠的 STRING token** 就是那一类。
+    （f-string 的字面部分（FSTRING_MIDDLE）里的 `\n`、`\d` 是合法的，不算。）
+    """
+    hits: list[str] = []
+    depth = 0
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+        if tok.type == getattr(tokenize, "FSTRING_START", -1):
+            depth += 1
+        elif tok.type == getattr(tokenize, "FSTRING_END", -1):
+            depth = max(0, depth - 1)
+        elif depth and tok.type == tokenize.STRING and "\\" in tok.string:
+            hits.append(f"{tok.start[0]}: {tok.string[:40]}")
+    return hits
+
+
+def check_oldest_syntax(files: list[Path]) -> None:
+    """**语法下限**：每个文件都要能在 CI 会用的最老解释器语法下解析。
+
+    两条判据：① `ast.parse(feature_version=(3, 11))`（挡 PEP 695/`type` 别名等 3.12+ 语法）；
+    ② f-string 表达式里没有反斜杠（上面那条，feature_version 抓不到）。
+    """
+    print("[test_oldest_syntax]")
+    floor = (3, 11)
+    parse_bad: list[str] = []
+    fs_bad: list[str] = []
+    for path in files:
+        src = path.read_text(encoding="utf-8")
+        rel = path.relative_to(REPO).as_posix()
+        try:
+            ast.parse(src, feature_version=floor)
+        except SyntaxError as exc:
+            parse_bad.append(f"{rel}:{exc.lineno} {exc.msg}")
+        fs_bad += [f"{rel}:{hit}" for hit in fstring_backslash_hits(src)]
+    check(not parse_bad, f"全部文件在 Python {floor[0]}.{floor[1]} 语法下可解析（不过: {parse_bad[:3]}）")
+    check(not fs_bad, f"f-string 表达式里没有反斜杠（3.12+ 才允许；命中: {fs_bad[:3]}）")
+
+    # 反向自检：两种写法都必须能被抓出来，否则这两条就是恒真
+    probe_fs = 'x = f"{sorted(_ids(r\'a\\d\'))}"\n'
+    check(bool(fstring_backslash_hits(probe_fs)), "反向自检：f-string 表达式里的反斜杠会被抓出")
+    try:
+        ast.parse("type Alias = int\n", feature_version=floor)
+        bad_probe = False
+    except SyntaxError:
+        bad_probe = True
+    check(bad_probe, "反向自检：3.12+ 的 `type` 别名在语法下限下会被拒")
+
+
 def main() -> int:
     force_utf8_stdio()
     argparse.ArgumentParser(description="skillverify 自检（死代码 / 过期措辞）").parse_args()
@@ -310,6 +366,8 @@ def main() -> int:
     files = source_files()
     check(len(files) > 35, f"扫描到 {len(files)} 个 Python 文件")
     trees = {p: ast.parse(p.read_text(encoding="utf-8")) for p in files}
+
+    check_oldest_syntax(files)
 
     print("[test_deadcode]")
     dead_imports, dead_defs, _stale = collect(trees)

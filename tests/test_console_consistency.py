@@ -204,15 +204,21 @@ def run_manual_numbers() -> None:
         m = re.search(pattern, text)
         return set(m.group(1).split("/")) if m else set()
 
+    # 注意：模式串先绑到变量再用进 f-string——**f-string 表达式里不许出现反斜杠**
+    # （PEP 701 是 Python 3.12 才放开的；本机 3.13 绿、CI 的 3.11 直接 SyntaxError，
+    # 实测栽过一次：「本机独有版本」这类坑，见 AGENTS §五.15）。
+    pat_new = r"新增 ([WERD]-\d+(?:/[WERD]-\d+)*)"
+    got_new = sorted(_ids(pat_new))
     _check("manual 列出的新增提示词 id = 目录事实",
-           _ids(r"新增 ([WERD]-\d+(?:/[WERD]-\d+)*)") == set(new_ids),
-           f"manual {sorted(_ids(r'新增 ([WERD]-\d+(?:/[WERD]-\d+)*)'))} vs 实际 {new_ids}")
+           _ids(pat_new) == set(new_ids), f"manual {got_new} vs 实际 {new_ids}")
+    pat_block = r"阻断项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)"
+    got_block = sorted(_ids(pat_block))
     _check("manual 列出的阻断项 = 目录事实",
-           _ids(r"阻断项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)") == set(blocking),
-           f"manual {sorted(_ids(r'阻断项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)'))} vs {blocking}")
+           _ids(pat_block) == set(blocking), f"manual {got_block} vs {blocking}")
+    pat_dual = r"双人独立复核的项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)"
+    got_dual = sorted(_ids(pat_dual))
     _check("manual 列出的双人独立复核项 = 目录事实（raw.dual）",
-           _ids(r"双人独立复核的项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)") == set(dual),
-           f"manual {sorted(_ids(r'双人独立复核的项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)'))} vs {dual}")
+           _ids(pat_dual) == set(dual), f"manual {got_dual} vs {dual}")
     m_fam = re.search(r"D 设计期 (\d+) · W 编写期 (\d+) · E 测试期 (\d+) · R 运行期 (\d+)", text)
     want_fam = (fam.get("D", 0), fam.get("W", 0), fam.get("E", 0), fam.get("R", 0))
     _check("manual 写的家族分布 = 目录事实",
