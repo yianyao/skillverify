@@ -359,7 +359,7 @@ def make_fixture(tmp: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     (skill.parent / "demo-skill-workspace" / "feedback.json").write_text(json.dumps(
         {"eval-top-months": ""}), encoding="utf-8", newline="")
 
-    # 假的评审命令（档 1 执行器用）：读 stdin、把 JSON 打到 stdout
+    # 假的评审命令（命令行自动评审执行器用）：读 stdin、把 JSON 打到 stdout
     runner = tmp / "fake-runner.py"
     runner.write_text("\n".join([
         "import json, re, sys",

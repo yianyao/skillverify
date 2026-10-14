@@ -1,4 +1,4 @@
-"""console/build_nodes.py —— 生成器（设计文档 §4/§9.1，SOP 第三章 S2）。
+"""console/build_nodes.py —— 生成器（产物与重建流程见 console/README.md）。
 
 职责：
 1. 子进程跑 introspect.py 得机械层（子命令树 + 逐参数机械属性）；
@@ -34,12 +34,12 @@ from pathlib import Path
 
 SCHEMA = "skillverify.console-nodes/1"
 
-# form.widget 枚举（设计文档 §4）
+# form.widget 枚举
 WIDGETS = ("text", "path", "number", "choice", "multi-choice", "flag", "runner",
            "dir-picker")
-# compose_rules 四原语（设计文档 §6）
+# compose_rules 四原语
 RULES = ("requires", "excludes", "suggest", "confirm")
-# manual 节点级允许键（ref = 条目溯源出处，铁律 §五.1；condition = 条件节点声明，设计文档 §3；
+# manual 节点级允许键（ref = 条目溯源出处，铁律 §五.1；condition = 条件节点声明；
 # rules/rules_note = 规则目录快照（如 lint 47 条），守卫测试负责与源码对账）
 NODE_MANUAL_KEYS = {"summary", "inputs", "outputs", "consumers", "effects",
                     "pitfalls", "execution", "compose_rules", "params",
@@ -458,7 +458,7 @@ def build(repo_root: Path, python_exe: str, tool_cmd: list[str], out_path: Path,
 
     nodes: dict[str, dict] = {}
     # CLI 节点：仅生成"域声明 + manual 语义存在"的命令（manual 缺失的叶子命令
-    # 在 M1 不生成；M2+ 桥模式由 /catalog 补齐——设计文档 §9.4）
+    # 静态模式下不生成；桥模式由 /catalog 补齐）
     for nid, sem in node_semantics.items():
         command_path = nid.replace(".", " ")
         domain = domain_nodes.get(nid)

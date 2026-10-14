@@ -703,7 +703,7 @@ def run_dual_review(tmp: Path) -> None:
 
     status, evidence = status_of(base)
     check(status == "INFO" and "未启用" in evidence,
-          f"一条署名都没写 → INFO（未启用双评；实得 {status}）")
+          f"一条署名都没写 → INFO（未启用双人独立复核；实得 {status}）")
 
     one = copy.deepcopy(base)
     one["results"][0]["by"] = "张三"
@@ -727,7 +727,7 @@ def run_dual_review(tmp: Path) -> None:
     same["results"][1]["by"] = "张三"
     status, evidence = status_of(same)
     check(status == "WARN",
-          f"同一个人跑两遍不算双评 → WARN（实得 {status}）")
+          f"同一个人跑两遍不算双人独立复核 → WARN（实得 {status}）")
 
     no_time = copy.deepcopy(two)
     no_time["results"][1]["at"] = ""

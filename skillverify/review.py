@@ -1,14 +1,15 @@
-"""review —— 语义评审：提示词目录、任务包、回写校验与汇总（三档执行器同一 schema）。
+"""review —— 语义评审：提示词目录、任务包、回写校验与汇总（三种执行方式同一 schema）。
 
 **这一层解决的矛盾**：机械检查（spec/lint/evalx）能覆盖的只是一部分；"写得对不对、
 好不好用、会不会误导 Agent"必须由人或 LLM 判断。旧体系有 29 条提示词，但只有提示词
 没有判据，于是回写全是"我看了，还行"——**评审做了，却不可用**。本模块把评审变成
 "有判据、有证据、可校验、可汇总"的流程。
 
-**三档执行器（用户第 2 点要求）产出同一 schema**：
-- 档 1 CLI 自动：把任务包喂给任意命令（`--runner`），收它的 stdout 当回写；
-- 档 2 会话任务包：`review pack` 生成任务包与模板 → 任意 LLM/人填 → `review collect`；
-- 档 3 人工兜底：手写同一个 JSON 模板 → `review collect`。
+**三种执行方式（用户第 2 点要求）产出同一 schema**：
+三种执行方式（**本项目自定义口径**：按"谁产出结论"分，不是行业术语）：
+- **命令行自动评审**：把任务包喂给任意命令（`--runner`），收它的 stdout 当回写；
+- **会话任务包评审**：`review pack` 生成任务包与模板 → 任意 LLM/人填 → `review collect`；
+- **人工兜底评审**：手写同一个 JSON 模板 → `review collect`。
 三档的产物都由 `validate_writeback` 校验，都汇入同一份记录，都进同一张报告。
 
 **回写 schema**（`skillverify.review/1`）：
@@ -22,7 +23,7 @@
 - **证据不得复述判据**：与提示词/判据文本高度重合即 WARN（这是"切实有效"的关键，
   旧体系 29 条提示词的回写大量是判据的改写）。
 - **FAIL 必须写清问题**；**NA 必须说明不适用的理由**。
-- **同一提示词被评两次且结论冲突** → 记冲突，须人工裁决（双评场景）。
+- **同一提示词被评两次且结论冲突** → 记冲突，须人工裁决（双人独立复核场景）。
 - 覆盖不完整要显式列出来，不许默认通过。
 """
 
@@ -41,7 +42,7 @@ from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule, res as _
 #: 提示词目录（随包分发的数据文件；提示词是数据，不是代码）
 CATALOG_PATH = Path(__file__).resolve().parent / "data" / "review-prompts.json"
 
-#: 回写契约（三档执行器共用）
+#: 回写契约（三种执行方式共用）
 WRITEBACK_SCHEMA = "skillverify.review/1"
 
 #: 汇总后落到中央留痕的记录
@@ -148,7 +149,7 @@ RULES: dict[str, Rule] = {
         "REV-010",
         "同一提示词不得有两条互相冲突的结论",
         "HOUSE",
-        "双评场景：两人（或两次）结论不一致时须人工裁决",
+        "双人独立复核场景：两人（或两次）结论不一致时须人工裁决",
         "留下裁决结论，并注明以哪次为准",
     ),
     "REV-011": Rule(
@@ -162,7 +163,7 @@ RULES: dict[str, Rule] = {
         "REV-013",
         "标注 ⚑ 的提示词须有两条各自署名的独立结论",
         "HOUSE",
-        "旧体系 L 类的 ⚑ 双评名单（8 项）；本项目改为机械判定署名，不靠自述",
+        "旧体系 L 类的 ⚑ 双人独立复核名单（8 项）；本项目改为机械判定署名，不靠自述",
         "让第二个评委（另一个会话/另一个模型）独立跑一遍这条，并在回写里各自写 by 与 at；"
         "两人结论不一致时按 REV-010 升级为待人工裁决",
     ),
@@ -416,7 +417,7 @@ def build_pack(
         "prompt_ids": [p.id for p in prompts],
         "results": [
             {"prompt_id": p.id,
-             # ⚑ 双评项要各自署名：两个评委各填一次（同一个人跑两遍不算）
+             # ⚑ 双人独立复核项要各自署名：两个评委各填一次（同一个人跑两遍不算）
              "by": "",
              "at": "",
              "verdict": "",
@@ -559,10 +560,10 @@ def check_calibration(data: dict, *, label: str = "") -> Result:
 def check_dual_review(data: dict, catalog: list[Prompt], *, label: str = "") -> Result:
     """REV-013：⚑ 项必须有**两条各自署名的独立结论**。
 
-    来历：旧体系硬列 8 项必须双评（W-02/04/05/08/15、E-04/06、R-02），但它的 A/B 任务包
+    来历：旧体系硬列 8 项必须双人独立复核（W-02/04/05/08/15、E-04/06、R-02），但它的 A/B 任务包
     **逐字相同、仅包号不同**——所谓独立全靠人工开两个会话，是"自证式独立"。
     这里改成机械判定：同一条 ⚑ 提示词要出现 **≥2 条结果**，署名（`by`）互不相同，
-    每条都要有 `at`；同一个人跑两遍**不算**双评。
+    每条都要有 `at`；同一个人跑两遍**不算**双人独立复核。
 
     判定：齐备 → PASS；不齐 → WARN（流程问题，不是技能缺陷，不阻断交付——
     但会在交付记录里留痕，可配合 `adjudications` 让人拍板）。
@@ -590,12 +591,12 @@ def check_dual_review(data: dict, catalog: list[Prompt], *, label: str = "") -> 
         if pid in {p.id for p in dual} and by and not at:
             missing_at.append(f"{pid} 的署名 {by} 没写时间 at")
 
-    # 一条署名都没写 → 说明这份回写**没启用**双评署名（旧记录、单人评审都属此类）。
+    # 一条署名都没写 → 说明这份回写**没启用**双人独立复核署名（旧记录、单人评审都属此类）。
     # 与 REV-012 评委校准、WS-008 执行自证、AUDIT-006 台账同一口径：增强项不强制，
     # 只在**启用之后**才机械判定——否则所有人恒返回 2，"全绿基线"这类夹具也会无端变脏。
     if not any(sig for sig in signatures.values()):
         return _res(RULES["REV-013"], INFO,
-                    f"{prefix}未启用双评署名（⚑ 项共 {len(dual)} 条）："
+                    f"{prefix}未启用双人独立复核署名（⚑ 项共 {len(dual)} 条）："
                     f"想启用就在回写的每条结果里写 by（谁判的）与 at（何时）")
 
     thin = [p.id for p in dual if len(signatures.get(p.id, set())) < 2]
@@ -609,7 +610,7 @@ def check_dual_review(data: dict, catalog: list[Prompt], *, label: str = "") -> 
                     f"{prefix}⚑ 项需要两条各自署名的独立结论（同一个人跑两遍不算）："
                     + "；".join(detail))
     return _res(RULES["REV-013"], PASS,
-                f"{prefix}{len(dual)} 项 ⚑ 都是双评（各自署名 + 时间）")
+                f"{prefix}{len(dual)} 项 ⚑ 都是双人独立复核（各自署名 + 时间）")
 
 
 def validate_writeback(data: object, catalog: list[Prompt], *,

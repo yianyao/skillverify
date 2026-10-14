@@ -23,3 +23,8 @@ CLAUDE.local.md
 .idea/
 .DS_Store
 Thumbs.db
+
+# uv 的锁文件：本项目运行时**零第三方依赖**（构建期只用 setuptools），
+# 锁文件里没有需要固定的东西，故不纳入版本控制。
+# 哪天引入真实依赖，再把它提交进来——那时它才有意义。
+uv.lock

@@ -1,9 +1,9 @@
-"""console/nodes.json 防漂移守卫（操作台 M2，设计文档 §9.2）。
+"""console/nodes.json 防漂移守卫（操作台；维护流程见 console/README.md）。
 
 重新跑 console/build_nodes.py 生成一份 nodes.json 到临时目录，
 与仓库内提交的 console/nodes.json 做「归一化对比」（剔除 generated_at
 时间戳）。不一致 → FAIL 并逐字段打印差异路径——防「改了 manual/ 语义层
-或 skillverify 参数面、忘了重建产物」的漂移（SOP 第四章 M2-3）。
+或 skillverify 参数面、忘了重建产物」的漂移。
 
 独立可跑（与仓库其他套件同构：_passed/_failed + main()，可挂 run_all.py）：
 
@@ -169,6 +169,79 @@ def run_bridge_origin_guard() -> None:
             proc.wait(timeout=10)
 
 
+# --------------------------------------------------------------------------- #
+# manual 里手抄的数字 / index.html 内联快照（2026-10-14 全库检查抓出的两处无守卫）
+# --------------------------------------------------------------------------- #
+def run_manual_numbers() -> None:
+    """`manual/review.prompts.json` 里手抄的提示词数字必须与 `data/review-prompts.json` 对账。
+
+    manual 是**人工语义层**（人写的"这个命令到底干什么"），里面写着"32 条（旧体系 29 +
+    新增 W-17/R-03/E-11）""阻断项共 4 条""⚑ 需双人独立复核 8 条""D 1 · W 17 · E 11 · R 3"——
+    这些都是**从代码里能算出来的事实**，抄在文档里没有守卫就会漂（改提示词的人不会想起来）。
+    """
+    import re
+
+    from skillverify.review import load_catalog
+
+    print("[test_manual_numbers]")
+    cat = load_catalog()
+    total = len(cat)
+    new_ids = sorted(p.id for p in cat if (p.legacy_source or "").startswith("本项目新增"))
+    legacy = total - len(new_ids)
+    from collections import Counter
+
+    fam = Counter(p.family for p in cat)
+    blocking = sorted(p.id for p in cat if p.blocking)
+    dual = sorted(p.id for p in cat if p.raw.get("dual"))
+
+    text = (CONSOLE / "manual" / "review.prompts.json").read_text(encoding="utf-8")
+    got_total = re.search(r"(\d+) 条（旧体系 (\d+)", text)
+    _check("manual 写的提示词总数 = 目录事实",
+           bool(got_total) and int(got_total.group(1)) == total,
+           f"manual {got_total.groups() if got_total else None} vs 实际 {total}/{legacy}")
+
+    def _ids(pattern: str) -> set[str]:
+        m = re.search(pattern, text)
+        return set(m.group(1).split("/")) if m else set()
+
+    _check("manual 列出的新增提示词 id = 目录事实",
+           _ids(r"新增 ([WERD]-\d+(?:/[WERD]-\d+)*)") == set(new_ids),
+           f"manual {sorted(_ids(r'新增 ([WERD]-\d+(?:/[WERD]-\d+)*)'))} vs 实际 {new_ids}")
+    _check("manual 列出的阻断项 = 目录事实",
+           _ids(r"阻断项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)") == set(blocking),
+           f"manual {sorted(_ids(r'阻断项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)'))} vs {blocking}")
+    _check("manual 列出的双人独立复核项 = 目录事实（raw.dual）",
+           _ids(r"双人独立复核的项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)") == set(dual),
+           f"manual {sorted(_ids(r'双人独立复核的项共 \d+ 条（([WERD]-\d+(?:/[WERD]-\d+)*)'))} vs {dual}")
+    m_fam = re.search(r"D 设计期 (\d+) · W 编写期 (\d+) · E 测试期 (\d+) · R 运行期 (\d+)", text)
+    want_fam = (fam.get("D", 0), fam.get("W", 0), fam.get("E", 0), fam.get("R", 0))
+    _check("manual 写的家族分布 = 目录事实",
+           bool(m_fam) and tuple(int(x) for x in m_fam.groups()) == want_fam,
+           f"manual {m_fam.groups() if m_fam else None} vs 实际 {want_fam}")
+
+
+def run_inline_snapshot() -> None:
+    """`app/index.html` 里内联的 `nodes-data` 必须与 `nodes.json` 一致。
+
+    生成器把 nodes.json **内联**进 index.html（页面要能直接 file:// 打开、不靠 fetch）。
+    原来的守卫只比 `nodes.json`，于是"只改了 nodes.json 忘了重跑 build.py"这一半没人查。
+    """
+    import re
+
+    print("[test_inline_snapshot]")
+    html = (CONSOLE / "app" / "index.html").read_text(encoding="utf-8")
+    m = re.search(r'<script type="application/json" id="nodes-data">(.*?)</script>', html, re.S)
+    if m is None:
+        _check("index.html 里有内联的 nodes-data", False, "没找到 <script id=\"nodes-data\">")
+        return
+    _check("index.html 里有内联的 nodes-data", True)
+    inline = json.loads(m.group(1))
+    committed = json.loads(COMMITTED.read_text(encoding="utf-8"))
+    same = _norm(inline) == _norm(committed)
+    detail = "" if same else "；".join(_diff(_norm(committed), _norm(inline))[:5])
+    _check("index.html 内联数据与 nodes.json 一致（除生成时间戳）", same, detail)
+
+
 def main() -> int:
     if not COMMITTED.exists():
         _check("仓库产物存在", False, f"{COMMITTED} 不存在——请先 python console/build_nodes.py 并提交")
@@ -235,7 +308,7 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, ImportError) as exc:
         _check("lint 规则目录与源码 RULES 一致", False, f"无法对账: {exc}")
 
-    # 5. describe 协议与 argparse 遍历两条数据源等价（EVOL-01）：内省脚本
+    # 5. describe 协议与 argparse 遍历两条数据源等价：内省脚本
     #    auto 模式优先吃 describe 契约——它必须与兜底的 argparse 遍历产出
     #    完全一致，否则"切数据源"会悄悄改变 nodes.json 的内容。
     proc_d = subprocess.run(
@@ -260,6 +333,10 @@ def main() -> int:
 
     # 6. 执行桥的来源闸（真实起桥 + 真实发请求）
     run_bridge_origin_guard()
+
+    # 7. manual 手抄数字 + index.html 内联快照
+    run_manual_numbers()
+    run_inline_snapshot()
 
     print(f"\n合计: PASS={len(_passed)} FAIL={len(_failed)}")
     return 0 if not _failed else 1

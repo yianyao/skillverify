@@ -52,7 +52,7 @@ USER_VISIBLE = (
     ("assertions_added_at", "断言写入时机的显式声明（EVAL-011）"),
     ("adjacency.md", "相邻技能边界清单（review material，W-11 的材料）"),
     ("adjudications.json", "WARN 的人工裁决留痕"),
-    ("REV-013", "⚑ 逐条双评（署名判定）"),
+    ("REV-013", "⚑ 逐条双人独立复核（署名判定）"),
     ("R-03", "bad case 回流为评测用例（本项目新增提示词）"),
     ("E-11", "跨宿主/模型差异归因（本项目新增提示词）"),
     ("describe", "命令面自描述（机读契约）"),

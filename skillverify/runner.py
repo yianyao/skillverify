@@ -1,11 +1,11 @@
-"""runner —— 语义评审的**档 1 执行器**：把提示词喂给任意命令，收回同一 schema 的回写。
+"""runner —— 语义评审的**命令行自动评审执行器**：把提示词喂给任意命令，收回同一 schema 的回写。
 
-三档执行器（M0 约定）都要产出同一份 `skillverify.review/1`，本模块负责档 1：
+三种执行方式（M0 约定）都要产出同一份 `skillverify.review/1`，本模块负责命令行自动评审：
 
-- **档 1 · CLI 自动**（本模块）：`review run --runner "<命令>"`，逐条把提示词送上 stdin，
-  从 stdout 取回结论，组装成与档 2/档 3 **完全相同**的回写，再走同一条 `review collect`。
-- 档 2 · 会话任务包：`review pack` → 人或 LLM 填写。
-- 档 3 · 人工兜底：手写同一 JSON。
+- **命令行自动评审 · CLI 自动**（本模块）：`review run --runner "<命令>"`，逐条把提示词送上 stdin，
+  从 stdout 取回结论，组装成与会话任务包评审/人工兜底评审 **完全相同**的回写，再走同一条 `review collect`。
+- 会话任务包评审 · 会话任务包：`review pack` → 人或 LLM 填写。
+- 人工兜底评审 · 人工兜底：手写同一 JSON。
 
 **为什么不内置 LLM 客户端**：一旦内置，就得维护各家的 API、密钥与重试，
 而"用哪个模型、怎么提示"是使用者的事。这里只做机械部分：喂进去、收回来、校验、汇总。
@@ -40,11 +40,11 @@ from .review import (
 RULES: dict[str, Rule] = {
     "RUN-001": Rule(
         "RUN-001",
-        "档 1 执行器：每条提示词都由 runner 产出可解析的结论",
+        "命令行自动评审执行器：每条提示词都由 runner 产出可解析的结论",
         "HOUSE",
-        "本项目流程约定：三档执行器产出同一 schema，档 1 由命令自动跑",
+        "本项目流程约定：三种执行方式产出同一 schema，命令行自动评审 由命令自动跑",
         "检查 runner 命令本身（能否读到 stdin、是否把结论打到 stdout）；"
-        "或改用档 2 任务包人工填写",
+        "或改用会话任务包评审 任务包人工填写",
     ),
 }
 
@@ -56,7 +56,7 @@ ENTRY_FIELDS = ("prompt_id", "verdict", "evidence", "finding", "suggestion")
 
 #: 指令模板里的 verdict 枚举**从校验器派生**，绝不另写一份：
 #: 早先这里写死成 `PASS|FAIL|NA|WARN`，而 `review.VERDICTS` 只认三个——
-#: 照文档填 `WARN` 的 runner 会被 `REV-005` 判 FAIL，档 1 流水线必然报错。
+#: 照文档填 `WARN` 的 runner 会被 `REV-005` 判 FAIL，命令行自动评审 流水线必然报错。
 #: 这是全仓库唯一一处「按文档写就会错」的硬伤，改成派生后这一类分叉不可能再发生。
 VERDICT_ENUM = "|".join(VERDICTS)
 
@@ -82,7 +82,7 @@ _INSTRUCTION = _INSTRUCTION.replace("{verdict_enum}", VERDICT_ENUM)
 
 @dataclass
 class RunnerOutcome:
-    """档 1 单次执行的结果。"""
+    """命令行自动评审 单次执行的结果。"""
 
     entries: list[dict] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
@@ -138,7 +138,7 @@ def run_runner(
 ) -> tuple[Report, dict]:
     """逐条把提示词喂给 runner，返回 (报告, 回写字典)。
 
-    回写字典与档 2/档 3 完全同构，可直接交给 `review collect`。
+    回写字典与会话任务包评审/人工兜底评审 完全同构，可直接交给 `review collect`。
     """
     skill_dir = Path(skill_dir).resolve()
     catalog = load_catalog()
@@ -211,7 +211,7 @@ def run_runner(
     writeback = {
         "schema": WRITEBACK_SCHEMA,
         "skill": skill_dir.name,
-        "reviewer": f"档 1 CLI：{runner}",
+        "reviewer": f"命令行自动评审 CLI：{runner}",
         "tier": "cli",
         "generated_at": __import__("datetime").datetime.now().astimezone().isoformat(
             timespec="seconds"),
@@ -227,7 +227,7 @@ def run_runner(
 
 
 def validate(writeback: object, catalog: list[Prompt] | None = None) -> list[Result]:
-    """复用档 2/档 3 的**同一条**校验（三档共用，档 1 不走捷径）。"""
+    """复用会话任务包评审/人工兜底评审 的**同一条**校验（三档共用，命令行自动评审 不走捷径）。"""
     results, _record = validate_writeback(writeback, catalog or load_catalog(),
                                           where="runner 回写")
     return results

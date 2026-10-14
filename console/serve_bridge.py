@@ -1,4 +1,4 @@
-"""console/serve_bridge.py —— 执行桥（设计文档 §7/§8，SOP 第五章 M3）。
+"""console/serve_bridge.py —— 执行桥（安全边界见 console/README.md）。
 
 纯标准库 http.server；仅绑 127.0.0.1；端口被占直接报错退出（不重试不换口，
 防"僵尸占用 + 重复绑定"陷阱——Windows SO_REUSEADDR 允许重复绑定，必须关掉）。
@@ -43,7 +43,7 @@ from urllib.parse import urlparse, parse_qs
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 SCHEMA = "skillverify.console-nodes/1"
-HISTORY_LIMIT = 1000          # 审计滚动上限（设计文档 §8）
+HISTORY_LIMIT = 1000          # 审计滚动上限
 MAX_BODY = 1 << 20            # 请求体上限 1 MiB
 MAX_OUTPUT = 400_000          # /run 回传 stdout/stderr 截断（字符）
 DEFAULT_PORT = 8742
@@ -162,7 +162,7 @@ class CatalogCache:
                                   "ref", "effects", "rules", "rules_note")})
             nodes[nid] = node
 
-        # 实况有、语义层未覆盖的叶子命令 → 新节点（manual_missing，设计文档 §9.4）
+        # 实况有、语义层未覆盖的叶子命令 → 新节点（manual_missing）
         for command_path in sorted(leaves):
             nid = command_path.replace(" ", ".")
             if nid in nodes:
@@ -202,7 +202,7 @@ class CatalogCache:
 
     @staticmethod
     def _diff_against_committed(live_nodes: dict) -> dict:
-        """与入库 nodes.json 逐字段对账（设计文档 §9.4 差异报告）。"""
+        """与入库 nodes.json 逐字段对账。"""
         committed_path = HERE / "nodes.json"
         try:
             committed = json.loads(committed_path.read_text(encoding="utf-8"))
@@ -283,17 +283,25 @@ def _history_path(python_exe: str, cwd: Path) -> Path:
     return _probe_trace_root(python_exe, cwd) / "console" / "history.jsonl"
 
 
+#: 执行历史是**多线程**写的（`ThreadingHTTPServer`：两个并发 /run 会同时进来）。
+#: 追加本身不会撕裂，但"读到超过上限就整体重写"这一段会：两个线程各读一份、
+#: 各写回自己那份 → 后写的把先写的记录**整段吞掉**（执行历史静默丢行）。
+#: 用一把锁把"追加 + 越限重写"变成临界区（2026-10-14 全库检查）。
+_HISTORY_LOCK = threading.Lock()
+
+
 def _append_history(path: Path, record: dict) -> None:
-    """仅追加 + 滚动上限 1000（读改写只在越限时发生一次）。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """仅追加 + 滚动上限 1000（读改写只在越限时发生一次；全程持锁）。"""
     line = json.dumps(record, ensure_ascii=False) + "\n"
-    with path.open("a", encoding="utf-8", newline="\n") as fh:
-        fh.write(line)
-    with path.open("r", encoding="utf-8") as fh:
-        lines = fh.readlines()
-    if len(lines) > HISTORY_LIMIT:
-        with path.open("w", encoding="utf-8", newline="\n") as fh:
-            fh.writelines(lines[-HISTORY_LIMIT:])
+    with _HISTORY_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write(line)
+        with path.open("r", encoding="utf-8") as fh:
+            lines = fh.readlines()
+        if len(lines) > HISTORY_LIMIT:
+            with path.open("w", encoding="utf-8", newline="\n") as fh:
+                fh.writelines(lines[-HISTORY_LIMIT:])
 
 
 def _read_history(path: Path, limit: int) -> list[dict]:

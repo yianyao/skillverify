@@ -22,9 +22,24 @@ function loadNodes() {
 
 let DATA = loadNodes();
 
-/* 桥模式（M3）：页面加载后探测 127.0.0.1:8742（serve_bridge.py 默认端口）。
- * 探到桥 → /catalog 实况数据替换内联快照 + 点亮执行按钮；探不到 → 保持静态模式。 */
-const BRIDGE_URL = "http://127.0.0.1:8742";
+/* 桥模式：页面加载后探测本机执行桥（serve_bridge.py 默认端口 8742）。
+ * 探到桥 → /catalog 实况数据替换内联快照 + 点亮执行按钮；探不到 → 保持静态模式。
+ *
+ * 端口**可覆盖**（改用 `--port 9000` 起桥时页面也得跟着改，否则会安静地退回静态模式、
+ * 让人以为"桥没生效"）：`index.html?port=9000`，或用过一次就记住的 localStorage。 */
+const BRIDGE_PORT = (() => {
+  const fromQuery = new URLSearchParams(location.search).get("port");
+  if (fromQuery && /^\d+$/.test(fromQuery)) {
+    try { localStorage.setItem("skillverify.bridgePort", fromQuery); } catch (err) { /* 隐私模式 */ }
+    return fromQuery;
+  }
+  try {
+    const saved = localStorage.getItem("skillverify.bridgePort");
+    if (saved && /^\d+$/.test(saved)) return saved;
+  } catch (err) { /* 隐私模式 */ }
+  return "8742";
+})();
+const BRIDGE_URL = `http://127.0.0.1:${BRIDGE_PORT}`;
 
 const state = {
   domain: DATA.domains.length ? DATA.domains[0].id : null,

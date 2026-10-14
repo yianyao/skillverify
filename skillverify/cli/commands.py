@@ -699,7 +699,7 @@ def _review_run(args: argparse.Namespace, catalog: list[Prompt]) -> int:
         print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
         return 1
     if not args.runner:
-        print("FAIL: 档 1 执行器需要 `--runner <命令>`（该命令会读到提示词并以 JSON 回结论）。",
+        print("FAIL: 命令行自动评审执行器需要 `--runner <命令>`（该命令会读到提示词并以 JSON 回结论）。",
               file=sys.stderr)
         return 1
     prompt_ids = [x.strip() for x in args.prompts.split(",") if x.strip()] if args.prompts else None
@@ -710,7 +710,7 @@ def _review_run(args: argparse.Namespace, catalog: list[Prompt]) -> int:
         timeout_s=args.timeout,
         allow_partial=args.allow_partial,
     )
-    # 与档 2/档 3 走**同一条**校验
+    # 与会话任务包评审/人工兜底评审 走**同一条**校验
     checks = runner_validate(writeback)
     for res in checks:
         report.add(res)

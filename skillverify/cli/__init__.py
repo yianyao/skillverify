@@ -331,8 +331,8 @@ def _add_review_parsers(sub) -> None:
         description=(
             "机械检查之外的判断交给语义评审：提示词目录（旧体系 29 条 + 本项目新增，"
             "含指令注入 W-17），每条带 PASS/FAIL 判据与证据要求。"
-            "三档执行器产出同一 schema——档 1 任意 CLI（把任务包喂给它）、"
-            "档 2 会话任务包（任意 LLM 或人填写）、档 3 人工兜底（手写同一 JSON）。"
+            "三种执行方式产出同一 schema——命令行自动评审 任意 CLI（把任务包喂给它）、"
+            "会话任务包评审 会话任务包（任意 LLM 或人填写）、人工兜底评审 人工兜底（手写同一 JSON）。"
         ),
     )
     review_sub = p_review.add_subparsers(dest="review_action", metavar="<动作>")
@@ -371,10 +371,10 @@ def _add_review_parsers(sub) -> None:
 
     r_run = review_sub.add_parser(
         "run",
-        help="档 1 执行器：把提示词喂给任意命令，收回同一 schema 的回写",
+        help="命令行自动评审执行器：把提示词喂给任意命令，收回同一 schema 的回写",
         description=(
             "逐条把提示词送上 runner 的 stdin，从 stdout 取回 JSON 结论，组装成与"
-            "档 2（会话任务包）/档 3（人工）**完全相同**的回写，再走同一条 collect 校验。"
+            "会话任务包评审（会话任务包）/人工兜底评审（人工）**完全相同**的回写，再走同一条 collect 校验。"
             "runner 失败（非零退出/超时/输出不可解析）不会被写成 NA——那会把工具故障"
             "伪装成「本项不适用」；失败条目直接不产出并以非零退出码报出来。"
         ),

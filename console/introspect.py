@@ -1,6 +1,6 @@
 """console/introspect.py —— 通用命令面内省脚本（子进程内执行）。
 
-职责（设计文档 §9.1 + EVOL-01）：
+职责：
 - 由生成器以子进程方式调用：`<python> console/introspect.py [选项]`，JSON 打到 stdout；
 - **数据源二选一**（--data-source，默认 auto）：
   1. `describe` 协议（首选）：目标模块按约定导出 `describe_surface()`（返回
@@ -12,7 +12,7 @@
 - 本脚本**不含任何 skillverify 业务知识**（目标模块与工厂经命令行指定）。
 
 零侵入边界：本脚本运行在独立子进程里，允许 import 目标工具；console 自身进程
-永不 import skillverify（设计文档 §1.1 契约 1）。
+永不 import skillverify（本项目的硬约束）。
 
 输出结构（两数据源归一为同一形状）：
     {"tool_version": "<字符串>", "commands": {"<命令路径>": {"positionals": [...], "options": [...]}, ...}}

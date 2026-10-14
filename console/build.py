@@ -1,4 +1,4 @@
-"""console/build.py —— 构建脚本（设计文档 §9.3，SOP 第三章 S5）。
+"""console/build.py —— 构建脚本（用法与产物见 console/README.md）。
 
 步骤：
 1. 子进程跑 build_nodes.py 生成 console/nodes.json（机械层 + 语义层合并与自检）；
