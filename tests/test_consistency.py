@@ -188,7 +188,10 @@ def run_numbers() -> None:
     pattern = (r"(\d+) 条规则[（(：:]\s*spec (\d+) / lint (\d+) / 评测 (\d+) / 触发 (\d+)"
                r" / 评审 (\d+) / 材料·执行器 (\d+) / 发现 (\d+) / 库级·挂载·审计 (\d+)")
     hits = list(re.finditer(pattern, cov))
-    check(len(hits) >= 2, f"《覆盖对照》里能找到逐族规则数（找到 {len(hits)} 处）")
+    # 精确值：这份守卫的意义就是"逐族规则数**全都**解析到了"——写成下界时，
+    # 正则因文档改格式而少匹配一处，它会继续绿灯（2026-10-14 全库检查）。
+    # 改了《覆盖对照》的这段句式就同步这个数字。
+    check(len(hits) == 2, f"《覆盖对照》里能找到逐族规则数（找到 {len(hits)} 处，期望 2 处）")
     reported = {}
     for m in hits:
         declared_total = int(m.group(1))
@@ -390,7 +393,8 @@ def run_coverage_math() -> None:
         rows += 1
         if nums[0] != sum(nums[1:]):
             bad.append(f"{cells[0][:24]}: {nums}")
-    check(rows >= 8, f"解析到 {rows} 行汇总（覆盖对照的矩阵表）")
+    check(rows == 16, f"解析到 {rows} 行汇总（覆盖对照的矩阵表，期望 16 行）"
+          "——矩阵表增删行时同步这个数字")
     check(not bad, f"每行都满足「条数 = 覆盖 + 部分 + 未覆盖」（异常行: {bad[:3]}）")
 
 
@@ -469,14 +473,28 @@ def run_handoff() -> None:
 
 
 def _command_count() -> int:
-    """CLI 顶层子命令数（12 个）：只数 `sub.add_parser(` 那一层。
+    """CLI 顶层子命令数（12 个）——**读我们自己发布的命令面契约**，不抠源码。
 
-    **别用 `add_parser` 的裸计数**：`hook`/`review` 还有自己的二级子解析器
-    （`hook_sub` / `review_sub`），裸计数会得到 18。
+    早先用 `p_x = sub.add_parser("名")` 的正则数：换个写法、换行、或加个变量间接调用，
+    它会静默少数（数到 0 也照样"通过"）。现在走 `describe.build_surface()`（对外契约，
+    本身有"与 argparse 遍历等价"的守卫），并拿源码里的裸 `add_parser` 计数（含二级子命令，
+    实测 20）与 `p_x = sub.add_parser(` 次数（12）做双向交叉核对。
     """
+    from skillverify.describe import build_surface
+
+    surface = build_surface()["commands"]
+    top = [k for k in surface if k and "." not in k and " " not in k]
     text = read("skillverify/cli/__init__.py")
-    return len(set(re.findall(r"^\s*p_\w+ = sub\.add_parser\(\s*\n?\s*\"([\w-]+)\"",
-                              text, re.MULTILINE)))
+    raw = len(re.findall(r"\.add_parser\(", text))
+    named_top = len(re.findall(r"^\s*p_\w+ = sub\.add_parser\(", text, re.M))
+    # 两条都是**能红**的交叉核对：① 裸计数（含二级子命令，实测 20）必须大于顶层数，
+    # 否则说明过滤层已多余、或契约没在描述真实命令面；② 契约顶层数与源码里
+    # `p_x = sub.add_parser(` 的次数一致——契约与源码互为对方的证人。
+    assert raw > len(top), (f"裸 add_parser 计数（{raw}）不大于顶层命令数（{len(top)}）"
+                            f"——契约可能没在描述真实命令面")
+    assert named_top == len(top), (f"契约顶层数 {len(top)} 与源码 `p_x = sub.add_parser(` "
+                                   f"次数 {named_top} 不一致")
+    return len(top)
 
 
 def cli_surface() -> tuple[list[str], list[str]]:
@@ -523,8 +541,10 @@ def run_cli_coverage() -> None:
     subs, flags = cli_surface()
     # `-h` 是 argparse 自带的简写（文档写 `--help` 就够），不单独要求
     flags = [f for f in flags if f != "-h"]
-    check(len(subs) >= 11 and len(flags) >= 40,
-          f"抠到 CLI 表面：{len(subs)} 个子命令 / {len(flags)} 个旗标")
+    check(len(subs) == 20 and len(flags) == 52,
+          f"抠到 CLI 表面：{len(subs)} 个子命令 / {len(flags)} 个旗标"
+          "（期望 20 / 52；加子命令或旗标时同步这两个数字，"
+          "好让「新增了但文档没写」立刻变成红）")
     missing_subs = [s for s in subs if s not in text]
     missing_flags = [f for f in flags if not mentioned(f)]
     check(not missing_subs, f"每个子命令都在文档里出现过（缺: {missing_subs}）")
@@ -604,8 +624,9 @@ def run_agents_counts() -> None:
     if hit2:
         check(int(hit2.group(1)) == invariants,
               f"不变量计数一致（结构说明写 {hit2.group(1)}，实际 {invariants} 条）")
-    check(pitfalls >= 17 and invariants >= 11,
-          f"抠到的条目数合理（坑 {pitfalls} / 不变量 {invariants}）")
+    check(pitfalls == 19 and invariants == 11,
+          f"抠到的条目数（坑 {pitfalls} / 不变量 {invariants}，期望 19 / 11）"
+          "——条数是**从 AGENTS.md 数出来的**，它变了要么是文档加了条目、要么是数法坏了，两种都该红")
 
 
 def main() -> int:

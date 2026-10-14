@@ -91,7 +91,9 @@ jobs:
         id: has_tests
         run: echo "ok=$(test -f tests/run_all.py && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.has_tests.outputs.ok == 'true'
-        run: python -m tests.run_all
+        # `--install` 是**唯一**能验证 wheel 里真带 data/（hosts.toml、review-prompts.json）的方式：
+# 在源码树里跑永远发现不了漏 package-data（改用 editable 装同理）。慢一分钟，值得。
+run: python -m tests.run_all --install
 
   # 操作台守卫（console/）：nodes.json 必须与 manual/ 语义层 + skillverify 当前参数面
   # 保持同步——改了任一侧忘了重建产物，这里红并逐字段指认差异。

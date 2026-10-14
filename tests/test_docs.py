@@ -448,10 +448,15 @@ def fill_template(template: Path, out: Path) -> None:
 
 def run_block(doc: Path, which: int, mapping: dict[str, str],
               actions: dict[str, "Callable[[], None]"], label: str,
-              min_steps: int = 3) -> int:
-    """执行某文档里的第 `which` 个演练块，逐条核对期望退出码；返回执行的命令数。"""
+              expect_steps: int) -> int:
+    """执行某文档里的第 `which` 个演练块，逐条核对期望退出码；返回执行的命令数。
+
+    `expect_steps` 是**精确**步骤数（不是下界）：下界写法下，块里少解析出几行
+    （注释格式一改就会）仍然绿灯，等于这些命令悄悄不跑了（2026-10-14 全库检查）。
+    """
     steps = extract_runnable(doc.read_text(encoding="utf-8"), which, doc.name)
-    check(len(steps) >= min_steps, f"{label}：演练块解析出 {len(steps)} 个步骤")
+    check(len(steps) == expect_steps,
+          f"{label}：演练块解析出 {len(steps)} 个步骤（期望 {expect_steps} 个")
     executed = 0
     for raw, expected in steps:
         if raw in actions:
@@ -515,7 +520,8 @@ def run_walkthrough(tmp: Path) -> None:
         if template.is_file():
             fill_template(template, filled)
 
-    run_block(DOC_PIPELINE, 0, mapping, {FILL_MARKER: fill}, "流程指南")
+    run_block(DOC_PIPELINE, 0, mapping, {FILL_MARKER: fill}, "流程指南",
+              expect_steps=21)
     record = project / ".agents" / "skillverify" / "review" / "demo-skill.json"
     check(record.is_file(), "演练后中央留痕里有评审记录")
     if record.is_file():
@@ -588,7 +594,8 @@ def run_manual(tmp: Path) -> None:
             fill_template(template_a, filled_a)
 
     run_block(DOC_MANUAL, 0, mapping_a,
-              {ASSET_MARKER: add_assets, FILL_MARKER: fill_a}, "操作手册·路线A")
+              {ASSET_MARKER: add_assets, FILL_MARKER: fill_a}, "操作手册·路线A",
+              expect_steps=13)
     record_a = project / ".agents" / "skillverify" / "review" / "my-new-skill.json"
     check(record_a.is_file(), "手册路线 A：评审结论落进了中央记录")
 
@@ -605,7 +612,8 @@ def run_manual(tmp: Path) -> None:
         if template_b.is_file():
             fill_template(template_b, filled_b)
 
-    run_block(DOC_MANUAL, 1, mapping_b, {FILL_MARKER: fill_b}, "操作手册·路线B")
+    run_block(DOC_MANUAL, 1, mapping_b, {FILL_MARKER: fill_b}, "操作手册·路线B",
+              expect_steps=12)
     record_b = project_b / ".agents" / "skillverify" / "review" / f"{skill_b.name}.json"
     check(record_b.is_file(), "手册路线 B：评审结论落进了中央记录")
 
@@ -617,7 +625,7 @@ def run_migration(tmp: Path) -> None:
     project, skills_root, skill, home, pack_dir, runner = make_fixture(base)
     mapping = rich_mapping(base, project, skills_root, skill, home, pack_dir, runner,
                            prefix="migrate")
-    run_block(DOC_MIGRATION, 0, mapping, {}, "迁移指南")
+    run_block(DOC_MIGRATION, 0, mapping, {}, "迁移指南", expect_steps=7)
     check(base.joinpath("demo-proj").is_dir(), "迁移指南的演练确实作用在独立夹具上")
 
 
@@ -687,6 +695,11 @@ def run_new_docs() -> None:
         check(not unknown_wf, f"CI 样例提到的旗标都真实存在（凭空出现的: {unknown_wf}）")
         check("deliver" in used and "--strict" in wf, "CI 样例跑交付门禁且用 --strict")
         check("tests.run_all" in wf, "CI 样例包含工具自身的回归套件 job")
+        # 打包真装检查只在 `--install` 下跑：CI 若不带它，`package-data` 这一整类
+        # "在源码树里查不出来"的缺陷就永远没有机器在看（2026-10-14 全库检查）。
+        run_all_lines = [ln.strip() for ln in wf.splitlines() if "tests.run_all" in ln]
+        check(any("--install" in ln for ln in run_all_lines),
+              f"CI 的回归套件带 --install（真跑打包检查；实得 {run_all_lines}）")
 
         # action.yml（composite Action）也是"别人会照抄的东西"：它引用的旗标必须真实存在，
         # 否则调用方的 CI 会在**他们**仓库里红。标准库没有 YAML 解析器（本地没法校验 YAML 语法），

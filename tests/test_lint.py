@@ -578,7 +578,30 @@ def run_regressions(tmp: Path) -> None:
         check(status_of(report6, "REF-003") == PASS,
               "符号链接不被跟随（包外宿主路径未被扫描）")
     except (OSError, NotImplementedError):
-        skip("符号链接用例未执行（当前环境不允许创建链接）")
+        # 建不出真链接（Windows 默认要开发者模式/管理员）：**至少把判定分支跑一遍**——
+        # 否则 REF-003 的扫描边界在本机等于零覆盖，而"跳过"看起来跟"通过"一样安静
+        # （2026-10-14 全库检查）。做法：只在夹具那个文件上把 `is_symlink` 打桩成 True，
+        # 验证清单层"不跟随链接、不把包外内容读进来"。
+        import pathlib as _pl
+
+        real_is_symlink = _pl.Path.is_symlink
+
+        def fake_is_symlink(self):  # type: ignore[no-untyped-def]
+            if self.name == "linked.txt":
+                return True
+            return real_is_symlink(self)
+
+        _pl.Path.is_symlink = fake_is_symlink
+        try:
+            report6 = lint_skill(d6)
+            evidence = " ".join(r.evidence for r in report6.results)
+            check(status_of(report6, "REF-003") == PASS,
+                  "符号链接（打桩模拟）不被跟随：清单层不跟随链接 → REF-003 PASS")
+            check("secret" not in evidence,
+                  "链接目标（包外文件）的内容没有被读进报告")
+        finally:
+            _pl.Path.is_symlink = real_is_symlink
+        skip("真符号链接用例未执行（当前环境不允许创建链接）；判定分支已用打桩覆盖")
 
     # 7. git 跟踪状态决定 HYG-002 级别（避免"本地缓存"常态化误报）
     if shutil.which("git"):
