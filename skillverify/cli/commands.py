@@ -285,7 +285,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
     )
     if args.out:
         write_text(Path(args.out), text if text.endswith("\n") else text + "\n")
-        print(f"结果已落盘: {args.out}")
+        print(f"结果已落盘: {args.out}", file=sys.stderr)
     if not args.quiet:
         print(text if text.endswith("\n") else text + "\n")
 

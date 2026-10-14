@@ -27,6 +27,7 @@ import codecs
 import contextlib
 import io
 import json
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -632,7 +633,13 @@ def m_dup_across_roots(skill: Path) -> None:
 
 
 def _clone_skill(skill: Path, new_name: str, description: str | None = None) -> Path:
-    """把技能复制成库里的另一个技能（改目录名与 frontmatter 的 name，必要时换描述）。"""
+    """把技能复制成库里的另一个技能。
+
+    改三处：目录名、frontmatter 的 `name`、以及**评测资产里的 `skill_name`**（必要时换描述）。
+    评测资产也要改名：否则每个副本都额外触发 `EVAL-007`（skill_name 与技能名不一致）——
+    那是「夹具怎么复制」造成的噪声，不是这处变异想测的东西。这条噪声是库级变异开始查
+    「牵连」之后立刻暴露出来的（2026-10-14）。
+    """
     target = skill.parent / new_name
     shutil.copytree(skill, target)
     md = target / "SKILL.md"
@@ -641,6 +648,12 @@ def _clone_skill(skill: Path, new_name: str, description: str | None = None) -> 
     if description is not None:
         text = text.replace(f"description: {DESCRIPTION}", f"description: {description}", 1)
     write(md, text)
+    evals_dir = target / "evals"
+    for asset in sorted(evals_dir.glob("*.json")) if evals_dir.is_dir() else []:
+        payload = json.loads(asset.read_text(encoding="utf-8"))
+        if isinstance(payload, dict) and payload.get("skill_name") == SKILL:
+            payload["skill_name"] = new_name
+            write_json(asset, payload)
     return target
 
 
@@ -657,6 +670,9 @@ def m_description_overlap(skill: Path) -> None:
 
 LIBRARY_MUTATIONS: list[Mutation] = [
     Mutation("library:元数据总量超预算", m_metadata_over_budget, ("LIB-001",),
+             # 12 份**同一描述**的副本必然同时触发 LIB-002（描述高度重叠）——
+             # 那是「复制同一个技能」这件事的固有副作用，不是这处变异要测的东西。
+             tolerate=("LIB-002",),
              extra_args=("--metadata-budget", "500"),
              note="12 个同类技能的 name+description 加起来超过 500 字符预算："
                   "宿主会把它们一起读进上下文，超了就会静默丢弃"),
@@ -665,6 +681,8 @@ LIBRARY_MUTATIONS: list[Mutation] = [
     Mutation("review:评审后改了技能（记录过期）", m_review_stale, ("REV-000",),
              note="按内容指纹而非 mtime 判断新鲜度"),
     Mutation("discover:同名技能出现在两个根", m_dup_across_roots, ("DISC-001",),
+             # 两个根里放的是**同名同描述**的副本，LIB-002 必然同时响——固有副作用。
+             tolerate=("LIB-002",),
              extra_args=("--root", "{case}/root-b"),
              note="两个根各有同名技能时必须报出来，而不是静默取一个"),
 ]
@@ -686,7 +704,13 @@ def run_cli(argv: list[str]) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
-def run_library_case(base: Path, tmp: Path, mutation: Mutation, index: int) -> None:
+def run_library_case(base: Path, tmp: Path, mutation: Mutation, index: int,
+                     base_problems: set[str]) -> bool:
+    """跑一处库级变异，返回是否"抓住且无牵连"。
+
+    **与单技能变异同一套判据**（命中 ∧ 无牵连）：旧写法只查命中，与文件头"缺一不可"
+    自相矛盾——库级变异可以顺带引发一片无关规则报警而照样算通过（2026-10-14 抓出）。
+    """
     case = tmp / f"lib-{index}"
     shutil.copytree(base, case)
     home = case / "_home"
@@ -696,12 +720,20 @@ def run_library_case(base: Path, tmp: Path, mutation: Mutation, index: int) -> N
     extra = tuple(a.replace("{case}", str(case)) for a in mutation.extra_args)
     statuses = run_check(case, home, *extra)
     found = problems(statuses)
-    hit = [rid for rid in mutation.expect if rid in found]
-    if hit:
-        ok(f"库级变异被抓住：{mutation.name}（{', '.join(hit)}）")
-    else:
+    added = found - base_problems
+    hit = [rid for rid in mutation.expect if rid in added]
+    allowed = set(mutation.expect) | set(mutation.tolerate)
+    collateral = sorted(added - allowed)
+    if hit and not collateral:
+        ok(f"库级变异被抓住且无牵连：{mutation.name}（{', '.join(hit)}）")
+        return True
+    if not hit:
         fail(f"库级变异未被抓住：{mutation.name}（期望 {mutation.expect}，"
-             f"实际问题集合新增: {sorted(found)}）")
+             f"新增问题: {sorted(added)}）")
+    else:
+        fail(f"库级变异被抓住但牵连了别的规则：{mutation.name}"
+             f"（命中 {hit}，多出 {collateral}）")
+    return False
 
 
 def main() -> int:
@@ -752,14 +784,37 @@ def main() -> int:
 
         print("[test_library_mutations]")
         for index, mutation in enumerate(LIBRARY_MUTATIONS):
-            run_library_case(base, tmp, mutation, index)
-            covered.update(rid.split("-")[0] for rid in mutation.expect)
+            # 只有**真抓住**才把它算进覆盖面：旧写法无条件 update，
+            # 于是"没抓住"的库级变异反而让覆盖门自证通过。
+            if run_library_case(base, tmp, mutation, index, base_problems):
+                covered.update(rid.split("-")[0] for rid in mutation.expect)
 
         print("[test_coverage]")
         missing = sorted(set(REQUIRED_FAMILIES) - covered)
         check(not missing, f"变异自测覆盖全部规则族（缺: {missing}）")
         check(len(MUTATIONS) >= 30,
               f"变异数量 {len(MUTATIONS)} 个（另有库级变异 {len(LIBRARY_MUTATIONS)} 个）")
+
+        print("[test_mutation_count]")
+        # "41 处（39+2）"这类写在别处的人写数字必须与代码对账——
+        # 实测它已漂到 43（库级从 2 长到 4），而没有任何东西查过它（2026-10-14 全库检查）。
+        root = Path(__file__).resolve().parent.parent
+        total_mut = len(MUTATIONS) + len(LIBRARY_MUTATIONS)
+        expect = (total_mut, len(MUTATIONS), len(LIBRARY_MUTATIONS))
+        patterns = (
+            ("tests/run_all.py",
+             re.compile(r"变异\s*(\d+)\s*处\s*=\s*(\d+)\s*单技能\s*\+\s*(\d+)\s*库级")),
+            ("AGENTS.md",
+             re.compile(r"注入\s*(\d+)\s*处缺陷（(\d+)\s*处单技能\s*\+\s*(\d+)\s*处库级")),
+        )
+        for name, pattern in patterns:
+            text = (root / name).read_text(encoding="utf-8")
+            m = pattern.search(text)
+            if m is None:
+                fail(f"{name} 里找不到变异计数声明（改了措辞就要同步这条正则，别让它静默失效）")
+                continue
+            got = tuple(int(x) for x in m.groups())
+            check(got == expect, f"{name} 的变异计数 = 代码（文档 {got}，实际 {expect}）")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

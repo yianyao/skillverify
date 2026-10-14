@@ -209,7 +209,7 @@ def run_watch_loop(tmp: Path) -> None:
     check("REF-001" in text and "FAIL" in text, "改动后立即报出 REF-001 FAIL")
     check("本轮复跑 1 个技能" in text, "增量复跑（不是整库重跑）")
     check("第 3 轮 · 无变化" in text, "第 3 轮无改动则不重跑")
-    check(code == 1, f"退出码反映最后一轮结果（实得 {code}）")
+    check(code == 1, f"退出码取最严重的一轮（实得 {code}）")
 
     # JSON 模式：每轮一行
     output2 = io.StringIO()
@@ -242,6 +242,41 @@ def run_watch_loop(tmp: Path) -> None:
         check(code4 == 1, "异常轮次体现在退出码上")
     finally:
         watch._check_skills = original
+
+    # 早期轮次的失败不许被后续干净轮覆盖成 0（旧写法每轮直接赋值 → 这里会返回 0）
+    repo2 = tmp / "wl-early"
+    skill2 = write_skill(repo2 / ".agents" / "skills", "demo-skill")
+    (skill2 / "SKILL.md").write_text(
+        f"---\nname: demo-skill\ndescription: {DESC}\n---\n\n# Demo\n\n"
+        "See `references/missing.md`.\n", encoding="utf-8", newline="")
+    state2 = {"fixed": False}
+
+    def on_cycle2(index: int, changes) -> None:
+        if index == 1 and not state2["fixed"]:
+            (skill2 / "SKILL.md").write_text(
+                f"---\nname: demo-skill\ndescription: {DESC}\n---\n\n# Demo\n\n没有断链。\n",
+                encoding="utf-8", newline="")
+            state2["fixed"] = True
+
+    output5 = io.StringIO()
+    code5 = watch.run_watch(repo2, tmp / "wl-home", profile, stages="lint", interval=0.01,
+                            cycles=2, stream=output5, on_cycle=on_cycle2)
+    check(code5 == 1,
+          f"第 1 轮 FAIL、第 2 轮干净 → 退出码仍是 1（实得 {code5}）：早期失败轮不许被覆盖")
+
+    # --json 下进度/异常只能走 stderr：stdout 必须是**纯 JSON 行流**
+    original2 = watch._check_skills
+    watch._check_skills = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("注入的故障"))
+    try:
+        out6, err6 = io.StringIO(), io.StringIO()
+        watch.run_watch(repo, tmp / "wl-home", profile, stages="lint", interval=0.01,
+                        cycles=1, stream=out6, as_json=True, err_stream=err6)
+    finally:
+        watch._check_skills = original2
+    lines6 = [ln for ln in out6.getvalue().splitlines() if ln.strip()]
+    check(all(ln.startswith("{") for ln in lines6),
+          f"--json 的 stdout 只有 JSON 行（实得 {lines6[:2]}）")
+    check("检查异常" in err6.getvalue(), "--json 下异常信息走 stderr")
 
 
 # --------------------------------------------------------------------------- #

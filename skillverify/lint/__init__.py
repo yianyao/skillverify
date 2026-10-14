@@ -23,7 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..encoding import read_text
-from ..report import SKIP, Report, Result, Rule
+from ..report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
 from ..spec import SkillDocument, load_skill
 from . import budget, deps, hygiene, refs, scripts, security
 from .inventory import build_inventory
@@ -43,6 +43,23 @@ for _module in _FAMILIES:
             raise RuntimeError(f"lint 规则 id 冲突: {_rid}")
         RULES[_rid] = _rule
 del _module, _rid, _rule
+
+#: 同一 rid 出现多条结果时的取舍顺序：**更严重的赢**（FAIL > WARN > SKIP > INFO > PASS）。
+#: 为什么这么排：FAIL/WARN 是可执行的发现；SKIP 是"本项未执行"，必须压过 PASS/INFO——
+#: 旧写法 `produced.setdefault()` 直接丢弃第二条，于是 `scripts` 在预算用尽/解释器不可用时
+#: 补的那条 `SKIP(optional)` 就这么消失了：未覆盖项既不进报告，也不进 deliver 的 uncovered。
+_STATUS_SEVERITY = {FAIL: 0, WARN: 1, SKIP: 2, INFO: 3, PASS: 4}
+
+
+def _merge_results(results: list[Result]) -> dict[str, Result]:
+    """按 rid 归并多条结果：同 rid 保留更严重的那条（保住"未执行"这类信息）。"""
+    merged: dict[str, Result] = {}
+    for item in results:
+        prev = merged.get(item.rid)
+        if prev is None or (_STATUS_SEVERITY.get(item.status, 9)
+                            < _STATUS_SEVERITY.get(prev.status, 9)):
+            merged[item.rid] = item
+    return merged
 
 
 def _context_from(
@@ -94,9 +111,13 @@ def load_context(
     doc = load_skill(path)
     if any(e.status == "FAIL" and e.rid in PRECONDITION_RULES for e in doc.errors):
         return None, doc
-    return _context_from(doc, path, run_scripts=run_scripts,
-                         script_timeout_s=script_timeout_s,
-                         script_budget_s=script_budget_s), doc
+    ctx = _context_from(doc, path, run_scripts=run_scripts,
+                        script_timeout_s=script_timeout_s,
+                        script_budget_s=script_budget_s)
+    if ctx.inventory.walk_error:
+        # 清单不可信 → 没有"事实"可给：调用方按本函数 docstring 记 SKIP，不许假装拿到了
+        return None, doc
+    return ctx, doc
 
 
 def lint_skill(
@@ -122,10 +143,17 @@ def lint_skill(
     ctx = _context_from(doc, path, run_scripts=run_scripts,
                         script_timeout_s=script_timeout_s, script_budget_s=script_budget_s)
 
-    produced: dict[str, Result] = {}
-    for module in _FAMILIES:
-        for result in module.check(ctx):
-            produced.setdefault(result.rid, result)
+    if ctx.inventory.walk_error:
+        # 目录列举失败：清单是空的，规则会在空集合上判 PASS——那正是"没查伪装成通过"。
+        # 整份记 SKIP（本项未执行，计入退出码 2）并说明原因。
+        for rule in RULES.values():
+            report.add(res(rule, SKIP, f"未执行：{ctx.inventory.walk_error}（文件清单不可信）"))
+        report.meta["文件清单"] = "失败"
+        return report
+
+    produced = _merge_results(
+        [result for module in _FAMILIES for result in module.check(ctx)]
+    )
 
     for result in produced.values():
         report.add(result)

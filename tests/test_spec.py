@@ -74,6 +74,7 @@ CASES: list[tuple[str, str, str | None, bool]] = [
 
 _passed: list[str] = []
 _failed: list[str] = []
+_skipped: list[str] = []
 
 
 def ok(msg: str) -> None:
@@ -88,6 +89,12 @@ def fail(msg: str) -> None:
 
 def check(cond: bool, msg: str) -> None:
     ok(msg) if cond else fail(msg)
+
+
+def skip(msg: str) -> None:
+    """本项**未执行**（环境或前置条件缺失）：既不算通过、也不算失败。"""
+    _skipped.append(msg)
+    print(f"  SKIP {msg}")
 
 
 def run_case_matrix(tmp: Path, official: str | None) -> None:
@@ -294,10 +301,13 @@ def run_repo_skills(tmp: Path) -> None:
         base = repo / root
         if base.is_dir():
             found.extend(sorted(base.glob("*/SKILL.md")))
-    check(True, f"声明的技能根: {'、'.join(REPO_SKILL_ROOTS)}"
-                f"（当前 {len(found)} 个技能；放别处的按「外挂」处理，不参与回归）")
+    print(f"  INFO 声明的技能根: {'、'.join(REPO_SKILL_ROOTS)}"
+          f"（当前 {len(found)} 个技能；放别处的按「外挂」处理，不参与回归）")
     if not found:
-        check(True, "声明的技能根里暂时没有技能（本项不适用）")
+        # 没有可检查的对象 = **本项未执行**，记 SKIP。旧写法是 `check(True, ...)`：
+        # 把"跳过"记成 PASS，正是本项目明令禁止的那种伪装（2026-10-14 全库检查抓出）。
+        skip("声明的技能根里没有技能：自家技能过 spec/lint 这一项**未执行**"
+             "（放入技能后自动生效）")
         return
     bad: list[str] = []
     for path in found:
@@ -345,7 +355,8 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
     total = len(_passed) + len(_failed)
-    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} 合计={total}")
+    print(f"\n结果: PASS={len(_passed)} FAIL={len(_failed)} "
+          f"SKIP={len(_skipped)} 合计={total}")
     return 1 if _failed else 0
 
 

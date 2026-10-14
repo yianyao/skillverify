@@ -80,6 +80,95 @@ def _diff(a, b, path: str = "$") -> list[str]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# 执行桥的来源闸（2026-10-14 全库检查开出的缺陷）
+# --------------------------------------------------------------------------- #
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _http(url: str, headers: dict | None = None, data: bytes | None = None,
+          timeout: float = 5.0) -> tuple[int, dict, bytes]:
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(url, data=data, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, dict(resp.headers), resp.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, dict(exc.headers), exc.read()
+
+
+def run_bridge_origin_guard() -> None:
+    """桥的来源/Host 闸：**真实起桥 + 真实发请求**。
+
+    为什么必须端到端：桥会替人执行命令（白名单里就有 `evals --run-with` /
+    `review run --runner` 这类命令串参数），不设闸时"浏览器里任意一个网页"都能让它跑东西。
+    只测白名单函数的返回值证明不了这件事（那是"测夹具"）。
+    """
+    import time
+
+    print("[test_bridge_origin_guard]")
+    port = _free_port()
+    base = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [sys.executable, str(CONSOLE / "serve_bridge.py"),
+         "--tool-cmd", f'"{sys.executable}" -m skillverify',
+         "--python", sys.executable, "--port", str(port)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+        cwd=str(ROOT))
+    try:
+        ready = False
+        deadline = time.time() + 60
+        while time.time() < deadline and proc.poll() is None:
+            try:
+                if _http(base + "/health", timeout=2.0)[0] == 200:
+                    ready = True
+                    break
+            except Exception:
+                time.sleep(0.5)
+        detail = ""
+        if not ready:
+            detail = (proc.stderr.read() if proc.poll() is not None else "60s 未就绪")[:300]
+        _check("执行桥能起来（端到端前提）", ready, detail)
+        if not ready:
+            return
+
+        code, _h, _b = _http(base + "/health")
+        _check("无 Origin 的请求放行（curl / 脚本）", code == 200, f"实得 {code}")
+
+        code, hdr, _b = _http(base + "/health", {"Origin": "null"})
+        _check("Origin: null（file:// 打开的操作台）放行且回显 ACAO",
+               code == 200 and hdr.get("Access-Control-Allow-Origin") == "null",
+               f"实得 code={code} ACAO={hdr.get('Access-Control-Allow-Origin')!r}")
+
+        code, hdr, _b = _http(base + "/health", {"Origin": "https://evil.example"})
+        _check("陌生来源 403 且不回显 ACAO（浏览器读不到响应）",
+               code == 403 and not hdr.get("Access-Control-Allow-Origin"),
+               f"实得 code={code} ACAO={hdr.get('Access-Control-Allow-Origin')!r}")
+
+        code, _h, _b = _http(base + "/health", {"Host": "evil.example"})
+        _check("Host 非回环 403（挡 DNS rebinding）", code == 403, f"实得 {code}")
+
+        code, _h, _b = _http(base + "/run",
+                             {"Content-Type": "application/json",
+                              "Origin": "https://evil.example"},
+                             data=json.dumps({"node": "lint", "args": {}}).encode("utf-8"))
+        _check("陌生来源的 /run 被 403 挡住（连门都进不去）", code == 403, f"实得 {code}")
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=10)
+
+
 def main() -> int:
     if not COMMITTED.exists():
         _check("仓库产物存在", False, f"{COMMITTED} 不存在——请先 python console/build_nodes.py 并提交")
@@ -168,6 +257,9 @@ def main() -> int:
     else:
         detail5 = ((proc_d.stderr or "") + (proc_a.stderr or "")).strip()[:500]
     _check("describe 契约与 argparse 遍历等价（内省数据源切换零漂移）", ok5, detail5)
+
+    # 6. 执行桥的来源闸（真实起桥 + 真实发请求）
+    run_bridge_origin_guard()
 
     print(f"\n合计: PASS={len(_passed)} FAIL={len(_failed)}")
     return 0 if not _failed else 1

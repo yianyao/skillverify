@@ -201,6 +201,15 @@ def _render_cycle(
     stream.flush()
 
 
+#: 退出码取更严重的那个：1（有 FAIL）> 2（有 WARN/SKIP）> 0。
+_EXIT_RANK = {1: 0, 2: 1, 0: 2}
+
+
+def _worse_exit(a: int, b: int) -> int:
+    """两个退出码取更严重的：**早期轮次的失败不许被后续干净轮覆盖掉**。"""
+    return a if _EXIT_RANK.get(a, 3) <= _EXIT_RANK.get(b, 3) else b
+
+
 def run_watch(
     project: Path,
     user_home: Path,
@@ -214,12 +223,18 @@ def run_watch(
     stream: TextIO | None = None,
     as_json: bool = False,
     on_cycle: Callable[[int, ChangeSet], None] | None = None,
+    err_stream: TextIO | None = None,
 ) -> int:
-    """轮询技能库并在变化时立即复跑。返回最后一次复跑的退出码（0/1/2）。
+    """轮询技能库并在变化时立即复跑。
+
+    返回**本次监听期间出现过的最严重**退出码（0/1/2）——早期轮次的失败不会被后续干净轮
+    覆盖成 0（旧写法每轮直接赋值，第 1 轮 FAIL、第 2 轮无变化就返回 0）。
 
     `cycles` 为 None 表示不限轮数（Ctrl-C 退出）；`on_cycle` 仅供测试注入时序。
+    `--json` 下进度/异常/停止信息走 stderr（`err_stream` 可注入），**不污染 JSON 行流**。
     """
     out = stream or sys.stdout
+    err = err_stream or (sys.stderr if as_json else out)
     exit_code = 0
     previous: dict[str, str] = {}
     index = 0
@@ -250,16 +265,16 @@ def run_watch(
                 library = _check_skills(
                     targets, stages=stages, script_timeout_s=script_timeout_s
                 )
-                exit_code = library.exit_code()
+                exit_code = _worse_exit(exit_code, library.exit_code())
                 _render_cycle(index, changes, library, stream=out, as_json=as_json,
                               first=first)
             else:
                 _render_cycle(index, changes, None, stream=out, as_json=as_json)
         except Exception as exc:  # noqa: BLE001 - 监听器不得因单轮异常退出
-            exit_code = 1
-            out.write(f"[watch] 第 {index} 轮检查异常（已跳过，继续监听）: "
+            exit_code = _worse_exit(exit_code, 1)
+            err.write(f"[watch] 第 {index} 轮检查异常（已跳过，继续监听）: "
                       f"{type(exc).__name__}: {exc}\n")
-            out.flush()
+            err.flush()
 
         if on_cycle is not None:
             on_cycle(index, changes)
@@ -272,5 +287,6 @@ def run_watch(
             break
 
     if interrupted:
-        out.write("[watch] 已停止。\n")
+        err.write("[watch] 已停止。\n")
+        err.flush()
     return exit_code

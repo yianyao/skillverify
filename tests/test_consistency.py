@@ -276,8 +276,18 @@ def run_prompt_counts() -> None:
     total = len(catalog)
     families = {f: sum(1 for p in catalog if p.family == f) for f in review.FAMILY_ORDER}
     added = len([p for p in catalog if not p.legacy_id])
+    #: 扫描面 = 根文档 + **代码/配置文件**。后者是 2026-10-14 补的：`pyproject.toml` 与
+    #: `material.py` 都还写着"30 条提示词"（实际 32），而当时守卫只扫根 `*.md`。
+    targets = sorted(p.name for p in REPO.glob("*.md"))
+    targets += ["pyproject.toml", "action.yml"]
+    targets += sorted(
+        str(p.relative_to(REPO)).replace("\\", "/")
+        for p in list((REPO / "skillverify").rglob("*.py"))
+        + list((REPO / "console").rglob("*.py"))
+        if "__pycache__" not in p.parts
+    )
     drift: list[str] = []
-    for name in sorted(p.name for p in REPO.glob("*.md")):
+    for name in targets:
         for lineno, line in enumerate(read(name).splitlines(), 1):
             drift += prompt_count_drift(name, lineno, line, total, families, added)
     check(not drift,

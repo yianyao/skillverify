@@ -694,6 +694,69 @@ def run_script_contracts(tmp: Path) -> None:
           "input() 阻塞脚本：静态 FAIL + 实测超时 FAIL")
 
 
+def run_no_silent_pass(tmp: Path) -> None:
+    """"没查"不许伪装成"通过"：三条静默路径各钉一条（2026-10-14 全库检查开出的缺陷）。
+
+    1. 同 rid 产出两条（PASS + SKIP/optional）时**必须保留 SKIP**——旧 `setdefault`
+       丢掉第二条，"未覆盖项"既不进报告也不进 deliver 的 uncovered；
+    2. 文件清单不可信（目录列举失败）时**整份记 SKIP**，不许拿空清单跑出一片 PASS。
+    """
+    print("[test_no_silent_pass]")
+
+    # 1a) 端到端：一个能实测的 .py + 一个无法实测的 .ts → SCRIPT-004 会产出两条
+    #     （PASS 来自 .py；SKIP(optional) 来自 .ts 不可用）。归并后必须只剩一条 SKIP。
+    mixed = _bare_skill(tmp / "silent_a", "mixed", {
+        "scripts/good.py": GOOD_SCRIPT,
+        "scripts/tool.ts": "export function main(): void { console.log('hi'); }\n",
+    })
+    report = lint_skill(mixed, run_scripts=True, script_timeout_s=10.0)
+    rows = [r for r in report.results if r.rid == "SCRIPT-004"]
+    check(len(rows) == 1, f"同 rid 只保留一条（实得 {len(rows)} 条）")
+    if rows:
+        check(rows[0].status == SKIP and rows[0].optional is True,
+              f"PASS 与 SKIP(optional) 并存时保留 SKIP（实得 {rows[0].status}，"
+              f"optional={rows[0].optional}）——旧写法留 PASS，未覆盖项就此消失")
+    check(report.exit_code() == 2, f"未覆盖项计入退出码 2（实得 {report.exit_code()}）")
+
+    # 1b) 判据本身：归并函数按"更严重的赢"
+    from skillverify.lint import _merge_results
+    from skillverify.report import Result
+
+    def _r(status: str, optional: bool = False) -> Result:
+        return Result(rid="X-001", title="t", status=status, level="HOUSE", optional=optional)
+
+    check(_merge_results([_r(PASS), _r(SKIP, optional=True)])["X-001"].status == SKIP,
+          "归并：PASS + SKIP(optional) → SKIP")
+    check(_merge_results([_r(SKIP), _r(FAIL)])["X-001"].status == FAIL,
+          "归并：SKIP + FAIL → FAIL（真缺陷优先）")
+    # INFO 与 PASS 的先后无所谓（两者都不影响退出码），不作为判据；
+    # 真正要守的是「FAIL/WARN/SKIP 都不会被 PASS 盖掉」：
+    check(_merge_results([_r(PASS), _r(WARN)])["X-001"].status == WARN,
+          "归并：PASS + WARN → WARN")
+
+    # 2) 清单不可信 → 整份 SKIP、零 PASS
+    import skillverify.lint as lint_mod
+    from skillverify.lint.inventory import Inventory
+
+    clean = tmp / "silent_b" / "demo-skill"
+    clean.mkdir(parents=True, exist_ok=True)
+    (clean / "SKILL.md").write_text(skill_md("# Demo\n"), encoding="utf-8", newline="")
+    original = lint_mod.build_inventory
+    try:
+        lint_mod.build_inventory = lambda root: Inventory(root=root, walk_error="注入：目录无法列举")
+        broken_report = lint_mod.lint_skill(clean)
+    finally:
+        lint_mod.build_inventory = original
+    counts = broken_report.counts()
+    check(counts[PASS] == 0 and counts[FAIL] == 0 and counts[SKIP] == len(RULES),
+          f"清单不可信 → 零 PASS/FAIL、整份 SKIP（实得 PASS={counts[PASS]} "
+          f"FAIL={counts[FAIL]} SKIP={counts[SKIP]}/{len(RULES)}）")
+    check(broken_report.exit_code() == 2,
+          f"清单不可信 → 退出码 2（实得 {broken_report.exit_code()}）")
+    check(any("文件清单不可信" in r.evidence for r in broken_report.results),
+          "证据写明了原因（不是一句干巴巴的未执行）")
+
+
 # --------------------------------------------------------------------------- #
 # 退出码契约
 # --------------------------------------------------------------------------- #
@@ -846,6 +909,7 @@ def main() -> int:
         run_rule_coverage(tmp)
         run_regressions(tmp)
         run_script_contracts(tmp)
+        run_no_silent_pass(tmp)
         run_relative_path(tmp)
         run_exit_codes(tmp)
         run_optional_marking(tmp)

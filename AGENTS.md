@@ -10,9 +10,10 @@
 ## 一、这是什么
 
 `skillverify`：宿主无关的 Agent Skill 全生命周期验证套件（纯标准库、强制 UTF-8）。
-十一个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `mount` / `audit` / `watch` / `deliver` / `hook`。
+十二个命令：`spec` / `lint` / `evals` / `review` / `discover` / `check` / `mount` / `audit` / `watch` / `deliver` / `hook` / `describe`（命令面自描述：机读 JSON 契约，供外部工具稳定消费）。
 `legacy/`（旧体系 237 条方案 + 旧技能语料）**已移出本仓库**，归档在仓库外
 （仓库外的姊妹目录 `..\skillSpec-legacy-archive`），不再参与构建、测试与发布。
+仓库里另带一个**本地操作台** `console/`（静态页 + 本机执行桥；不进 wheel、不是交付物，详见它自己的 `console/README.md` 与 `console/操作文档.md`）。
 因此：① 规则出处一律写**文档级引用**（如「旧体系《Agent-Skill 生命周期验证方案》v1.3 §8.3.10」），
 **不许**再出现 `legacy/<路径>` 这种仓库内引用（有守卫查）；② `--dogfood` 变成「可选本地语料」，默认 `legacy/`，目录不在就跳过。
 
@@ -66,7 +67,7 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
    - 行尾注释里的**第一个数字**被当作期望退出码，所以别在行尾注释里写别的数字；
    - 改命令就要同步改期望退出码；新增命令要放进这个块。
 2. **注入自测是变异测试**：`tests/test_injection.py` 先造一份全绿基线（参与判定的规则上百条，具体条数看套件输出），
-   再对**独立副本**注入 41 处缺陷（39 处单技能 + 2 处库级，见 `LIBRARY_MUTATIONS`），要求「期望规则里至少一条必须报错」且「不许牵连无关规则」。
+   再对**独立副本**注入 43 处缺陷（39 处单技能 + 4 处库级，见 `LIBRARY_MUTATIONS`），要求「期望规则里至少一条必须报错」且「不许牵连无关规则」。
    - 加新规则时，最好同时加一处覆盖它的变异（`test_coverage` 会检查 17 个规则族全覆盖；
   `AUDIT-*` 由 `tests/test_library.py` 的注入式断言承担，注释里写明了为什么）；
    - 容忍项（`tolerate`）必须写清理由，不要为了让测试变绿。
@@ -166,6 +167,9 @@ Python 下限**按命令分**：`pyproject` 写 `>=3.10`（`spec`/`lint`/`evals`
   《技能编写指南.md》（作者向）、《验证流程指南.md》（流程/宿主向）、《操作手册.md》（新手向）、
   《迁移与部署指南.md》（新手向）、《仓库结构说明.md》（开发者向），
   另有开发者向的《覆盖对照-生命周期验证方案.md》、`README.md`（仓库落地页）与本文件。
+- `console/` 是**仓库内自带的本地操作台**（1293 行 Python + 前端 + manual 语义层 + 自己的两份文档）：
+  不进 wheel、不随包分发，但要跟着 skillverify 的参数面一起维护——改了命令面或 `manual/`
+  就得重跑 `python console/build.py`（`tests/test_console_consistency.py` 会红着提醒）。
 - `AGENTS.local.md`、`CLAUDE.local.md` 是机器本地覆盖层（已 gitignore），不要提交。
 - 依赖：只用标准库；打包需要联网（构建隔离会取 setuptools）。
 - 迁移后自检：`python -m tests.run_all --dogfood --install` 应全绿（15 个套件 = 默认 14 + 打包真装；具体断言数看输出，本文件不写死数字）。

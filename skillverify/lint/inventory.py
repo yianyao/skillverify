@@ -121,6 +121,10 @@ class Inventory:
     root: Path
     files: list[FileRec] = field(default_factory=list)
     symlinks: list[str] = field(default_factory=list)
+    #: 遍历根目录**本身**就失败时（目录不可列/不可访问）记这里。非空即"清单不可信"：
+    #: 上层必须整份记 SKIP——拿空清单去跑规则，会让十几条"看有没有 X"的规则一律判 PASS
+    #: （2026-10-14 全库检查抓出的静默掩盖路径）。
+    walk_error: str = ""
 
     @property
     def read_errors(self) -> list[FileRec]:
@@ -158,6 +162,7 @@ def build_inventory(root: Path) -> Inventory:
     try:
         walker = sorted(root.rglob("*"))
     except OSError as exc:  # 极端情况：目录不可列
+        inv.walk_error = f"目录无法列举（{exc.strerror or exc}）"
         return inv
 
     for path in walker:

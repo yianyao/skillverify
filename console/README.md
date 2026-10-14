@@ -81,6 +81,13 @@ python console/serve_bridge.py
 - **参数面实时**：`GET /catalog` 实况内省并与入库快照 diff——skillverify 改了参数，**刷新页面即见**新表单；差异在顶部横幅逐字段可见；语义层未覆盖的新命令显示"语义层待补"徽标（补 manual 即消，无需重建）；
 - **一键执行**：`POST /run` 桥端二次校验（白名单 / 逐参数 schema / compose_rules，不信任页面）后以**数组 argv**（永不 shell）执行，回显 stdout/stderr 与退出码；
 - **执行审计**：每次执行追加到 `<trace根>/console/history.jsonl`（`ts/node/argv/exit_code/duration_ms/timed_out`，滚动 1000 条），页面「🕘 历史」查看尾部 50 条；
-- **安全边界**：仅绑 127.0.0.1；端口被占直接退出（不重试不换口）；超时按节点 `execution.timeout_s` 强杀；cwd 必须是已存在目录。
+- **安全边界**：仅绑 127.0.0.1；**Host 必须是回环地址、来源只接受 `file://`（`Origin: null`）
+  或同源 `http://127.0.0.1:<port>`，其余一律 403 且不回 `Access-Control-Allow-Origin`**
+  （不设这道闸时，浏览器里任意一个网页都能 POST `/run`——而白名单里就有 `evals --run-with`
+  与 `review run --runner` 这两个"命令串"参数，等于把本机命令执行权交出去）；
+  端口被占直接退出（不重试不换口）；超时按节点 `execution.timeout_s` 强杀；cwd 必须是已存在目录。
+- **已知残留（别当成"已经安全了"）**：沙箱 iframe 与 `data:` 页面发出的 `Origin` 也是 `null`，
+  与 `file://` 无法区分；桥在跑的时候别同时浏览不可信页面。要更硬就得改成"桥自己托管页面 +
+  一次性令牌"，那是另一个量级的改动，目前没做。
 
 页面在 `file://` 打开也能探到桥（桥已放开跨源头）；探不到桥时自动保持静态模式，一切照旧。

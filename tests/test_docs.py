@@ -771,7 +771,7 @@ def run_structure_doc() -> None:
     """《仓库结构说明.md》必须与真实文件树一致（既不列不存在的，也不漏代码文件）。"""
     print("[test_structure]")
     text = DOC_STRUCTURE.read_text(encoding="utf-8")
-    listed = {p for p in re.findall(r"`((?:skillverify|tests)/[A-Za-z0-9_./-]+)`", text)
+    listed = {p for p in re.findall(r"`((?:skillverify|tests|console)/[A-Za-z0-9_./-]+)`", text)
               if "*" not in p}
     missing = sorted(p for p in listed if not (REPO / p).exists())
     check(not missing, f"结构说明列出的路径都真实存在（不存在: {missing}）")
@@ -780,6 +780,7 @@ def run_structure_doc() -> None:
                for p in list((REPO / "skillverify").rglob("*.py"))
                + list((REPO / "tests").glob("*.py"))
                + list((REPO / "skillverify" / "data").glob("*"))
+               + list((REPO / "console").glob("*.py"))
                if "__pycache__" not in p.parts}
     not_listed = sorted(on_disk - listed)
     check(not not_listed, f"所有代码与数据文件都在结构说明里列出（漏: {not_listed}）")
@@ -794,7 +795,8 @@ def run_structure_doc() -> None:
     for name in ("pyproject.toml", ".gitattributes", ".gitignore", "AGENTS.md",
                  "AGENTS.local.md"):
         check(f"`{name}`" in text, f"结构说明提到根文件 {name}")
-    for dirname in ("skillverify/cli/", "skillverify/lint/", "skillverify/data/", "tests/"):
+    for dirname in ("skillverify/cli/", "skillverify/lint/", "skillverify/data/", "tests/",
+                    "console/"):
         check(dirname in text, f"结构说明展开了 {dirname}")
 
 

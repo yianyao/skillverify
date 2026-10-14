@@ -47,6 +47,6 @@ version = { attr = "skillverify.__version__" }
 
 [tool.setuptools.package-data]
 # **运行时数据必须随包分发**：hosts.toml（宿主布局声明）与
-# review-prompts.json（30 条评审提示词的目录）。漏了这两样，
+# review-prompts.json（32 条评审提示词的目录）。漏了这两样，
 # `discover`/`check`/`review` 会直接失效——而且在源码目录里跑永远发现不了。
 skillverify = ["data/*.toml", "data/*.json"]

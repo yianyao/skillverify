@@ -447,16 +447,62 @@ class BridgeState:
 BRIDGE: BridgeState | None = None
 
 
+#: 允许的来源（本项目自定义口径，文档里写明了）：
+#: - 没有 Origin（curl / 脚本）；`null`（页面用 `file://` 打开时浏览器发的就是它）；
+#: - 回环同源（`http://127.0.0.1:<port>` / `http://localhost:<port>`）；其余一律 403。
+#: **残留风险**：沙箱 iframe 与 `data:` 页面发的也是 `null`，与 `file://` 无法区分——
+#: 这是本机制的已知边界（写在 `console/README.md`），别当成"已经安全了"。
+def _origin_allowed(origin: str | None, port: int) -> bool:
+    if origin is None or origin == "null":
+        return True
+    return origin in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
+
+
+def _host_allowed(host: str | None, port: int) -> bool:
+    """Host 头必须是回环地址——挡 DNS rebinding（攻击者域名解析到 127.0.0.1 时，
+    浏览器发的 Host 是攻击者域名；只看 Origin 会漏掉这一路）。"""
+    if not host:
+        return False
+    name = host.rsplit(":", 1)[0].strip("[]").lower() if ":" in host else host.lower()
+    if name not in ("127.0.0.1", "localhost", "::1"):
+        return False
+    if ":" in host and not host.startswith("["):
+        tail = host.rsplit(":", 1)[1]
+        if tail.isdigit() and int(tail) != port:
+            return False
+    return True
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     # ---- 基础 ----
+    def _port(self) -> int:
+        return int(self.server.server_address[1])
+
+    def _guard(self) -> bool:
+        """请求级闸：Host 必须回环、Origin 必须在白名单。不放行就 403 并返回 False。"""
+        host = self.headers.get("Host")
+        origin = self.headers.get("Origin")
+        if not _host_allowed(host, self._port()):
+            self._send(403, {"error": f"Host 头不是回环地址：{host!r}（可能是 DNS rebinding）"})
+            return False
+        if not _origin_allowed(origin, self._port()):
+            self._send(403, {"error": f"来源不被允许：{origin!r}——桥只接受 `file://` 打开的"
+                                      f"操作台（Origin: null）或 127.0.0.1 同源请求"})
+            return False
+        return True
+
     def _send(self, code: int, payload) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin") if self.headers else None
+        if origin and _origin_allowed(origin, self._port()):
+            # 只回显**被允许**的来源：不再无条件 `*`（那等于允许任意网页读我们的响应）
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -466,8 +512,13 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_OPTIONS(self):  # file:// 跨源预检
+        if not self._guard():
+            return
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin") if self.headers else None
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Max-Age", "600")
@@ -475,6 +526,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if not self._guard():
+            return
         url = urlparse(self.path)
         try:
             if url.path == "/health":
@@ -499,6 +552,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, {"error": f"桥内部错误：{exc}"})
 
     def do_POST(self):
+        if not self._guard():
+            return
         if urlparse(self.path).path != "/run":
             self._send(404, {"error": "未知端点（POST 仅支持 /run）"})
             return
