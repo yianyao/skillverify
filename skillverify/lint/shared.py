@@ -68,23 +68,14 @@ class LintContext:
 
 
 def res(rule: Rule, status: str, evidence: str = "", optional: bool = False) -> Result:
-    """按规则元数据构造一条结果（FAIL/WARN 自动带修复指引）。
+    """lint 版结果构造器：**report.res 的薄包装**，只多一步证据裁剪 `clip`。
 
     `optional=True` 用于"本项属显式未开启的可选批次或环境能力不足"：
     交付门禁据此区分"未覆盖"与"违规"（详见 report.Result.optional）。
     """
-    from ..report import FAIL, WARN
+    from ..report import res as _report_res
 
-    text = clip(evidence)
-    return Result(
-        rid=rule.rid,
-        title=rule.title,
-        status=status,
-        level=rule.level,
-        evidence=text,
-        remediation=rule.remediation if status in (FAIL, WARN) else "",
-        optional=optional,
-    )
+    return _report_res(rule, status, clip(evidence), optional=optional)
 
 
 def clip(text: str) -> str:

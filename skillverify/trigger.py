@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .encoding import read_json
-from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
+from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule, res as _res
 
 _SPEC = "https://agentskills.io/specification#description-field"
 _EVAL = "https://agentskills.io/skill-creation/optimizing-descriptions"
@@ -166,11 +166,6 @@ class Queryset:
     def present(self) -> bool:
         return self.path is not None
 
-
-def _res(rule: Rule, status: str, evidence: str = "") -> Result:
-    return Result(rid=rule.rid, title=rule.title, status=status, level=rule.level,
-                  evidence=evidence,
-                  remediation=rule.remediation if status in (FAIL, WARN) else "")
 
 
 def _summarize(items: list[str], limit: int = 5) -> str:

@@ -36,7 +36,7 @@ from pathlib import Path
 
 from . import __version__
 from .encoding import read_json, write_text
-from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
+from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule, res as _res
 
 #: 提示词目录（随包分发的数据文件；提示词是数据，不是代码）
 CATALOG_PATH = Path(__file__).resolve().parent / "data" / "review-prompts.json"
@@ -473,11 +473,6 @@ def _pack_header(name: str, prompts: list[Prompt]) -> str:
 # 回写校验
 # --------------------------------------------------------------------------- #
 
-
-def _res(rule: Rule, status: str, evidence: str = "") -> Result:
-    return Result(rid=rule.rid, title=rule.title, status=status, level=rule.level,
-                  evidence=evidence,
-                  remediation=rule.remediation if status in (FAIL, WARN) else "")
 
 
 def _norm(text: str) -> str:

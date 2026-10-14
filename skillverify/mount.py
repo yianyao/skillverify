@@ -29,7 +29,7 @@ from .encoding import read_text
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .spec import find_skill_md, skill_md_case_mismatch
 from .tmpdir import temp_dir
-from .report import FAIL, PASS, SKIP, WARN, Report, Result, Rule
+from .report import FAIL, PASS, SKIP, WARN, Report, Result, Rule, res as _res
 
 #: 旧方案的出处（本项目承接其**仓库侧**部分）
 _LEGACY = "旧体系《Agent-Skill 生命周期验证方案》v1.3（V3 注册发现冒烟 / V23 跨宿主加载冒烟）"
@@ -75,11 +75,6 @@ PROBES: tuple[tuple[str, str, str], ...] = (
      "---\nname: probe-skill\ndescription: 缩进坏掉的 frontmatter。\n  裸缩进行: x\n---\n\n# D\n"),
 )
 
-
-def _res(rule: Rule, status: str, evidence: str = "") -> Result:
-    return Result(rid=rule.rid, title=rule.title, status=status, level=rule.level,
-                  evidence=evidence,
-                  remediation=rule.remediation if status in (FAIL, WARN) else "")
 
 
 def _readable(skill: Path) -> tuple[str, str, str]:

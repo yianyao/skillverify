@@ -36,7 +36,7 @@ from pathlib import Path
 from . import __version__
 from .encoding import read_json, write_text
 from .library import MIN_TOKENS, overlap as token_overlap, tokens as lib_tokens
-from .report import FAIL, INFO, PASS, SKIP, WARN, Result, Rule
+from .report import INFO, PASS, SKIP, Result, Rule, res as _res
 from .spec import find_skill_md, load_skill
 
 #: 材料清单的格式版本
@@ -92,11 +92,6 @@ MATERIAL_FOR_PROMPT: dict[str, str] = {
     "W-11": "adjacency.md",
 }
 
-
-def _res(rule: Rule, status: str, evidence: str = "") -> Result:
-    return Result(rid=rule.rid, title=rule.title, status=status, level=rule.level,
-                  evidence=evidence,
-                  remediation=rule.remediation if status in (FAIL, WARN) else "")
 
 
 def _header(serves: str, source: str) -> str:

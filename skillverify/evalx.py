@@ -40,7 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .encoding import read_json, read_text
-from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
+from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule, res as _res
 from .spec import find_skill_md
 
 _EVAL = "https://agentskills.io/skill-creation/evaluating-skills"
@@ -417,11 +417,6 @@ def _read_evals(skill_dir: Path) -> EvalsDoc:
     return doc
 
 
-def _res(rule: Rule, status: str, evidence: str = "") -> Result:
-    return Result(
-        rid=rule.rid, title=rule.title, status=status, level=rule.level,
-        evidence=evidence, remediation=rule.remediation if status in (FAIL, WARN) else "",
-    )
 
 
 #: 识别旧体系方言，把"不符合官方形状"说成可操作的一句话

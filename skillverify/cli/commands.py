@@ -49,6 +49,7 @@ from ..review import (
     select_prompts,
     status as review_status,
     write_record as write_review_record,
+    Prompt,
 )
 from ..spec import check_spec, find_official_cli, run_official
 from ..trigger import check_trigger
@@ -566,6 +567,11 @@ def cmd_evals(args: argparse.Namespace) -> int:
 
 
 def cmd_review(args: argparse.Namespace) -> int:
+    """语义评审：提示词目录 / 任务包 / 回写汇总 / 独立技能包 / 状态。
+
+    这里是**派发器**：各子命令的实现见 `_review_*`（原先 212 行全挤在本函数里，
+    2026-10-14 拆开；行为逐字未变——`tests/test_review.py` 的 126 条断言守着）。
+    """
     """语义评审：提示词目录 / 任务包 / 回写汇总 / 独立技能包 / 状态。"""
     action = getattr(args, "review_action", None)
     if not action:
@@ -577,206 +583,242 @@ def cmd_review(args: argparse.Namespace) -> int:
         print(f"提示词目录错误: {exc}", file=sys.stderr)
         return 1
 
-    if action == "prompts":
+    handler = _REVIEW_ACTIONS.get(action)
+    if handler is None:
+        print(f"FAIL: 未知动作 {action!r}", file=sys.stderr)
+        return 1
+    return handler(args, catalog)
+
+
+#: review 子命令 → 处理函数（键的顺序即文档顺序；**加子命令时两处都要挂**：
+#: `cli/__init__.py` 里的 parser 与这张表，`test_consistency` 的命令面守卫会核对）
+
+
+def _review_prompts(args: argparse.Namespace, catalog: list[Prompt]) -> int:
+    """`review prompts`：列出/渲染提示词目录（人读或 --json）。"""
+    prompts = select_prompts(catalog, args.prompts, args.family)
+    if args.json:
+        payload = json.dumps({"version": 1, "prompts": [p.to_dict() for p in prompts]},
+                             ensure_ascii=False, indent=2)
+    else:
+        payload = render_prompts_md(prompts)
+    if args.out:
+        write_text(Path(args.out), payload if payload.endswith("\n") else payload + "\n")
+        print(f"已落盘: {args.out}", file=sys.stderr)
+    if not args.quiet:
+        print(payload if payload.endswith("\n") else payload + "\n")
+    return 0
+
+
+def _review_pack(args: argparse.Namespace, catalog: list[Prompt]) -> int:
+    """`review pack`：生成语义评审任务包（Markdown + 模板 + manifest）。"""
+    skill_dir = Path(args.path)
+    if not skill_dir.is_dir():
+        print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
+        return 1
+    try:
         prompts = select_prompts(catalog, args.prompts, args.family)
-        if args.json:
-            payload = json.dumps({"version": 1, "prompts": [p.to_dict() for p in prompts]},
-                                 ensure_ascii=False, indent=2)
-        else:
-            payload = render_prompts_md(prompts)
-        if args.out:
-            write_text(Path(args.out), payload if payload.endswith("\n") else payload + "\n")
-            print(f"已落盘: {args.out}", file=sys.stderr)
-        if not args.quiet:
-            print(payload if payload.endswith("\n") else payload + "\n")
-        return 0
+    except CatalogError as exc:
+        print(f"提示词选择错误: {exc}", file=sys.stderr)
+        return 1
+    if not prompts:
+        print("FAIL: 选中的提示词为空", file=sys.stderr)
+        return 1
+    written = build_pack(skill_dir, prompts,
+                         out_dir=Path(args.out) if args.out else None, split=args.split)
+    for path in written:
+        print(f"已生成: {path}", file=sys.stderr)
+    print(f"\n下一步：把任务包交给任意 LLM 或人填写，"
+          f"然后 `{PROG} review collect <填好的模板>`。", file=sys.stderr)
+    return 0
 
-    if action == "pack":
-        skill_dir = Path(args.path)
-        if not skill_dir.is_dir():
-            print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
-            return 1
-        try:
-            prompts = select_prompts(catalog, args.prompts, args.family)
-        except CatalogError as exc:
-            print(f"提示词选择错误: {exc}", file=sys.stderr)
-            return 1
-        if not prompts:
-            print("FAIL: 选中的提示词为空", file=sys.stderr)
-            return 1
-        written = build_pack(skill_dir, prompts,
-                             out_dir=Path(args.out) if args.out else None, split=args.split)
-        for path in written:
-            print(f"已生成: {path}", file=sys.stderr)
-        print(f"\n下一步：把任务包交给任意 LLM 或人填写，"
-              f"然后 `{PROG} review collect <填好的模板>`。", file=sys.stderr)
-        return 0
 
-    if action == "skill":
-        out = Path(args.out) if args.out else Path(".")
-        for path in emit_skill(out, catalog, name=args.name):
-            print(f"已生成: {path}", file=sys.stderr)
-        print("\n该技能包自包含（SKILL.md + references/ + assets/），"
-              "放到任意宿主的技能目录即可加载。", file=sys.stderr)
-        return 0
+def _review_skill(args: argparse.Namespace, catalog: list[Prompt]) -> int:
+    """`review skill`：生成「语义评审」独立技能包。"""
+    out = Path(args.out) if args.out else Path(".")
+    for path in emit_skill(out, catalog, name=args.name):
+        print(f"已生成: {path}", file=sys.stderr)
+    print("\n该技能包自包含（SKILL.md + references/ + assets/），"
+          "放到任意宿主的技能目录即可加载。", file=sys.stderr)
+    return 0
 
-    if action == "collect":
-        paths: list[Path] = [Path(p) for p in (args.files or [])]
-        if args.dir:
-            paths.extend(sorted(Path(args.dir).glob("*.json")))
-        if not paths:
-            print("FAIL: 没有要汇总的回写文件（给文件名或 --dir）", file=sys.stderr)
-            return 1
-        missing = [str(p) for p in paths if not p.is_file()]
-        if missing:
-            print(f"FAIL: 文件不存在: {', '.join(missing)}", file=sys.stderr)
-            return 1
 
-        try:
-            discovery, _config = _load_discovery(args)
-        except ConfigError as exc:
-            print(f"配置错误: {exc}", file=sys.stderr)
-            return 1
-        skill_dir = Path(args.skill_dir) if args.skill_dir else None
-        expected: list[str] | None = None
-        if skill_dir is not None:
-            manifest = skill_dir.parent / f"{skill_dir.name}-review" / (
-                f"{skill_dir.name}-review-manifest.json")
-            if manifest.is_file():
-                try:
-                    expected = json.loads(manifest.read_text(encoding="utf-8")).get("prompt_ids")
-                except (OSError, json.JSONDecodeError):
-                    expected = None
-        report, record = collect_reviews(paths, catalog, skill_dir=skill_dir,
-                                        expected_ids=expected)
-        report.meta["工具版本"] = f"{PROG} {__version__}"
-        report.meta["提示词目录"] = f"{len(catalog)} 条"
-        text = report.to_json() if args.json else report.to_markdown()
-        if args.out:
-            write_text(Path(args.out), text if text.endswith("\n") else text + "\n")
-            print(f"报告已落盘: {args.out}", file=sys.stderr)
-        if not args.quiet:
-            print(text if text.endswith("\n") else text + "\n")
+def _review_collect(args: argparse.Namespace, catalog: list[Prompt]) -> int:
+    """`review collect`：校验回写并汇总进中央记录。"""
+    paths: list[Path] = [Path(p) for p in (args.files or [])]
+    if args.dir:
+        paths.extend(sorted(Path(args.dir).glob("*.json")))
+    if not paths:
+        print("FAIL: 没有要汇总的回写文件（给文件名或 --dir）", file=sys.stderr)
+        return 1
+    missing = [str(p) for p in paths if not p.is_file()]
+    if missing:
+        print(f"FAIL: 文件不存在: {', '.join(missing)}", file=sys.stderr)
+        return 1
 
-        if not args.no_store:
-            if discovery.trace_dir is None:
-                raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
-            latest = write_review_record(discovery.trace_dir / "review", record)
-            print(f"评审记录: {latest}", file=sys.stderr)
-        print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
-              f"未覆盖 {len(record['uncovered_prompts'])}）", file=sys.stderr)
-        return report.exit_code()
+    try:
+        discovery, _config = _load_discovery(args)
+    except ConfigError as exc:
+        print(f"配置错误: {exc}", file=sys.stderr)
+        return 1
+    skill_dir = Path(args.skill_dir) if args.skill_dir else None
+    expected: list[str] | None = None
+    if skill_dir is not None:
+        manifest = skill_dir.parent / f"{skill_dir.name}-review" / (
+            f"{skill_dir.name}-review-manifest.json")
+        if manifest.is_file():
+            try:
+                expected = json.loads(manifest.read_text(encoding="utf-8")).get("prompt_ids")
+            except (OSError, json.JSONDecodeError):
+                expected = None
+    report, record = collect_reviews(paths, catalog, skill_dir=skill_dir,
+                                    expected_ids=expected)
+    report.meta["工具版本"] = f"{PROG} {__version__}"
+    report.meta["提示词目录"] = f"{len(catalog)} 条"
+    text = report.to_json() if args.json else report.to_markdown()
+    if args.out:
+        write_text(Path(args.out), text if text.endswith("\n") else text + "\n")
+        print(f"报告已落盘: {args.out}", file=sys.stderr)
+    if not args.quiet:
+        print(text if text.endswith("\n") else text + "\n")
 
-    if action == "run":
-        skill_dir = Path(args.path)
-        if not skill_dir.is_dir():
-            print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
-            return 1
-        if not args.runner:
-            print("FAIL: 档 1 执行器需要 `--runner <命令>`（该命令会读到提示词并以 JSON 回结论）。",
-                  file=sys.stderr)
-            return 1
-        prompt_ids = [x.strip() for x in args.prompts.split(",") if x.strip()] if args.prompts else None
-        report, writeback = run_runner(
-            skill_dir,
-            args.runner,
-            prompt_ids=prompt_ids,
-            timeout_s=args.timeout,
-            allow_partial=args.allow_partial,
-        )
-        # 与档 2/档 3 走**同一条**校验
-        checks = runner_validate(writeback)
-        for res in checks:
-            report.add(res)
-        report.meta["工具版本"] = f"{PROG} {__version__}"
-
-        out_dir = Path(args.out) if args.out else None
-        target = None
-        if out_dir is not None:
-            out_dir.mkdir(parents=True, exist_ok=True)
-            target = out_dir / f"{skill_dir.name}-review-cli.json"
-            with target.open("w", encoding="utf-8", newline="") as _h:
-                _h.write(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n")
-            print(f"已生成: {target}", file=sys.stderr)
-
-        if args.collect:
-            with ExitStack() as stack:
-                if target is None:
-                    # 只作 collect 的输入载体，用完即删：早先建了就不管，
-                    # 每跑一次 --collect 就在系统临时目录留一个残骸。
-                    try:
-                        scratch = stack.enter_context(temp_dir(prefix="sv_runner_"))
-                    except OSError as exc:
-                        print(f"FAIL: 临时目录不可用（{exc}），无法在 --collect 下转存回写 JSON。",
-                              file=sys.stderr)
-                        return 1
-                    target = scratch / f"{skill_dir.name}-review-cli.json"
-                    with target.open("w", encoding="utf-8", newline="") as _h:
-                        _h.write(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n")
-                collect_report, record = collect_reviews(
-                    [target], load_catalog(), skill_dir=skill_dir,
-                    expected_ids=writeback.get("prompt_ids"))
-            for res in collect_report.results:
-                report.add(res)
-            discovery, _config = _load_discovery(args)
-            if discovery.trace_dir is None:
-                raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
-            latest = write_review_record(discovery.trace_dir / "review", record)
-            print(f"评审记录: {latest}", file=sys.stderr)
-            print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
-                  f"未覆盖 {len(record['uncovered_prompts'])}）", file=sys.stderr)
-
-        text = report.to_json() if args.json else report.to_markdown()
-        if not args.quiet:
-            print(text if text.endswith("\n") else text + "\n")
-        # runner 失败时报告里已有 FAIL（除非 --allow-partial），退出码随之非零
-        return report.exit_code()
-
-    if action == "material":
-        skill_dir = Path(args.path)
-        if not skill_dir.is_dir():
-            print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
-            return 1
-        blind = (Path(args.blind[0]), Path(args.blind[1])) if args.blind else (None, None)
-        report, written = build_materials(
-            skill_dir,
-            out_dir=Path(args.out) if args.out else None,
-            workspace=Path(args.workspace) if args.workspace else None,
-            diff_base=args.diff_base,
-            blind=blind,
-            blind_seed=args.blind_seed,
-        )
-        report.meta["工具版本"] = f"{PROG} {__version__}"
-        for path in written:
-            print(f"已生成: {path}", file=sys.stderr)
-        text = report.to_json() if args.json else report.to_markdown()
-        if not args.quiet:
-            print(text if text.endswith("\n") else text + "\n")
-        skipped = [r for r in report.results if r.status == SKIP]
-        if skipped:
-            print(f"提示：{len(skipped)} 项材料未能生成（因此在退出码里记 SKIP=2）；"
-                  f"逐条原因见报告。", file=sys.stderr)
-        return report.exit_code()
-
-    if action == "status":
-        try:
-            discovery, _config = _load_discovery(args)
-        except ConfigError as exc:
-            print(f"配置错误: {exc}", file=sys.stderr)
-            return 1
+    if not args.no_store:
         if discovery.trace_dir is None:
             raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
-        text = review_status(discovery.trace_dir,
-                             [(ref.name, ref.path) for ref in discovery.skills])
-        if args.out:
-            write_text(Path(args.out), text)
-            print(f"已落盘: {args.out}", file=sys.stderr)
-        if not args.quiet:
-            print(text)
-        return 0
+        latest = write_review_record(discovery.trace_dir / "review", record)
+        print(f"评审记录: {latest}", file=sys.stderr)
+    print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
+          f"未覆盖 {len(record['uncovered_prompts'])}）", file=sys.stderr)
+    return report.exit_code()
+
+
+def _review_run(args: argparse.Namespace, catalog: list[Prompt]) -> int:
+    """`review run`：命令行自动评审（把提示词喂给 --runner，收回同一 schema）。"""
+    skill_dir = Path(args.path)
+    if not skill_dir.is_dir():
+        print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
+        return 1
+    if not args.runner:
+        print("FAIL: 档 1 执行器需要 `--runner <命令>`（该命令会读到提示词并以 JSON 回结论）。",
+              file=sys.stderr)
+        return 1
+    prompt_ids = [x.strip() for x in args.prompts.split(",") if x.strip()] if args.prompts else None
+    report, writeback = run_runner(
+        skill_dir,
+        args.runner,
+        prompt_ids=prompt_ids,
+        timeout_s=args.timeout,
+        allow_partial=args.allow_partial,
+    )
+    # 与档 2/档 3 走**同一条**校验
+    checks = runner_validate(writeback)
+    for res in checks:
+        report.add(res)
+    report.meta["工具版本"] = f"{PROG} {__version__}"
+
+    out_dir = Path(args.out) if args.out else None
+    target = None
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        target = out_dir / f"{skill_dir.name}-review-cli.json"
+        with target.open("w", encoding="utf-8", newline="") as _h:
+            _h.write(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n")
+        print(f"已生成: {target}", file=sys.stderr)
+
+    if args.collect:
+        with ExitStack() as stack:
+            if target is None:
+                # 只作 collect 的输入载体，用完即删：早先建了就不管，
+                # 每跑一次 --collect 就在系统临时目录留一个残骸。
+                try:
+                    scratch = stack.enter_context(temp_dir(prefix="sv_runner_"))
+                except OSError as exc:
+                    print(f"FAIL: 临时目录不可用（{exc}），无法在 --collect 下转存回写 JSON。",
+                          file=sys.stderr)
+                    return 1
+                target = scratch / f"{skill_dir.name}-review-cli.json"
+                with target.open("w", encoding="utf-8", newline="") as _h:
+                    _h.write(json.dumps(writeback, ensure_ascii=False, indent=2) + "\n")
+            collect_report, record = collect_reviews(
+                [target], load_catalog(), skill_dir=skill_dir,
+                expected_ids=writeback.get("prompt_ids"))
+        for res in collect_report.results:
+            report.add(res)
+        discovery, _config = _load_discovery(args)
+        if discovery.trace_dir is None:
+            raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
+        latest = write_review_record(discovery.trace_dir / "review", record)
+        print(f"评审记录: {latest}", file=sys.stderr)
+        print(f"结论: {record['verdict']}（阻断项 {len(record['blocking_fails'])}；"
+              f"未覆盖 {len(record['uncovered_prompts'])}）", file=sys.stderr)
+
+    text = report.to_json() if args.json else report.to_markdown()
+    if not args.quiet:
+        print(text if text.endswith("\n") else text + "\n")
+    # runner 失败时报告里已有 FAIL（除非 --allow-partial），退出码随之非零
+    return report.exit_code()
+
+
+def _review_material(args: argparse.Namespace, catalog: list[Prompt]) -> int:
+    """`review material`：产出几条提示词需要的流程材料。"""
+    skill_dir = Path(args.path)
+    if not skill_dir.is_dir():
+        print(f"FAIL: 技能目录不存在: {skill_dir}", file=sys.stderr)
+        return 1
+    blind = (Path(args.blind[0]), Path(args.blind[1])) if args.blind else (None, None)
+    report, written = build_materials(
+        skill_dir,
+        out_dir=Path(args.out) if args.out else None,
+        workspace=Path(args.workspace) if args.workspace else None,
+        diff_base=args.diff_base,
+        blind=blind,
+        blind_seed=args.blind_seed,
+    )
+    report.meta["工具版本"] = f"{PROG} {__version__}"
+    for path in written:
+        print(f"已生成: {path}", file=sys.stderr)
+    text = report.to_json() if args.json else report.to_markdown()
+    if not args.quiet:
+        print(text if text.endswith("\n") else text + "\n")
+    skipped = [r for r in report.results if r.status == SKIP]
+    if skipped:
+        print(f"提示：{len(skipped)} 项材料未能生成（因此在退出码里记 SKIP=2）；"
+              f"逐条原因见报告。", file=sys.stderr)
+    return report.exit_code()
+
+
+def _review_status(args: argparse.Namespace, catalog: list[Prompt]) -> int:
+    """`review status`：查看各技能的评审记录与新鲜度。"""
+    try:
+        discovery, _config = _load_discovery(args)
+    except ConfigError as exc:
+        print(f"配置错误: {exc}", file=sys.stderr)
+        return 1
+    if discovery.trace_dir is None:
+        raise RuntimeError("内部不变量被破坏：discovery.trace_dir 为 None（前置检查应已拦住）")
+    text = review_status(discovery.trace_dir,
+                         [(ref.name, ref.path) for ref in discovery.skills])
+    if args.out:
+        write_text(Path(args.out), text)
+        print(f"已落盘: {args.out}", file=sys.stderr)
+    if not args.quiet:
+        print(text)
+    return 0
+
 
     print(f"FAIL: 未知动作 {action!r}", file=sys.stderr)
     return 1
+_REVIEW_ACTIONS = {
+    "prompts": _review_prompts,
+    "pack": _review_pack,
+    "skill": _review_skill,
+    "collect": _review_collect,
+    "run": _review_run,
+    "material": _review_material,
+    "status": _review_status,
+}
+
+
 
 
 def cmd_hook(args: argparse.Namespace) -> int:

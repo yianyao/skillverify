@@ -35,6 +35,44 @@ SHOULD = "SHOULD"  # 官方建议/指导（官方工具不执法）
 HOUSE = "HOUSE"  # 本项目收紧的额外纪律
 
 
+def res(rule: Rule, status: str, evidence: str = "", optional: bool = False) -> Result:
+    """按规则元数据构造一条结果（FAIL/WARN 自动带修复指引）。
+
+    这是**唯一一份**构造器：各层原先各抄一份 `_res`（七处逐字节相同），
+    改一处口径（例如"只有 FAIL/WARN 才带 remediation"）就得改七遍——2026-10-14 收归到这里。
+    `lint/shared.py` 的同名函数是它的**薄包装**（多一步证据裁剪 `clip`）。
+    """
+    return Result(
+        rid=rule.rid, title=rule.title, status=status, level=rule.level,
+        evidence=evidence,
+        remediation=rule.remediation if status in (FAIL, WARN) else "",
+        optional=optional,
+    )
+
+
+def _exit_code(counts: dict[str, int]) -> int:
+    """由计数得退出码：0=全 PASS/INFO，1=有 FAIL，2=无 FAIL 但有 WARN/SKIP。"""
+    if counts[FAIL]:
+        return 1
+    if counts[WARN] or counts[SKIP]:
+        return 2
+    return 0
+
+
+def _verdict(exit_code: int) -> str:
+    return "PASS" if exit_code == 0 else ("FAIL" if exit_code == 1 else "WARN")
+
+
+def _cell(res: Result) -> str:
+    """Markdown 表格单元：证据 + 修复 + 可选批次标记 + 转义（三处渲染共用）。"""
+    detail = res.evidence or ""
+    if res.remediation:
+        detail = f"{detail} → 修复: {res.remediation}" if detail else f"修复: {res.remediation}"
+    if res.optional:
+        detail = f"[可选批次·未覆盖] {detail}" if detail else "[可选批次·未覆盖]"
+    return detail.replace("|", chr(92) + "|").replace(chr(10), " ")
+
+
 @dataclass
 class Rule:
     """规则元数据。"""
@@ -100,20 +138,10 @@ class Report:
         return out
 
     def exit_code(self) -> int:
-        c = self.counts()
-        if c[FAIL]:
-            return 1
-        if c[WARN] or c[SKIP]:
-            return 2
-        return 0
+        return _exit_code(self.counts())
 
     def verdict(self) -> str:
-        code = self.exit_code()
-        if code == 0:
-            return "PASS"
-        if code == 1:
-            return "FAIL"
-        return "WARN"
+        return _verdict(self.exit_code())
 
     def sorted_results(self) -> list[Result]:
         return sorted(self.results, key=lambda r: (_ORDER.get(r.status, 9), r.rid))
@@ -151,12 +179,7 @@ class Report:
             "|---|---|---|---|---|",
         ]
         for res in self.sorted_results():
-            detail = res.evidence or ""
-            if res.remediation:
-                detail = f"{detail} → 修复: {res.remediation}" if detail else f"修复: {res.remediation}"
-            if res.optional:
-                detail = f"[可选批次·未覆盖] {detail}" if detail else "[可选批次·未覆盖]"
-            detail = detail.replace("|", "\\|").replace("\n", " ")
+            detail = _cell(res)
             lines.append(
                 f"| {res.rid} | {res.level} | {res.status} | {res.title} | {detail} |"
             )
@@ -252,16 +275,10 @@ class LibraryReport:
         return out
 
     def exit_code(self) -> int:
-        c = self.counts()
-        if c[FAIL]:
-            return 1
-        if c[WARN] or c[SKIP]:
-            return 2
-        return 0
+        return _exit_code(self.counts())
 
     def verdict(self) -> str:
-        code = self.exit_code()
-        return "PASS" if code == 0 else ("FAIL" if code == 1 else "WARN")
+        return _verdict(self.exit_code())
 
     def to_dict(self) -> dict:
         return {
@@ -311,12 +328,8 @@ class LibraryReport:
         if self.results:
             lines += ["", "## 库级结果", "", "| 规则 | 级别 | 判定 | 说明 | 证据 / 修复 |", "|---|---|---|---|---|"]
             for res in sorted(self.results, key=lambda r: (_ORDER.get(r.status, 9), r.rid)):
-                detail = res.evidence or ""
-                if res.remediation:
-                    detail = f"{detail} → 修复: {res.remediation}" if detail else f"修复: {res.remediation}"
                 lines.append(
-                    f"| {res.rid} | {res.level} | {res.status} | {res.title} "
-                    f"| {detail.replace('|', chr(92) + '|').replace(chr(10), ' ')} |"
+                    f"| {res.rid} | {res.level} | {res.status} | {res.title} | {_cell(res)} |"
                 )
 
         notable = [
@@ -334,12 +347,7 @@ class LibraryReport:
                 "|---|---|---|---|---|---|",
             ]
             for entry, res in notable:
-                detail = res.evidence or ""
-                if res.remediation:
-                    detail = f"{detail} → 修复: {res.remediation}" if detail else f"修复: {res.remediation}"
-                if res.optional:
-                    detail = f"[可选批次·未覆盖] {detail}" if detail else "[可选批次·未覆盖]"
-                detail = detail.replace("|", chr(92) + "|").replace("\n", " ")
+                detail = _cell(res)
                 lines.append(
                     f"| {entry.skill} | {res.rid} | {res.level} | {res.status} "
                     f"| {res.title} | {detail} |"

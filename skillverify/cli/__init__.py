@@ -40,14 +40,8 @@ from .common import PROG, _ArgParser, _add_common, _add_discovery_options
 #: 本模块的公开面；describe_surface 是协议再导出（自检死代码扫描按 __all__ 豁免）
 __all__ = ["build_parser", "main", "describe_surface"]
 
-def build_parser() -> _ArgParser:
-    parser = _ArgParser(
-        prog=PROG,
-        description="Agent Skill 生命周期验证套件（个人小团队版，宿主无关）",
-    )
-    parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
-    sub = parser.add_subparsers(dest="command", metavar="<命令>")
-
+def _add_spec_lint_parsers(sub) -> None:
+    """挂 spec / lint / evals 的参数（从 build_parser 拆出；调用顺序即 --help 顺序）。"""
     p_spec = sub.add_parser(
         "spec",
         help="官方规范校验（frontmatter 6 字段白名单与命名约定）",
@@ -106,6 +100,9 @@ def build_parser() -> _ArgParser:
     _add_common(p_evals)
     p_evals.set_defaults(func=cmd_evals)
 
+
+def _add_library_parsers(sub) -> None:
+    """挂 discover / audit / mount / check 的参数（从 build_parser 拆出；调用顺序即 --help 顺序）。"""
     p_disc = sub.add_parser(
         "discover",
         help="列出技能发现结果（声明式宿主适配，不做检查）",
@@ -227,6 +224,9 @@ def build_parser() -> _ArgParser:
     _add_common(p_check)
     p_check.set_defaults(func=cmd_check)
 
+
+def _add_watch_parser(sub) -> None:
+    """挂 watch 的参数（从 build_parser 拆出；调用顺序即 --help 顺序）。"""
     p_watch = sub.add_parser(
         "watch",
         help="监听技能库变化并即时复跑（开发期即时反馈）",
@@ -251,6 +251,9 @@ def build_parser() -> _ArgParser:
                          help="每轮输出一行 JSON（便于管道消费）")
     p_watch.set_defaults(func=cmd_watch)
 
+
+def _add_gate_parsers(sub) -> None:
+    """挂 deliver / hook 的参数（从 build_parser 拆出；调用顺序即 --help 顺序）。"""
     p_deliver = sub.add_parser(
         "deliver",
         help="交付门禁：0 FAIL 且 0 未覆盖项，并写交付记录",
@@ -319,6 +322,9 @@ def build_parser() -> _ArgParser:
         p.set_defaults(func=cmd_hook)
     p_hook.set_defaults(func=cmd_hook, hook_action=None)
 
+
+def _add_review_parsers(sub) -> None:
+    """挂 review（含 7 个二级子命令） 的参数（从 build_parser 拆出；调用顺序即 --help 顺序）。"""
     p_review = sub.add_parser(
         "review",
         help="语义评审：提示词目录 / 任务包 / 回写汇总 / 独立技能包",
@@ -427,6 +433,9 @@ def build_parser() -> _ArgParser:
 
     p_review.set_defaults(func=cmd_review, review_action=None)
 
+
+def _add_describe_parser(sub) -> None:
+    """挂 describe 的参数（从 build_parser 拆出；调用顺序即 --help 顺序）。"""
     p_describe = sub.add_parser(
         "describe",
         help="命令面自描述：机读 JSON 契约（供外部工具稳定消费，不解析 argparse 私有结构）",
@@ -441,6 +450,20 @@ def build_parser() -> _ArgParser:
                             help="输出机读 JSON 契约（默认输出人读命令树）")
     p_describe.set_defaults(func=cmd_describe)
 
+
+def build_parser() -> _ArgParser:
+    parser = _ArgParser(
+        prog=PROG,
+        description="Agent Skill 生命周期验证套件（个人小团队版，宿主无关）",
+    )
+    parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
+    sub = parser.add_subparsers(dest="command", metavar="<命令>")
+    _add_spec_lint_parsers(sub)
+    _add_library_parsers(sub)
+    _add_watch_parser(sub)
+    _add_gate_parsers(sub)
+    _add_review_parsers(sub)
+    _add_describe_parser(sub)
     return parser
 
 

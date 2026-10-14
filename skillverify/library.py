@@ -23,7 +23,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
-from .report import FAIL, INFO, PASS, WARN, Result, Rule
+from .report import INFO, PASS, WARN, Result, Rule, res as _res
 from .spec import load_skill
 
 _LEGACY = "旧体系《Agent-Skill 生命周期验证方案》v1.3（V2 命名冲突预检；上下文预算）"
@@ -65,11 +65,6 @@ RULES: dict[str, Rule] = {
     ),
 }
 
-
-def _res(rule: Rule, status: str, evidence: str = "") -> Result:
-    return Result(rid=rule.rid, title=rule.title, status=status, level=rule.level,
-                  evidence=evidence,
-                  remediation=rule.remediation if status in (FAIL, WARN) else "")
 
 
 # --------------------------------------------------------------------------- #

@@ -25,7 +25,7 @@ from .encoding import read_json, write_text
 from .lint import lint_skill, load_context
 from .lint import deps, scripts, security
 from .lint.shared import LintContext
-from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule
+from .report import FAIL, INFO, PASS, SKIP, WARN, Report, Result, Rule, res as _res
 from .spec import check_spec
 from .watch import fingerprint
 
@@ -203,11 +203,6 @@ def _parse_ledger_date(text: str):
     except ValueError:
         return None
 
-
-def _res(rule: Rule, status: str, evidence: str = "") -> Result:
-    return Result(rid=rule.rid, title=rule.title, status=status, level=rule.level,
-                  evidence=evidence,
-                  remediation=rule.remediation if status in (FAIL, WARN) else "")
 
 
 # --------------------------------------------------------------------------- #
