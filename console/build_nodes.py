@@ -55,6 +55,26 @@ PARAM_MECHANICAL_KEYS = {"id", "flag", "flags", "action", "nargs", "default",
 FLAG_ACTIONS = ("_StoreTrueAction", "_StoreFalseAction", "_CountAction")
 
 
+# ---------------------------------------------------------------- 跨机归一化
+
+def normalize_paths(text: str, repo_root: Path) -> str:
+    """把随机器变化的路径换成占位符，并把分隔符统一成 `/`。
+
+    nodes.json 是**进 git 的产物**，必须跨机器字节一致。只把仓库根换成 `<ROOT>`、
+    却留着平台分隔符，会让 Windows 上生成的产物在 Linux CI 里重新生成后对不上守卫
+    ——而本地永远是绿的（2026-10-12 实测：产物里烘着 `<ROOT>\\skillverify\\data\\hosts.toml`，
+    CI 的 console-guard 与 self-test 因此连红 5 次推送）。
+    """
+    out = text.replace(str(repo_root), "<ROOT>")
+    try:
+        home = str(Path.home())
+    except RuntimeError:          # 极端环境拿不到 home 目录
+        home = ""
+    if home:
+        out = out.replace(home, "<HOME>")
+    return out.replace("\\", "/")
+
+
 class BuildError(Exception):
     """生成失败（冲突/自检不过）；收集全部问题后一次性报出。"""
 
@@ -497,10 +517,10 @@ def build(repo_root: Path, python_exe: str, tool_cmd: list[str], out_path: Path,
             hosts_panel = {
                 "captured_at": datetime.datetime.now().isoformat(timespec="seconds"),
                 "source": "skillverify discover --show-config（构建时原样捕获）",
-                # 仓库绝对路径就地归一化为 <ROOT>：nodes.json 是进 git 的产物，
-                # 必须跨机器字节一致——烘着构建机的盘符路径，任何其他机器上
-                # 重新生成都会对不上守卫（跨机器确定性缺陷，2026-10-12 实测抓出）
-                "text": proc.stdout.replace(str(repo_root), "<ROOT>"),
+                # 归一化交给 normalize_paths()：仓库根 → <ROOT>、家目录 → <HOME>，
+                # 且**分隔符统一为 `/`**——只在 Windows 上跑得通的"跨机一致"不算一致
+                # （CI 的 console-guard/self-test 曾因这一处连红 5 次推送）。
+                "text": normalize_paths(proc.stdout, repo_root),
             }
         else:
             print(f"warning: discover --show-config 退出 {proc.returncode}，"

@@ -51,7 +51,9 @@ def _norm(payload: dict) -> dict:
     if isinstance(hp, dict):
         hp.pop("captured_at", None)
         if isinstance(hp.get("text"), str):
-            hp["text"] = hp["text"].replace(str(ROOT), "<ROOT>")
+            # 分隔符也归一：判据不该依赖"在哪台机器上重生成"（Windows 出 `\`，
+            # Linux 出 `/`；不归一就会变成"只有 CI 会红、本地永远绿"）。
+            hp["text"] = hp["text"].replace(str(ROOT), "<ROOT>").replace("\\", "/")
     return data
 
 
@@ -117,6 +119,14 @@ def main() -> int:
     if diffs:
         print("\n修复方式：python console/build_nodes.py && python console/build.py，"
               "过目 git diff 后把 nodes.json 与 manual/ 同一提交。")
+
+    # 3b. 产物里**不许烘进平台分隔符**。这是 2026-10-12 那次连红的根因：
+    #     Windows 上生成的 `<ROOT>\skillverify\data\hosts.toml` 到 Linux 重生成变成 `/`，
+    #     守卫只在 CI 红、本地永远绿。这条断言**在本机就能红**，不靠 CI 才发现。
+    hp_text = ((committed.get("hosts_panel") or {}).get("text") or "")
+    _check("hosts_panel 不含平台分隔符（跨机字节一致）",
+           "<ROOT>\\" not in hp_text and "<HOME>\\" not in hp_text,
+           f"发现反斜杠路径: {[ln for ln in hp_text.splitlines() if chr(92) in ln][:2]}")
 
     # 4. lint 规则目录与源码对账（M4-01）：manual/lint.json 的 rules 快照
     #    必须与 skillverify.lint.RULES 的 id 集合一致——lint 加规则后忘同步

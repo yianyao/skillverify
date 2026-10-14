@@ -621,6 +621,18 @@ def run_migration(tmp: Path) -> None:
     check(base.joinpath("demo-proj").is_dir(), "迁移指南的演练确实作用在独立夹具上")
 
 
+
+def action_ref_drift(doc_name: str, lineno: int, line: str, allowed: set[str]) -> list[str]:
+    """一行文档里引用了**不可用**的 Action ref（空列表 = 没问题）。
+
+    抽成纯函数是为了能反向自检：把探针行喂进同一个判据必须真的报出来
+    （原来那条 `check("v999" not in action_refs, ...)` 是恒真的伪自检）。
+    """
+    return [f"{doc_name}:{lineno} @{m.group(1)}"
+            for m in re.finditer(r"yianyao/skillverify@([\w.\-]+)", line)
+            if m.group(1) not in allowed]
+
+
 def run_new_docs() -> None:
     """新文档的通用约束：命令与旗标必须真实存在，且不得含机器专属路径。"""
     print("[test_new_docs]")
@@ -642,17 +654,25 @@ def run_new_docs() -> None:
     # 只允许 `v<包版本>` 或 `v<主版本>`（后者是"移动主标签"的写法，但主版本必须真的存在）。
     from skillverify import __version__ as _pkg_ver
     action_refs = {f"v{_pkg_ver}", f"v{_pkg_ver.split('.')[0]}"}
-    cited = []
+    cited: list[str] = []
+    used = 0
     for doc in (*docs, REPO / "README.md"):
         for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
-            for m in re.finditer(r"yianyao/skillverify@([\w.\-]+)", line):
-                cited.append((doc.name, lineno, m.group(1)))
-                check(m.group(1) in action_refs,
-                      f"{doc.name}:{lineno} 的 Action ref 真实可用（@{m.group(1)}；"
-                      f"只允许 {sorted(action_refs)}——远端只有这些标签）")
-    check(cited, f"文档里至少给出一处 Action 用法（否则这条守卫恒真；找到 {len(cited)} 处）")
-    # 反向自检：同一个判据必须能拒绝一个不存在的 ref，否则上面那条就是恒真的
-    check("v999" not in action_refs, "反向自检：不存在的 ref（探针 v999）会被判不合格")
+            used += len(re.findall(r"yianyao/skillverify@[\w.\-]+", line))
+            cited += action_ref_drift(doc.name, lineno, line, action_refs)
+    check(not cited,
+          f"文档里的 Action ref 都真实可用（问题行: {cited[:3]}；"
+          f"只允许 {sorted(action_refs)}——远端只有这些标签）")
+    check(used >= 1, f"文档里至少给出一处 Action 用法（否则这条守卫恒真；实得 {used}）")
+    # 反向自检：把两条探针喂进**同一个判据**（一条必须红、一条必须放行）。
+    # 早先这里写的是 `check("v999" not in action_refs, ...)`——那是伪自检：
+    # v999 由包版本拼出的集合永远不可能包含，恒真，等于没测。
+    probe_allowed = {"v0.1.0", "v0"}
+    probes = (("uses: yianyao/skillverify@v1", True),
+              ("uses: yianyao/skillverify@v0.1.0", False))
+    bad = [t for t, want in probes
+           if bool(action_ref_drift("_probe.md", 1, t, probe_allowed)) != want]
+    check(not bad, f"反向自检：Action ref 判据能拒绝不存在的 ref（不符: {bad[:2]}）")
 
     # CI 样例也在"文档"之列：它引用的命令必须真实存在，否则流水线会在别人机器上红
     workflow = REPO / ".github" / "workflows" / "skillverify.yml"
