@@ -818,6 +818,41 @@ def run_structure_doc() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def run_workflow_structure() -> None:
+    """CI workflow 的结构自检：**顶层键白名单 + 缩进**。
+
+    标准库没有 YAML 解析器，所以这里不做完整 YAML 校验；但足以抓住最常见、也最致命的一种坏法：
+    某个键（例如 `run:`）掉了缩进、跑到第 0 列 —— GitHub 会把整个 workflow 判为无效，
+    推上去只会得到一个**零作业**的失败 run，本地怎么跑都是绿的（2026-10-14 真踩过）。
+    """
+    print("[test_workflow_structure]")
+    workflow = REPO / ".github" / "workflows" / "skillverify.yml"
+    if not workflow.is_file():
+        check(False, "CI workflow 存在")
+        return
+    #: 本仓库 workflow 允许出现在第 0 列的键（GitHub Actions 的顶层键）
+    TOP_LEVEL = {"name", "on", "jobs", "permissions", "env", "concurrency", "defaults", "run-name"}
+    bad: list[str] = []
+    for lineno, line in enumerate(workflow.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip() or line.startswith("#") or line[0] in " \t":
+            continue
+        key = line.split(":", 1)[0].strip().strip('"').strip("'")
+        if ":" not in line or key not in TOP_LEVEL:
+            bad.append(f"{lineno}: {line[:60]}")
+    check(not bad, f"workflow 里没有掉到第 0 列的键（可疑行: {bad[:3]}）")
+
+    # 反向自检：把一行 run 顶到第 0 列，必须能被判出来（证明上面那条不是恒真）
+    sample = "jobs:\n  a:\n    steps:\n      - run: echo hi\nrun: echo broken\n"
+    offenders = []
+    for lineno, line in enumerate(sample.splitlines(), 1):
+        if not line.strip() or line.startswith("#") or line[0] in " \t":
+            continue
+        key = line.split(":", 1)[0].strip()
+        if ":" not in line or key not in TOP_LEVEL:
+            offenders.append(lineno)
+    check(offenders == [5], f"反向自检：顶到第 0 列的 run（实得第 {offenders} 行）")
+
+
 def run_doc_semantics(tmp: Path) -> None:
     """确认文档里那几条"非零退出码"的解释与实际行为一致。"""
     print("[test_doc_semantics]")
@@ -860,6 +895,7 @@ def main() -> int:
         run_walkthrough(tmp)
         run_manual(tmp)
         run_migration(tmp)
+        run_workflow_structure()
         run_doc_semantics(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
