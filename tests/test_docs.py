@@ -181,7 +181,7 @@ def run_consistency() -> None:
         unknown = sorted(used - known_rules)
         check(not unknown, f"{name} 点名的规则 ID 都存在（凭空出现的: {unknown}）")
 
-    # 30 条提示词在目录里，文档至少要让人知道怎么列出它们
+    # 32 条提示词在目录里，文档至少要让人知道怎么列出它们
     check("review prompts" in texts["验证流程指南.md"], "流程指南写了怎么看提示词目录")
 
     # "走完全程"的每一步都要在文档里出现，否则删掉一步测试不会响
@@ -840,6 +840,25 @@ def run_workflow_structure() -> None:
         if ":" not in line or key not in TOP_LEVEL:
             bad.append(f"{lineno}: {line[:60]}")
     check(not bad, f"workflow 里没有掉到第 0 列的键（可疑行: {bad[:3]}）")
+
+    # 文档与 CI 的一致性：**CI 里 `tests.run_all` 用什么旗标，文档里就要有一行写全**。
+    # 为什么单独钉：本轮我把 CI 改成 `run_all --install`，而《迁移与部署指南》还写着不带旗标
+    # ——"文档一个说法、CI 一个做法"，谁也没红（2026-10-14）。
+    wf_text = workflow.read_text(encoding="utf-8")
+    run_line = next((ln for ln in wf_text.splitlines()
+                     if "tests.run_all" in ln and "run:" in ln), "")
+    ci_flags = re.findall(r"--[a-z][a-z-]+", run_line)
+    deploy = (REPO / "迁移与部署指南.md").read_text(encoding="utf-8")
+    documented = any("tests.run_all" in ln and all(f in ln for f in ci_flags)
+                     for ln in deploy.splitlines())
+    check(documented,
+          f"《迁移与部署指南》里有一行写全 CI 的调用（{ci_flags}）——改 CI 旗标时同步它")
+    # 反向自检：把旗标从文档里抠掉，判据必须报"没写"
+    probe_doc = "\n".join(ln.replace("--install", "") for ln in deploy.splitlines())
+    probe_ok = any("tests.run_all" in ln and all(f in ln for f in ci_flags)
+                   for ln in probe_doc.splitlines())
+    check(bool(ci_flags) and not probe_ok,
+          "反向自检：文档里少了 CI 的旗标会被判出（否则这条守卫是恒真的）")
 
     # 反向自检：把一行 run 顶到第 0 列，必须能被判出来（证明上面那条不是恒真）
     sample = "jobs:\n  a:\n    steps:\n      - run: echo hi\nrun: echo broken\n"

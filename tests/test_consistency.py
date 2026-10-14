@@ -416,11 +416,32 @@ def run_capability_coverage() -> None:
     # （出处必须写成文档级引用，例如「旧体系《…方案》v1.3 §8.3.10」），
     # 否则换机器/干净克隆上出处就是死链——这类漂移靠守卫兜住。
     stale: list[str] = []
-    for path in (REPO / "skillverify").rglob("*.py"):
+    # 扫描面 = **包代码 + 出厂数据 + console + 打包/动作配置 + 根文档**。
+    # 原来只扫 `skillverify/**/*.py`，于是 `data/review-prompts.json` 的说明里那两条
+    # `legacy/…` 路径一路出厂（2026-10-14 全仓库扫描才抓到）——出厂数据里的死链更糟，
+    # 因为它随 wheel 发给用户。**不扫 tests/**：那里的 `legacy/…` 是反向自检用的探针。
+    legacy_scan = [*(REPO / "skillverify").rglob("*.py"),
+                   *(REPO / "skillverify" / "data").glob("*.json"),
+                   *(REPO / "console").rglob("*.py"),
+                   *(REPO / "console").rglob("*.js"),
+                   *(REPO / "console").rglob("*.json"),
+                   *(REPO).glob("*.md"),
+                   REPO / "action.yml", REPO / "pyproject.toml"]
+    for path in legacy_scan:
+        if not path.is_file():
+            continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if re.search(r"legacy/[\w\-./\u4e00-\u9fff]+", line):
-                stale.append(f"{path.name}:{lineno}")
-    check(not stale, f"代码里不再引用仓库内的 legacy/ 路径（残留: {stale[:3]}）")
+                stale.append(f"{path.relative_to(REPO).as_posix()}:{lineno}")
+    check(not stale, f"代码/出厂数据/文档里不再引用仓库内的 legacy/ 路径（残留: {stale[:3]}）")
+
+    # 反向自检两条：① 真的路径引用必须被抓；② **"在讲 legacy/ 已移出仓库"** 这类写法
+    # （`legacy/` 后面是空格、引号、冒号）不许误报——否则守卫会逼着文档不敢提这件事。
+    probe_re = re.compile(r"legacy/[\w\-./\u4e00-\u9fff]+")
+    check(bool(probe_re.search("见 legacy/归档冻结说明.md")),
+          "反向自检：仓库内 legacy/ 路径会被抓出")
+    check(not probe_re.search("`legacy/`：旧体系语料已移出仓库"),
+          "反向自检：只是提到 legacy/ 这个目录名不算违规")
     check(not (REPO / "legacy").exists(),
           "legacy/ 已移出仓库（语料归档在仓库外，发布物里不含它）")
 

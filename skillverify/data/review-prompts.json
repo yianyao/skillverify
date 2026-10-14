@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "skillverify 语义评审提示词目录：由 legacy/Agent-Skill-LLM评审提示词清单.md（v1.4）及其 references/{d,w,e,r}-prompts.md 的 29 条提示词逐条改写而来，保留 legacy_id 与 §-溯源，并为每条补齐适用条件、PASS/FAIL 判据与证据要求；⚑ 双评范围见 legacy/agent-skill-llm-review/references/dual-review-rules.md。本项目在旧体系 29 条之外**新增**了 3 条（legacy_id 为空，来历写在各自的 legacy_source 里）：W-17（指令注入与越权指令风险）、R-03（bad case 回流为评测用例）、E-11（跨宿主/模型差异归因）——分别补上「内容会不会操纵 Agent」「运行期真实失败怎么变成评测资产」「跨宿主/模型不一致时该怪谁」这三处旧体系与官方规范都没有审的空白。",
+  "note": "skillverify 语义评审提示词目录：由旧体系《Agent-Skill-LLM 评审提示词清单》（v1.4）及其 `references/{d,w,e,r}-prompts.md` 的 29 条提示词逐条改写而来，保留 legacy_id 与 §-溯源，并为每条补齐适用条件、PASS/FAIL 判据与证据要求；⚑ 双人独立复核（两条各自署名的独立结论）的范围沿用旧体系《dual-review-rules》的 8 项。本项目在旧体系 29 条之外**新增**了 3 条（legacy_id 为空，来历写在各自的 legacy_source 里）：W-17（指令注入与越权指令风险）、R-03（bad case 回流为评测用例）、E-11（跨宿主/模型差异归因）——分别补上「内容会不会操纵 Agent」「运行期真实失败怎么变成评测资产」「跨宿主/模型不一致时该怪谁」这三处旧体系与官方规范都没有审的空白。",
   "prompts": [
     {
       "id": "D-01",

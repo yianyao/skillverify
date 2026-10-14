@@ -4,7 +4,7 @@
  * 零网络请求：无 fetch、无外部资源。桥模式（M3）接入后另经 /health 探测增强。
  *
  * 校验引擎与执行桥同源：规则只读 nodes.json 的 compose_rules，本文件不硬编码任何
- * skillverify 业务规则（设计文档 §6）。
+ * skillverify 业务规则（与执行桥同源）。
  */
 "use strict";
 
@@ -130,10 +130,10 @@ function computeIssues(node) {
         !t.choices.includes(v)) {
       errors.push({ param: p.id, text: `${label} 取值须为：${t.choices.join(" / ")}` });
     }
-    // path 存在性校验：纯静态模式跳过（设计文档 §5，桥模式才做）
+    // path 存在性校验：纯静态模式跳过，桥模式才做
   }
 
-  // 2. compose_rules（与执行桥同源，设计文档 §6）
+  // 2. compose_rules（与执行桥同源）
   for (const rule of node.compose_rules || []) {
     if (rule.rule === "requires") {
       const whenOk = !rule.when || val(rule.when) != null;
@@ -436,7 +436,7 @@ function renderCanvas() {
         ? `　·　▶ 当前第 ${curIdx + 1} 步 / 共 ${pl.steps.length} 步` : "") }));
     const chain = el("ol", { class: "pipeline-chain" });
     chainSteps(chain, pl);
-    // 实况新增节点（桥模式 /catalog）：机械层已就绪、语义层待补（设计文档 §9.4）
+    // 实况新增节点（桥模式 /catalog）：机械层已就绪、语义层待补
     const newOnes = Object.values(DATA.nodes).filter(n => n.manual_missing);
     if (newOnes.length && pl === pipelines[0]) {
       const label = el("li", { class: "step" }, el("div", {
