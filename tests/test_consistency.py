@@ -297,6 +297,14 @@ def run_prompt_counts() -> None:
           f"全部根文档的提示词条数说法 = 目录事实（共 {total} 条，家族 {families}；"
           f"漂移 {len(drift)} 处: {drift[:6]}）")
 
+    # 包 docstring（__init__.py）的数据文件清单是**清单式说法**，行级正则扫不到
+    # （那行连"提示词"三个字都没有）——曾写「新增 W-17 指令注入」单条，R-03/E-11
+    # 加入后没同步。这里点名要求三条新增 id 都在（少一条就地变红）。
+    init_doc = read("skillverify/__init__.py")
+    missing_ids = [pid for pid in ("W-17", "R-03", "E-11") if pid not in init_doc]
+    check(not missing_ids,
+          f"包 docstring（__init__.py）列出全部新增提示词（缺 {missing_ids}）")
+
     # 反向自检：探针必须**真的会红**，豁免项必须真的不红（用当前真实数字，不写死 29/30）
     stale = total - 1
     w = families["W"]

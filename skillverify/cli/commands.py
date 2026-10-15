@@ -572,10 +572,9 @@ def cmd_review(args: argparse.Namespace) -> int:
     这里是**派发器**：各子命令的实现见 `_review_*`（原先 212 行全挤在本函数里，
     2026-10-14 拆开；行为逐字未变——`tests/test_review.py` 的 126 条断言守着）。
     """
-    """语义评审：提示词目录 / 任务包 / 回写汇总 / 独立技能包 / 状态。"""
     action = getattr(args, "review_action", None)
     if not action:
-        print(f"用法: {PROG} review <prompts|pack|collect|status|skill> [选项]", file=sys.stderr)
+        print(f"用法: {PROG} review <prompts|pack|collect|run|material|status|skill> [选项]", file=sys.stderr)
         return 1
     try:
         catalog = load_catalog()
@@ -806,8 +805,6 @@ def _review_status(args: argparse.Namespace, catalog: list[Prompt]) -> int:
     return 0
 
 
-    print(f"FAIL: 未知动作 {action!r}", file=sys.stderr)
-    return 1
 _REVIEW_ACTIONS = {
     "prompts": _review_prompts,
     "pack": _review_pack,

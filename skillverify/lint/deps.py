@@ -327,8 +327,13 @@ def third_party_imports(rec: FileRec) -> list[str]:
                 continue
             if node.module:
                 names.add(node.module.split(".")[0])
-    local_names = {p.stem for p in rec.path.parent.glob("*.py")}
-    local_names |= {p.name for p in rec.path.parent.iterdir() if p.is_dir()}
+    try:
+        local_names = {p.stem for p in rec.path.parent.glob("*.py")}
+        local_names |= {p.name for p in rec.path.parent.iterdir() if p.is_dir()}
+    except OSError:
+        # 目录列不出来（权限/竞态）时退化为"无本地模块"：最坏是多一条 WARN 噪音，
+        # 好过整份 lint 崩掉（本族其余 IO 都有防护，这里补齐最后一处）。
+        local_names = set()
     return sorted(
         n for n in names
         if n not in STDLIB and n not in local_names and not n.startswith("_")

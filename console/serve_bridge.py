@@ -49,6 +49,11 @@ MAX_OUTPUT = 400_000          # /run 回传 stdout/stderr 截断（字符）
 DEFAULT_PORT = 8742
 TRACE_PROBE_TIMEOUT = 30      # trace 根探测子进程超时（秒）
 
+# 嵌入式解释器（带 ._pth，隔离模式）**不会**把脚本目录放进 sys.path，
+# `import build_nodes` 会直接 ModuleNotFoundError——与 introspect.py 的做法对齐：
+# 显式把本目录插进去（普通解释器上这是一次幂等的冗余插入，无害）。
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 import build_nodes  # noqa: E402  同目录自有模块（不含 skillverify 依赖）
 
 

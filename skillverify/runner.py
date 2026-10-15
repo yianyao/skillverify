@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import subprocess
@@ -213,7 +214,7 @@ def run_runner(
         "skill": skill_dir.name,
         "reviewer": f"命令行自动评审 CLI：{runner}",
         "tier": "cli",
-        "generated_at": __import__("datetime").datetime.now().astimezone().isoformat(
+        "generated_at": datetime.datetime.now().astimezone().isoformat(
             timespec="seconds"),
         "prompt_ids": outcome.produced,
         "results": outcome.entries,

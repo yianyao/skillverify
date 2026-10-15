@@ -21,7 +21,8 @@
 
 数据文件（`data/`，宿主名与提示词都是数据，不是代码）：
   hosts.toml            宿主布局声明
-  review-prompts.json   语义评审提示词目录（旧体系 29 条 + 新增 W-17 指令注入；
+  review-prompts.json   语义评审提示词目录（旧体系 29 条 + 本项目新增 3 条：
+                      W-17 指令注入 / R-03 bad case 回流 / E-11 跨宿主/模型差异归因；
                       每条含 PASS/FAIL 判据与证据要求）
 
 版本前提：`discover` / `check` / `watch` / `deliver` / `hook` 需要 Python ≥3.11

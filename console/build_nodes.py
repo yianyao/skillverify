@@ -504,13 +504,21 @@ def build(repo_root: Path, python_exe: str, tool_cmd: list[str], out_path: Path,
         raise BuildError("nodes.json 生成失败，共 %d 个问题：\n  - %s"
                          % (len(errors), "\n  - ".join(errors)))
 
-    # hosts.toml 档位快照（M4-03）：跑 discover --show-config 捕获原样文本；
-    # 用 --python -m skillverify（与内省同源，不依赖 PATH）；失败不算构建
-    # 失败（页面隐藏面板），但打 warning 到 stderr
+    # hosts.toml 档位快照（M4-03）：跑 discover --show-config 捕获原样文本。
+    # **不用** `-m skillverify`：嵌入式解释器（._pth）与未安装场景下 `-m` 都会失败，
+    # 产物里就会烘进 None、与已提交产物漂移（2026-10-15 实测）。改用 hook 同款
+    # `-c` + sys.path.insert（与 deliver.hook_content 同形）：只要本仓库在，任何
+    # 解释器都能复现同一份产物。失败不算构建失败（页面隐藏面板），但打 warning
+    # 到 stderr
     hosts_panel: dict | None = None
     try:
-        cmd = [python_exe, "-m", "skillverify"]
-        proc = subprocess.run(cmd + ["discover", "--show-config"], cwd=str(repo_root),
+        capture_root = str(repo_root).replace("\\", "/")
+        capture_code = (
+            "import sys; sys.path.insert(0, r'" + capture_root + "'); "
+            "from skillverify.cli import main; "
+            "raise SystemExit(main(['discover', '--show-config']))"
+        )
+        proc = subprocess.run([python_exe, "-c", capture_code], cwd=str(repo_root),
                               capture_output=True, text=True, encoding="utf-8",
                               errors="replace", timeout=60)
         if proc.returncode == 0 and proc.stdout.strip():
