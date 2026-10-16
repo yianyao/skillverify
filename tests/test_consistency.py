@@ -443,6 +443,26 @@ def run_capability_coverage() -> None:
                 stale.append(f"{path.relative_to(REPO).as_posix()}:{lineno}")
     check(not stale, f"代码/出厂数据/文档里不再引用仓库内的 legacy/ 路径（残留: {stale[:3]}）")
 
+    # ---- 用户文档必须写明四件"照抄就会错"的事实（2026-10-16 复审桌面指南时定的）----
+    # ① A/B 命令里的 {arm}（两臂唯一差别靠它；不写则两臂命令逐字相同）
+    # ② benchmark.json 的三组指标 + delta（实测只写 pass_rate 会吃 BENCH-002/003 WARN）
+    # ③ evidence_hash 的先 strip 再取前 16 位（差一个换行就"证据变了"）
+    # ④ 语义评审 E-04 属 ⚑ 双人独立复核项（只跑一次结论强度不足）
+    author = read("技能编写指南.md")
+    flow = read("验证流程指南.md")
+    manual = read("操作手册.md")
+    facts = [
+        ("{arm}" in (flow + manual), "A/B 命令的 {arm} 要求写在流程指南或操作手册里"),
+        (all(token in author for token in ("pass_rate", "time_seconds", "tokens", "delta")),
+         "《技能编写指南》写全 benchmark.json 的三组指标与 delta"),
+        ("strip" in manual, "《操作手册》写明 evidence_hash 先 strip 再取前 16 位"),
+        (re.search(r"E-04[^\n]{0,40}⚑|⚑[^\n]{0,80}E-04", flow + manual) is not None
+         or ("E-04" in flow and "⚑" in flow),
+         "流程指南/操作手册写明 E-04 属于 ⚑ 双人独立复核项"),
+    ]
+    for ok, label in facts:
+        check(ok, f"用户文档事实守卫：{label}")
+
     # 反向自检两条：① 真的路径引用必须被抓；② **"在讲 legacy/ 已移出仓库"** 这类写法
     # （`legacy/` 后面是空格、引号、冒号）不许误报——否则守卫会逼着文档不敢提这件事。
     probe_re = re.compile(r"legacy/[\w\-./\u4e00-\u9fff]+")

@@ -10,7 +10,7 @@
     {
       "skill": "csv-report",
       "rid": "HYG-007",
-      "evidence_hash": "把 latest.json 里该条的 evidence 用 sha256 取前 16 位填这里",
+      "evidence_hash": "把 latest.json 里该条的 evidence 取 sha256 前 16 位填这里（工具先去掉首尾空白再算：sha256(evidence.strip())[:16]）",
       "decision": "accept",
       "reason": "内部自用技能，不需要对外交付许可文件；已确认不流向外部",
       "by": "张三",

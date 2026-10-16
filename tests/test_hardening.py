@@ -424,6 +424,39 @@ def run_examples(tmp: Path) -> None:
     added = data.get("evals") or []
     check(proc.returncode == 0 and len(added) == 1 and added[0]["id"] == 1,
           f"回流脚本追加了一条用例（id={added[0]['id'] if added else None}）")
+
+    # ---- P3c：A/B 命令必须写 {arm}（否则两臂命令逐字相同，实验在结构上不成立）----
+    # 这条守卫的来历：这份模板早先"不报错、不警告、照跑不误，产物布局也完整"，于是
+    # 使用者会拿到一轮看起来正常、实则毫无对照意义的实验（2026-10-16 复审桌面指南时实测）。
+    run_evals = repo / "examples" / "run_evals.py"
+    evals_json.write_text(json.dumps({"skill_name": "ex-skill", "evals": [
+        {"id": 1, "prompt": "p", "expected_output": "e", "assertions": ["x"]}]},
+        ensure_ascii=False), encoding="utf-8", newline="")
+
+    def _run_cmd(cmd: str, *extra: str) -> "_sp.CompletedProcess[str]":
+        return _sp.run([sys.executable, str(run_evals), "--skill", str(skill),
+                        "--dry-run", "--cmd", cmd, *extra],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+    proc = _run_cmd("claude -p {prompt}")
+    check(proc.returncode == 2 and "{arm}" in proc.stderr,
+          f"缺 {{arm}} 的 --cmd 被拒绝并说明原因（退出码 {proc.returncode}）")
+    proc = _run_cmd("wrap --arm {arm} --prompt {prompt}")
+    check(proc.returncode == 0, f"带 {{arm}} 的 --cmd 照常跑（退出码 {proc.returncode}）")
+    proc = _run_cmd("claude -p {prompt}", "--allow-same-cmd")
+    check(proc.returncode == 0 and "两臂" in proc.stderr,
+          f"--allow-same-cmd 放行且给出警告（退出码 {proc.returncode}）")
+    check("--allow-same-cmd" in run_evals.read_text(encoding="utf-8"),
+          "run_evals.py 的 --help 列了 --allow-same-cmd")
+
+    # ---- P3c：run-inputs 模板的断言时机字段必须在**顶层**（EVAL-011 只读顶层）----
+    tpl = json.loads((repo / "examples" / "run-inputs.json").read_text(encoding="utf-8"))
+    for key in ("assertions_added_at", "outputs_produced_at"):
+        nested = [k for k, v in tpl.items()
+                  if k.startswith("_") and isinstance(v, dict) and key in v]
+        check(not nested, f"模板没把 {key} 藏在注释键 {nested} 里（藏了就不生效）")
+        check(key not in tpl or isinstance(tpl[key], str),
+              f"若模板出现 {key}，它在顶层且是字符串")
     check(bool(added) and added[0]["assertions"] == ["输出含 month 与 total 两列"],
           "断言原样写进用例（没有替使用者发明断言）")
     from skillverify import evalx as _evalx

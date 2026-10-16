@@ -168,6 +168,33 @@ def venv_bin(venv: Path, name: str) -> Path:
     return candidates[0]
 
 
+#: 仓库根不该出现的中间产物（构建必须发生在临时副本里）
+RESIDUE = ("build", "skillverify.egg-info")
+
+
+def residue_fingerprint() -> dict[str, str]:
+    """仓库根中间产物的指纹：相对路径 → `mtime_ns:size`（目录本身记 `dir`）。
+
+    为什么要指纹而不是"存在性"：本机早先 `pip install -e .` 留下的残留会让"存在性"判定
+    恒红（假红），而改成"只看新增"又会被它**掩盖**同位置的改写（实测：在仓库根构建时
+    已存在的 egg-info 被重写，判定看不见）。指纹两头都抓。
+    """
+    out: dict[str, str] = {}
+    for name in RESIDUE:
+        root = REPO / name
+        if not root.exists():
+            continue
+        out[name] = "dir"
+        for path in sorted(root.rglob("*")):
+            rel = str(path.relative_to(REPO)).replace("\\", "/")
+            if path.is_dir():
+                out[rel] = "dir"
+            else:
+                stat = path.stat()
+                out[rel] = f"{stat.st_mtime_ns}:{stat.st_size}"
+    return out
+
+
 def _source_copy(tmp: Path) -> Path:
     """把仓库源码复制到临时目录，**让 pip 在那儿构建**。
 
@@ -199,15 +226,28 @@ def run_install(tmp: Path) -> None:
           "源码已复制到临时目录（构建不污染仓库根）")
 
     print("  · pip install -e .（需要网络下载构建依赖）")
+    # 构建**前**给仓库根的中间产物拍一张指纹：本机可能早先跑过 `pip install -e .`，
+    # 那些历史残留不是这次构建的锅（旧写法直接查"存在"→ 把历史残留判成污染 → 假红）；
+    # 但只查"存在"又会被历史残留**掩盖**同位置的改写（实测：在仓库根构建时，
+    # 已存在的 egg-info 被重写、判定却看不见）——所以记 路径 → mtime_ns:size。
+    residue_before = residue_fingerprint()
+
     install = _run([str(vpy), "-m", "pip", "install", "-e", str(src), "--quiet"], timeout=900)
     if install.returncode != 0:
         fail(f"`pip install -e .` 失败: {(install.stderr or install.stdout).strip()[-400:]}")
         return
     ok("`pip install -e .` 成功")
-    # 这条断言就是上面那段注释的守卫：构建过后，**仓库根不许出现 build/ 或 *.egg-info/
-    leftovers = [name for name in ("build", "skillverify.egg-info") if (REPO / name).exists()]
-    check(not leftovers,
-          f"构建不往仓库根拉残留（发现 {leftovers}）——若有，说明 pip 用了源码根而不是副本")
+    # 这条断言就是上面那段注释的守卫：**这次**构建不许往仓库根拉残留、也不许动仓库根的老残留。
+    residue_after = residue_fingerprint()
+    added = sorted(set(residue_after) - set(residue_before))
+    touched = sorted(k for k in set(residue_after) & set(residue_before)
+                     if residue_after[k] != residue_before[k])
+    check(not added and not touched,
+          f"这次构建没碰仓库根的中间产物（新增 {added[:3]}；被改写 {touched[:3]}）"
+          f"——若有，说明 pip 用了源码根而不是副本")
+    if residue_before:
+        print(f"  NOTE 构建前仓库根已有 {len(residue_before)} 个历史残留文件（已 gitignore，"
+              f"非本次构建产生）；不再需要 editable 安装时删掉 build/ 与 skillverify.egg-info/ 即可")
 
     # 关键：在**仓库之外**的任意目录执行
     elsewhere = tmp / "elsewhere"

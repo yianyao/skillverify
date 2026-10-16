@@ -10,9 +10,15 @@
 - 用法：
 ```bash
 python examples/run_evals.py --skill .agents/skills/csv-report \
-    --cmd "claude -p {prompt}"            # {prompt}/{arm}/{input} 会被替换
+    --cmd "python wrap.py --arm {arm} --prompt \"{prompt}\""   # {prompt} 与 {arm} 会被替换
 skillverify evals .agents/skills/csv-report --json   # 跑完再让工具校验产物
 ```
+
+**`{arm}` 必须写**（这是本脚本最容易踩的坑）：两臂**唯一**的差别就靠它实现——
+Claude CLI 路线在 `without_skill` 时加 `--disallowedTools Skill`，裸 API 路线在 `with_skill`
+时把 `SKILL.md` 注入 prompt。命令里没有 `{arm}` 时，两臂跑的**是同一条命令**，实验不成立
+（脚本会直接拒绝并退 2；确有必要用工作目录区分时，显式加 `--allow-same-cmd`）。
+夹具不在这里替换：按官方布局在 `prompt` 里用相对路径引用（如 `evals/files/input.csv`）。
 
 """
 
@@ -66,7 +72,24 @@ def main() -> int:
     parser.add_argument("--eval-id", help="只跑指定用例 id（默认全部）")
     parser.add_argument("--workspace", help="工作区目录（默认技能目录的兄弟目录）")
     parser.add_argument("--dry-run", action="store_true", help="只打印要跑什么，不执行、不写盘")
+    parser.add_argument("--allow-same-cmd", action="store_true",
+                        help="允许 cmd 里不写 {arm}（两臂命令将完全相同；只在你的命令"
+                             "靠工作目录等其它方式区分两臂时才用）")
     args = parser.parse_args()
+
+    # 巨坑守卫：cmd 里没有 {arm} → 两臂命令逐字相同，A/B 对照在结构上不成立。
+    # 早先的版本"不报错、不警告、照跑不误，产物布局也完整"——看起来一切正常，实验已经废了。
+    if "{arm}" not in args.cmd and not args.allow_same_cmd:
+        print("FAIL: --cmd 里没有 {arm} 占位符——两臂会跑同一条命令，A/B 对照不成立。\n"
+              "      两臂唯一的差别必须由 {arm} 实现：\n"
+              "        Claude CLI 路线：arm==without_skill 时加 --disallowedTools Skill\n"
+              "        裸 API 路线：arm==with_skill 时把 SKILL.md 注入 prompt\n"
+              "      确有必要靠工作目录等其它方式区分两臂，再加 --allow-same-cmd。",
+              file=sys.stderr)
+        return 2
+    if "{arm}" not in args.cmd:
+        print("警告：--allow-same-cmd 已开——两臂命令逐字相同，只有当你的命令能靠工作目录"
+              "等其它方式区分两臂时，这轮实验才有意义。", file=sys.stderr)
 
     skill = Path(args.skill).resolve()
     ws = Path(args.workspace) if args.workspace else (skill.parent / f"{skill.name}-workspace")
