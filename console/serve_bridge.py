@@ -309,6 +309,21 @@ def _append_history(path: Path, record: dict) -> None:
                 fh.writelines(lines[-HISTORY_LIMIT:])
 
 
+def _clamp_limit(raw: str | None, default: int = 50, ceiling: int = 1000) -> int:
+    """把查询串里的 `limit` 夹到 **1..ceiling**。
+
+    为什么要夹**下界**：`_read_history` 用 `lines[-limit:]` 取尾巴，而 `lines[-0:]` 等价于
+    `lines[0:]`——即 `limit=0` 会返回**全部**记录（负数则是"去掉开头 N 条"）。这不是"取 0 条"，
+    是静默地把审计全量吐出来；上界原本就夹了，下界漏了（2026-10-16 复审桥 API 文档时发现）。
+    非法值（非整数 / 空）回落到默认值。
+    """
+    try:
+        value = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, ceiling))
+
+
 def _read_history(path: Path, limit: int) -> list[dict]:
     if not path.exists():
         return []
@@ -549,11 +564,7 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/catalog":
                 self._send(200, BRIDGE.cache.get())
             elif url.path == "/history":
-                qs = parse_qs(url.query)
-                try:
-                    limit = min(int(qs.get("limit", ["50"])[0]), 1000)
-                except ValueError:
-                    limit = 50
+                limit = _clamp_limit(parse_qs(url.query).get("limit", [None])[0])
                 path = BRIDGE.history_file()
                 self._send(200, {"records": _read_history(path, limit),
                                  "path": str(path)})

@@ -248,6 +248,33 @@ def run_inline_snapshot() -> None:
     _check("index.html 内联数据与 nodes.json 一致（除生成时间戳）", same, detail)
 
 
+def run_history_limit_clamp() -> None:
+    """`/history?limit=` 的夹取：**下界也必须夹**（`lines[-0:]` 会返回全部记录）。
+
+    这条是"文档复审带出来的代码缺陷"：桥 API 文档写"默认 50，上限 1000"，读代码发现
+    `min(int(...), 1000)` 只夹了上界——`limit=0` 时 `_read_history` 的 `lines[-limit:]`
+    变成 `lines[0:]`，审计全量被吐出来（负数则是去掉开头 N 条）。抽成 `_clamp_limit()` 后可直接钉。
+    """
+    import sys as _sys
+
+    print("[test_history_limit_clamp]")
+    _sys.path.insert(0, str(CONSOLE))
+    try:
+        import serve_bridge as bridge           # 纯标准库，可安全导入
+    except Exception as exc:                    # noqa: BLE001
+        _check("能导入 serve_bridge（纯标准库）", False, f"{type(exc).__name__}: {exc}")
+        return
+    cases = [(None, 50), ("5", 5), ("0", 1), ("-3", 1), ("99999", 1000), ("abc", 50),
+             ("", 50), ("1000", 1000), ("1", 1)]
+    bad = [(raw, got, want) for raw, want in cases
+           for got in [bridge._clamp_limit(raw)] if got != want]
+    _check("_clamp_limit 把 limit 夹在 1..1000（含 0 / 负数 / 非法值）", not bad, f"不符: {bad}")
+    # 反向自检：不夹下界的老写法在 limit=0 时会命中全部记录
+    lines = ["a\n", "b\n", "c\n"]
+    _check("反向自检：lines[-0:] 确实是全部记录（这就是原缺陷）",
+           lines[-0:] == lines and lines[-1:] == ["c\n"])
+
+
 def main() -> int:
     if not COMMITTED.exists():
         _check("仓库产物存在", False, f"{COMMITTED} 不存在——请先 python console/build_nodes.py 并提交")
@@ -341,6 +368,7 @@ def main() -> int:
     run_bridge_origin_guard()
 
     # 7. manual 手抄数字 + index.html 内联快照
+    run_history_limit_clamp()
     run_manual_numbers()
     run_inline_snapshot()
 
