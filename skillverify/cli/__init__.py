@@ -96,7 +96,7 @@ def _add_spec_lint_parsers(sub) -> None:
                          help="委托执行评测：在技能目录里跑这条命令（例如官方评测器的入口），"
                               "跑完再校验产物。命令由你给出——本工具不猜官方评测器的参数")
     p_evals.add_argument("--run-timeout", type=float, default=1800.0, metavar="秒",
-                         help="委托执行的超时下限（默认 1800 秒）")
+                         help="委托执行的超时上限（默认 1800 秒）")
     _add_common(p_evals)
     p_evals.set_defaults(func=cmd_evals)
 

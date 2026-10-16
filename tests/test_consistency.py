@@ -448,6 +448,12 @@ def run_capability_coverage() -> None:
     # ② benchmark.json 的三组指标 + delta（实测只写 pass_rate 会吃 BENCH-002/003 WARN）
     # ③ evidence_hash 的先 strip 再取前 16 位（差一个换行就"证据变了"）
     # ④ 语义评审 E-04 属 ⚑ 双人独立复核项（只跑一次结论强度不足）
+    # CLI 语义事实：`--run-timeout` 是**最大**等待时间（subprocess timeout），文案不许写成"下限"。
+    # 这类"上/下限写反"的措辞会让使用者以为是"至少等这么久"，而它是"最多等这么久"。
+    cli_src = read("skillverify/cli/__init__.py")
+    check("委托执行的超时上限" in cli_src and "委托执行的超时下限" not in cli_src,
+          "`--run-timeout` 的帮助文本说「上限」（它是最大等待时间，不是下限）")
+
     author = read("技能编写指南.md")
     flow = read("验证流程指南.md")
     manual = read("操作手册.md")
